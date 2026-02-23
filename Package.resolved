@@ -1,0 +1,24 @@
+{
+  "originHash" : "95ceb8cfae349c1da2f666ee07f1abb0df83ee5246e2f8db55d09c5cb3dde774",
+  "pins" : [
+    {
+      "identity" : "swift-llm-client",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/no-problem-dev/swift-llm-client.git",
+      "state" : {
+        "revision" : "3ed1dfa72254430feccf11e4fcd440f6d1697869",
+        "version" : "1.0.0"
+      }
+    },
+    {
+      "identity" : "swift-syntax",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-syntax.git",
+      "state" : {
+        "revision" : "4799286537280063c85a32f09884cfbca301b1a1",
+        "version" : "602.0.0"
+      }
+    }
+  ],
+  "version" : 3
+}
