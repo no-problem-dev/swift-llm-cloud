@@ -3,30 +3,64 @@ import LLMClient
 
 // MARK: - RetryPolicy Protocol
 
+/// リトライポリシーを定義するプロトコル
+///
+/// エラー発生時のリトライ判定とリトライ間隔の計算ロジックを提供します。
+/// レート制限情報を考慮した待機時間の算出もサポートします。
 public protocol RetryPolicy: Sendable {
+    /// 最大リトライ回数。
     var maxRetries: Int { get }
+    /// 指定されたエラーに対してリトライすべきかを判定します。
+    ///
+    /// - Parameters:
+    ///   - error: 発生したエラー。
+    ///   - attempt: 現在の試行回数。
     func shouldRetry(error: LLMError, attempt: Int) -> Bool
+    /// 指定された試行回数に対するリトライ待機時間を計算します。
+    ///
+    /// - Parameters:
+    ///   - attempt: 現在の試行回数。
+    ///   - error: 発生したエラー。
+    ///   - rateLimitInfo: レート制限情報（利用可能な場合）。
+    /// - Returns: リトライまでの待機時間（秒）。
     func delay(for attempt: Int, error: LLMError, rateLimitInfo: RateLimitInfo?) -> TimeInterval
 }
 
 // MARK: - ExponentialBackoffPolicy
 
+/// 指数バックオフによるリトライポリシー
+///
+/// リトライごとに待機時間を指数関数的に増加させます。
+/// ジッター（ランダムな揺らぎ）を加えることで、同時リトライの集中を防ぎます。
 public struct ExponentialBackoffPolicy: RetryPolicy {
     public let maxRetries: Int
+    /// 基本待機時間（秒）。
     public let baseDelay: TimeInterval
+    /// 最大待機時間（秒）。
     public let maxDelay: TimeInterval
+    /// ジッター係数（0.0〜1.0）。
     public let jitterFactor: Double
 
+    /// デフォルトのリトライポリシー。
     public static let `default` = ExponentialBackoffPolicy()
 
+    /// アグレッシブなリトライポリシー（リトライ回数多め、待機時間短め）。
     public static let aggressive = ExponentialBackoffPolicy(
         maxRetries: 10, baseDelay: 0.5, maxDelay: 120.0, jitterFactor: 0.2
     )
 
+    /// コンサバティブなリトライポリシー（リトライ回数少なめ、待機時間長め）。
     public static let conservative = ExponentialBackoffPolicy(
         maxRetries: 3, baseDelay: 2.0, maxDelay: 30.0, jitterFactor: 0.1
     )
 
+    /// 新しい指数バックオフポリシーを作成します。
+    ///
+    /// - Parameters:
+    ///   - maxRetries: 最大リトライ回数。デフォルトは 5。
+    ///   - baseDelay: 基本待機時間（秒）。デフォルトは 1.0。
+    ///   - maxDelay: 最大待機時間（秒）。デフォルトは 60.0。
+    ///   - jitterFactor: ジッター係数。デフォルトは 0.1。
     public init(
         maxRetries: Int = 5,
         baseDelay: TimeInterval = 1.0,
@@ -61,8 +95,12 @@ public struct ExponentialBackoffPolicy: RetryPolicy {
 
 // MARK: - NoRetryPolicy
 
+/// リトライを行わないポリシー
+///
+/// エラー発生時にリトライせず、即座に失敗させます。
 public struct NoRetryPolicy: RetryPolicy {
     public let maxRetries: Int = 0
+    /// 共有インスタンス。
     public static let shared = NoRetryPolicy()
     private init() {}
 
@@ -73,6 +111,9 @@ public struct NoRetryPolicy: RetryPolicy {
 // MARK: - LLMError Extension
 
 extension LLMError {
+    /// このエラーがリトライ可能かどうか。
+    ///
+    /// レート制限超過、サーバーエラー（5xx）、タイムアウト、ネットワークエラーの場合に `true` を返します。
     public var isRetryable: Bool {
         switch self {
         case .rateLimitExceeded:

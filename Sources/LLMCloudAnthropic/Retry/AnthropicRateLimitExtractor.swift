@@ -6,6 +6,10 @@ import LLMCloudClient
 
 // MARK: - Anthropic Rate Limit Header Extraction
 
+/// Anthropic API のレート制限ヘッダーからレート制限情報を抽出する列挙型
+///
+/// `retry-after`、`anthropic-ratelimit-*` ヘッダーを解析して
+/// リクエスト・トークン両方のレート制限情報を提供します。
 public enum AnthropicRateLimitExtractor: RateLimitInfoExtractable {
     public static func extractRateLimitInfo(from response: HTTPURLResponse) -> RateLimitInfo {
         let retryAfter: TimeInterval? = response

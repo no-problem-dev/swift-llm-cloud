@@ -6,6 +6,10 @@ import LLMClient
 
 // MARK: - HTTPStreamingClient
 
+/// HTTPストリーミングレスポンスを非同期ストリームとして提供するクライアント
+///
+/// Apple プラットフォームでは `URLSession.bytes` を、
+/// Linux では `URLSessionDataDelegate` を使用してストリーミングを実現します。
 public enum HTTPStreamingClient {
 
     public static func stream(

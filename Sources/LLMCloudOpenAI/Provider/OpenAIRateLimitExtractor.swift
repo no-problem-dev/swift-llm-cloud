@@ -6,6 +6,10 @@ import LLMCloudClient
 
 // MARK: - OpenAI Rate Limit Header Extraction
 
+/// OpenAI API のレート制限ヘッダーからレート制限情報を抽出する列挙型
+///
+/// `retry-after`、`x-ratelimit-*` ヘッダーを解析して
+/// リクエスト・トークン両方のレート制限情報を提供します。
 public enum OpenAIRateLimitExtractor: RateLimitInfoExtractable {
     public static func extractRateLimitInfo(from response: HTTPURLResponse) -> RateLimitInfo {
         let retryAfter: TimeInterval? = response

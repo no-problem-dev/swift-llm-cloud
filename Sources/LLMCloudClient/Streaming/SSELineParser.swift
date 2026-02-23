@@ -2,6 +2,7 @@ import Foundation
 
 // MARK: - SSEEvent (Public)
 
+/// SSE（Server-Sent Events）のパース済みイベント
 public struct SSEParsedEvent: Sendable {
     public let event: String?
     public let data: String
@@ -14,6 +15,9 @@ public struct SSEParsedEvent: Sendable {
 
 // MARK: - SSELineParser
 
+/// SSE ストリームの行単位パーサー
+///
+/// 行を1つずつ受け取り、空行を区切りとしてイベントを組み立てます。
 public struct SSELineParser: Sendable {
     private var currentEvent: String?
     private var currentData: [String] = []
@@ -48,6 +52,9 @@ public struct SSELineParser: Sendable {
 
 // MARK: - DataLineBuffer
 
+/// バイトデータを行単位に分割するバッファ
+///
+/// 受信した `Data` を蓄積し、改行コードで区切って行の配列を返します。
 public struct DataLineBuffer: Sendable {
     private var buffer = ""
 
