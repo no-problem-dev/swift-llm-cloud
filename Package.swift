@@ -12,7 +12,7 @@ let package = Package(
         .library(name: "LLMCloud", targets: ["LLMCloud"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/no-problem-dev/swift-llm-client.git", from: "1.0.0"),
+        .package(url: "https://github.com/no-problem-dev/swift-llm-client.git", from: "1.1.0"),
     ],
     targets: [
         // Shared provider infrastructure
