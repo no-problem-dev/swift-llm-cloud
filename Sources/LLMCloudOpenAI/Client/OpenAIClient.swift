@@ -50,12 +50,11 @@ import FoundationNetworking
 /// ```
 ///
 /// ## 対応モデル
-/// - `.gpt4o` - GPT-4o（最新）
-/// - `.gpt4oMini` - GPT-4o mini（軽量版）
-/// - `.gpt4Turbo` - GPT-4 Turbo
-/// - `.gpt4` - GPT-4
-/// - `.o1` - o1（推論特化）
-/// - `.o3Mini` - o3 mini
+/// - `.gpt5_2` - GPT-5.2（最新）
+/// - `.gpt4_1` - GPT-4.1
+/// - `.gpt4o` - GPT-4o
+/// - `.o3` - o3（高度な推論）
+/// - `.o4Mini` - o4 mini
 public struct OpenAIClient: StructuredLLMClient {
     public typealias Model = GPTModel
 

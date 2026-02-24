@@ -110,7 +110,7 @@ extension AnthropicClient: ChatCapableClient {
             system: systemPrompt,
             maxTokens: maxTokens ?? Self.defaultMaxTokens,
             temperature: temperature,
-            outputFormat: outputFormat
+            outputConfig: AnthropicChatOutputConfig(format: outputFormat)
         )
     }
 
@@ -206,7 +206,9 @@ extension AnthropicClient: ChatCapableClient {
             assistantMessage: .assistant(rawText),
             usage: TokenUsage(
                 inputTokens: anthropicResponse.usage.inputTokens,
-                outputTokens: anthropicResponse.usage.outputTokens
+                outputTokens: anthropicResponse.usage.outputTokens,
+                cacheCreationTokens: anthropicResponse.usage.cacheCreationInputTokens,
+                cacheReadTokens: anthropicResponse.usage.cacheReadInputTokens
             ),
             stopReason: stopReason,
             model: anthropicResponse.model,
@@ -224,12 +226,12 @@ private struct AnthropicChatRequestBody: Encodable {
     let system: String?
     let maxTokens: Int
     let temperature: Double?
-    let outputFormat: AnthropicChatOutputFormat
+    let outputConfig: AnthropicChatOutputConfig
 
     enum CodingKeys: String, CodingKey {
         case model, messages, system, temperature
         case maxTokens = "max_tokens"
-        case outputFormat = "output_format"
+        case outputConfig = "output_config"
     }
 
     func encode(to encoder: Encoder) throws {
@@ -243,7 +245,7 @@ private struct AnthropicChatRequestBody: Encodable {
         if let temperature = temperature {
             try container.encode(temperature, forKey: .temperature)
         }
-        try container.encode(outputFormat, forKey: .outputFormat)
+        try container.encode(outputConfig, forKey: .outputConfig)
     }
 }
 
@@ -302,6 +304,11 @@ private enum AnthropicChatMessageContent: Encodable {
 private struct AnthropicChatOutputFormat: Encodable {
     let type: String
     let schema: JSONSchema
+}
+
+/// Anthropic チャット出力設定
+private struct AnthropicChatOutputConfig: Encodable {
+    let format: AnthropicChatOutputFormat?
 }
 
 /// JSON 値の汎用エンコード/デコード用
@@ -377,6 +384,8 @@ private struct AnthropicChatContentBlock: Decodable {
 private struct AnthropicChatUsage: Decodable {
     let inputTokens: Int
     let outputTokens: Int
+    let cacheCreationInputTokens: Int?
+    let cacheReadInputTokens: Int?
 }
 
 /// Anthropic エラーレスポンス

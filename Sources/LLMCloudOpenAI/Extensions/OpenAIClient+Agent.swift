@@ -240,7 +240,9 @@ extension OpenAIClient: AgentCapableClient {
                 model: response.model,
                 usage: TokenUsage(
                     inputTokens: response.usage.promptTokens,
-                    outputTokens: response.usage.completionTokens
+                    outputTokens: response.usage.completionTokens,
+                    cacheReadTokens: response.usage.promptTokensDetails?.cachedTokens,
+                    reasoningTokens: response.usage.completionTokensDetails?.reasoningTokens
                 ),
                 stopReason: nil
             )
@@ -275,7 +277,9 @@ extension OpenAIClient: AgentCapableClient {
             model: response.model,
             usage: TokenUsage(
                 inputTokens: response.usage.promptTokens,
-                outputTokens: response.usage.completionTokens
+                outputTokens: response.usage.completionTokens,
+                cacheReadTokens: response.usage.promptTokensDetails?.cachedTokens,
+                reasoningTokens: response.usage.completionTokensDetails?.reasoningTokens
             ),
             stopReason: stopReason
         )
@@ -568,6 +572,16 @@ private struct OpenAIAgentUsage: Decodable {
     let promptTokens: Int
     let completionTokens: Int
     let totalTokens: Int
+    let promptTokensDetails: PromptTokensDetails?
+    let completionTokensDetails: CompletionTokensDetails?
+
+    struct PromptTokensDetails: Decodable {
+        let cachedTokens: Int?
+    }
+
+    struct CompletionTokensDetails: Decodable {
+        let reasoningTokens: Int?
+    }
 }
 
 /// OpenAI エラーレスポンス

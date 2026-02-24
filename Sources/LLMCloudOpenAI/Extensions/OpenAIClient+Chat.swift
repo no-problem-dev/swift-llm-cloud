@@ -188,7 +188,9 @@ extension OpenAIClient: ChatCapableClient {
             assistantMessage: .assistant(rawText),
             usage: TokenUsage(
                 inputTokens: openAIResponse.usage.promptTokens,
-                outputTokens: openAIResponse.usage.completionTokens
+                outputTokens: openAIResponse.usage.completionTokens,
+                cacheReadTokens: openAIResponse.usage.promptTokensDetails?.cachedTokens,
+                reasoningTokens: openAIResponse.usage.completionTokensDetails?.reasoningTokens
             ),
             stopReason: stopReason,
             model: openAIResponse.model,
@@ -344,6 +346,16 @@ private struct OpenAIChatUsage: Decodable {
     let promptTokens: Int
     let completionTokens: Int
     let totalTokens: Int
+    let promptTokensDetails: PromptTokensDetails?
+    let completionTokensDetails: CompletionTokensDetails?
+
+    struct PromptTokensDetails: Decodable {
+        let cachedTokens: Int?
+    }
+
+    struct CompletionTokensDetails: Decodable {
+        let reasoningTokens: Int?
+    }
 }
 
 /// OpenAI エラーレスポンス

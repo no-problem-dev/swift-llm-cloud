@@ -112,7 +112,7 @@ extension AnthropicClient: AgentCapableClient {
             temperature: nil,
             tools: anthropicTools,
             toolChoice: anthropicToolChoice,
-            outputFormat: outputFormat
+            outputConfig: outputFormat.map { AnthropicAgentOutputConfig(format: $0) }
         )
     }
 
@@ -220,7 +220,9 @@ extension AnthropicClient: AgentCapableClient {
             model: response.model,
             usage: TokenUsage(
                 inputTokens: response.usage.inputTokens,
-                outputTokens: response.usage.outputTokens
+                outputTokens: response.usage.outputTokens,
+                cacheCreationTokens: response.usage.cacheCreationInputTokens,
+                cacheReadTokens: response.usage.cacheReadInputTokens
             ),
             stopReason: stopReason
         )
@@ -238,13 +240,13 @@ private struct AnthropicAgentRequestBody: Encodable {
     let temperature: Double?
     let tools: [[String: Any]]?
     let toolChoice: AnthropicAgentToolChoice?
-    let outputFormat: AnthropicAgentOutputFormat?
+    let outputConfig: AnthropicAgentOutputConfig?
 
     enum CodingKeys: String, CodingKey {
         case model, messages, system, temperature, tools
         case maxTokens = "max_tokens"
         case toolChoice = "tool_choice"
-        case outputFormat = "output_format"
+        case outputConfig = "output_config"
     }
 
     func encode(to encoder: Encoder) throws {
@@ -268,8 +270,8 @@ private struct AnthropicAgentRequestBody: Encodable {
             try container.encode(toolChoice, forKey: .toolChoice)
         }
 
-        if let outputFormat = outputFormat {
-            try container.encode(outputFormat, forKey: .outputFormat)
+        if let outputConfig = outputConfig {
+            try container.encode(outputConfig, forKey: .outputConfig)
         }
     }
 }
@@ -327,6 +329,11 @@ private enum AnthropicAgentToolChoice: Encodable {
 private struct AnthropicAgentOutputFormat: Encodable {
     let type: String
     let schema: JSONSchema
+}
+
+/// Anthropic エージェント出力設定
+private struct AnthropicAgentOutputConfig: Encodable {
+    let format: AnthropicAgentOutputFormat?
 }
 
 /// Anthropic メッセージ
@@ -499,6 +506,8 @@ private struct AgentAnyCodable: Decodable {
 private struct AnthropicAgentUsage: Decodable {
     let inputTokens: Int
     let outputTokens: Int
+    let cacheCreationInputTokens: Int?
+    let cacheReadInputTokens: Int?
 }
 
 /// Anthropic エラーレスポンス

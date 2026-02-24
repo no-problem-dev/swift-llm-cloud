@@ -437,7 +437,9 @@ internal struct OpenAIProvider: LLMProvider, RetryableProviderProtocol {
             model: openAIResponse.model,
             usage: TokenUsage(
                 inputTokens: openAIResponse.usage.promptTokens,
-                outputTokens: openAIResponse.usage.completionTokens
+                outputTokens: openAIResponse.usage.completionTokens,
+                cacheReadTokens: openAIResponse.usage.promptTokensDetails?.cachedTokens,
+                reasoningTokens: openAIResponse.usage.completionTokensDetails?.reasoningTokens
             ),
             stopReason: stopReason
         )
@@ -823,6 +825,16 @@ private struct OpenAIUsage: Decodable {
     let promptTokens: Int
     let completionTokens: Int
     let totalTokens: Int
+    let promptTokensDetails: PromptTokensDetails?
+    let completionTokensDetails: CompletionTokensDetails?
+
+    struct PromptTokensDetails: Decodable {
+        let cachedTokens: Int?
+    }
+
+    struct CompletionTokensDetails: Decodable {
+        let reasoningTokens: Int?
+    }
 }
 
 /// OpenAI エラーレスポンス

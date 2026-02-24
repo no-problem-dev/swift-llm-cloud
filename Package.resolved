@@ -1,5 +1,5 @@
 {
-  "originHash" : "04ec10ea680d257d84ebdbd8118463e1ef148d9953dc40673a5f56bfa7b38866",
+  "originHash" : "1036a95c82b49065336ce29497fb8be3aee2a53394ff3758c0af9684ca74f265",
   "pins" : [
     {
       "identity" : "swift-docc-plugin",
@@ -17,15 +17,6 @@
       "state" : {
         "revision" : "b45d1f2ed151d057b54504d653e0da5552844e34",
         "version" : "1.0.0"
-      }
-    },
-    {
-      "identity" : "swift-llm-client",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/no-problem-dev/swift-llm-client.git",
-      "state" : {
-        "revision" : "b7d92b3d3fa68d291f63c30252c03ebca1ef67e5",
-        "version" : "1.1.0"
       }
     },
     {

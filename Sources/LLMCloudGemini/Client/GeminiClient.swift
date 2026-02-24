@@ -50,12 +50,11 @@ import FoundationNetworking
 /// ```
 ///
 /// ## 対応モデル
-/// - `.flash3` - Gemini 3 Flash（最新・最高性能）
+/// - `.pro31` - Gemini 3.1 Pro（最新・最高性能）
+/// - `.pro3` - Gemini 3 Pro
+/// - `.flash3` - Gemini 3 Flash
 /// - `.pro25` - Gemini 2.5 Pro
 /// - `.flash25` - Gemini 2.5 Flash
-/// - `.flash20` - Gemini 2.0 Flash
-/// - `.pro15` - Gemini 1.5 Pro
-/// - `.flash15` - Gemini 1.5 Flash
 public struct GeminiClient: StructuredLLMClient {
     public typealias Model = GeminiModel
 

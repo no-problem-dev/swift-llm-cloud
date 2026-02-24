@@ -196,7 +196,9 @@ extension AnthropicClient: ToolCallableClient {
             text: textContent,
             usage: TokenUsage(
                 inputTokens: response.usage.inputTokens,
-                outputTokens: response.usage.outputTokens
+                outputTokens: response.usage.outputTokens,
+                cacheCreationTokens: response.usage.cacheCreationInputTokens,
+                cacheReadTokens: response.usage.cacheReadInputTokens
             ),
             stopReason: stopReason,
             model: response.model
@@ -463,6 +465,8 @@ private struct AnyCodable: Decodable {
 private struct AnthropicToolUsage: Decodable {
     let inputTokens: Int
     let outputTokens: Int
+    let cacheCreationInputTokens: Int?
+    let cacheReadInputTokens: Int?
 }
 
 /// Anthropic エラーレスポンス

@@ -135,7 +135,7 @@ internal struct AnthropicProvider: LLMProvider, RetryableProviderProtocol {
             system: effectiveSystemPrompt,
             maxTokens: request.maxTokens ?? Self.defaultMaxTokens,
             temperature: request.temperature,
-            outputFormat: outputFormat
+            outputConfig: outputFormat.map { AnthropicOutputConfig(format: $0) }
         )
     }
 
@@ -285,7 +285,9 @@ internal struct AnthropicProvider: LLMProvider, RetryableProviderProtocol {
             model: anthropicResponse.model,
             usage: TokenUsage(
                 inputTokens: anthropicResponse.usage.inputTokens,
-                outputTokens: anthropicResponse.usage.outputTokens
+                outputTokens: anthropicResponse.usage.outputTokens,
+                cacheCreationTokens: anthropicResponse.usage.cacheCreationInputTokens,
+                cacheReadTokens: anthropicResponse.usage.cacheReadInputTokens
             ),
             stopReason: stopReason
         )
@@ -307,7 +309,7 @@ private struct AnthropicRequestBody: Encodable {
     let system: String?
     let maxTokens: Int
     let temperature: Double?
-    let outputFormat: AnthropicOutputFormat?
+    let outputConfig: AnthropicOutputConfig?
 
     enum CodingKeys: String, CodingKey {
         case model
@@ -315,7 +317,7 @@ private struct AnthropicRequestBody: Encodable {
         case system
         case maxTokens = "max_tokens"
         case temperature
-        case outputFormat = "output_format"
+        case outputConfig = "output_config"
     }
 
     func encode(to encoder: Encoder) throws {
@@ -329,8 +331,8 @@ private struct AnthropicRequestBody: Encodable {
         if let temperature = temperature {
             try container.encode(temperature, forKey: .temperature)
         }
-        if let outputFormat = outputFormat {
-            try container.encode(outputFormat, forKey: .outputFormat)
+        if let outputConfig = outputConfig {
+            try container.encode(outputConfig, forKey: .outputConfig)
         }
     }
 }
@@ -493,6 +495,11 @@ private struct AnthropicOutputFormat: Encodable {
     let schema: JSONSchema
 }
 
+/// Anthropic 出力設定
+private struct AnthropicOutputConfig: Encodable {
+    let format: AnthropicOutputFormat?
+}
+
 /// Anthropic API レスポンスボディ
 private struct AnthropicResponseBody: Decodable {
     let id: String
@@ -562,6 +569,8 @@ private struct AnyCodable: Decodable {
 private struct AnthropicUsage: Decodable {
     let inputTokens: Int
     let outputTokens: Int
+    let cacheCreationInputTokens: Int?
+    let cacheReadInputTokens: Int?
 }
 
 /// Anthropic エラーレスポンス

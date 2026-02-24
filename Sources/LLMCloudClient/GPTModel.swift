@@ -8,23 +8,38 @@ import Foundation
 public enum GPTModel: Sendable, Equatable {
     // MARK: - Aliases (推奨)
 
+    /// GPT-5.2 最新版
+    case gpt5_2
+
+    /// GPT-5.1 最新版
+    case gpt5_1
+
+    /// GPT-5 最新版
+    case gpt5
+
+    /// GPT-5 mini 最新版
+    case gpt5Mini
+
+    /// GPT-4.1 最新版
+    case gpt4_1
+
+    /// GPT-4.1 mini 最新版
+    case gpt4_1Mini
+
     /// GPT-4o 最新版（マルチモーダル）
     case gpt4o
 
     /// GPT-4o mini 最新版（軽量版）
     case gpt4oMini
 
-    /// GPT-4 Turbo 最新版
-    case gpt4Turbo
-
-    /// GPT-4 最新版
-    case gpt4
-
     /// o1 最新版（推論特化）
     case o1
 
     /// o3 最新版（高度な推論）
     case o3
+
+    /// o3-pro 最新版（プロ推論）
+    case o3Pro
 
     /// o3-mini 最新版（軽量推論）
     case o3Mini
@@ -33,6 +48,24 @@ public enum GPTModel: Sendable, Equatable {
     case o4Mini
 
     // MARK: - Fixed Versions
+
+    /// GPT-5.2 固定バージョン
+    case gpt5_2_version(String)
+
+    /// GPT-5.1 固定バージョン
+    case gpt5_1_version(String)
+
+    /// GPT-5 固定バージョン
+    case gpt5_version(String)
+
+    /// GPT-5 mini 固定バージョン
+    case gpt5Mini_version(String)
+
+    /// GPT-4.1 固定バージョン
+    case gpt4_1_version(String)
+
+    /// GPT-4.1 mini 固定バージョン
+    case gpt4_1Mini_version(String)
 
     /// GPT-4o 固定バージョン
     case gpt4o_version(String)
@@ -62,24 +95,44 @@ public enum GPTModel: Sendable, Equatable {
     /// モデルID文字列を取得
     public var id: String {
         switch self {
-        // Aliases
+        case .gpt5_2:
+            return "gpt-5.2"
+        case .gpt5_1:
+            return "gpt-5.1"
+        case .gpt5:
+            return "gpt-5"
+        case .gpt5Mini:
+            return "gpt-5-mini"
+        case .gpt4_1:
+            return "gpt-4.1"
+        case .gpt4_1Mini:
+            return "gpt-4.1-mini"
         case .gpt4o:
             return "gpt-4o"
         case .gpt4oMini:
             return "gpt-4o-mini"
-        case .gpt4Turbo:
-            return "gpt-4-turbo"
-        case .gpt4:
-            return "gpt-4"
         case .o1:
             return "o1"
         case .o3:
             return "o3"
+        case .o3Pro:
+            return "o3-pro"
         case .o3Mini:
             return "o3-mini"
         case .o4Mini:
             return "o4-mini"
-        // Fixed versions
+        case .gpt5_2_version(let version):
+            return "gpt-5.2-\(version)"
+        case .gpt5_1_version(let version):
+            return "gpt-5.1-\(version)"
+        case .gpt5_version(let version):
+            return "gpt-5-\(version)"
+        case .gpt5Mini_version(let version):
+            return "gpt-5-mini-\(version)"
+        case .gpt4_1_version(let version):
+            return "gpt-4.1-\(version)"
+        case .gpt4_1Mini_version(let version):
+            return "gpt-4.1-mini-\(version)"
         case .gpt4o_version(let version):
             return "gpt-4o-\(version)"
         case .gpt4oMini_version(let version):
@@ -92,7 +145,6 @@ public enum GPTModel: Sendable, Equatable {
             return "o3-mini-\(version)"
         case .o4Mini_version(let version):
             return "o4-mini-\(version)"
-        // Custom
         case .custom(let id):
             return id
         }
@@ -104,37 +156,37 @@ public enum GPTModel: Sendable, Equatable {
 extension GPTModel {
     /// UI選択用のプリセットモデル
     public enum Preset: String, CaseIterable, Identifiable, Sendable {
-        case gpt4o = "gpt4o"
-        case gpt4oMini = "gpt4oMini"
-        case o1 = "o1"
-        case o3Mini = "o3Mini"
+        case gpt5_2 = "gpt5_2"
+        case gpt4_1 = "gpt4_1"
+        case o3 = "o3"
+        case o4Mini = "o4Mini"
 
         public var id: String { rawValue }
 
         public var model: GPTModel {
             switch self {
-            case .gpt4o: return .gpt4o
-            case .gpt4oMini: return .gpt4oMini
-            case .o1: return .o1
-            case .o3Mini: return .o3Mini
+            case .gpt5_2: return .gpt5_2
+            case .gpt4_1: return .gpt4_1
+            case .o3: return .o3
+            case .o4Mini: return .o4Mini
             }
         }
 
         public var displayName: String {
             switch self {
-            case .gpt4o: return "GPT-4o"
-            case .gpt4oMini: return "GPT-4o mini"
-            case .o1: return "o1"
-            case .o3Mini: return "o3-mini"
+            case .gpt5_2: return "GPT-5.2"
+            case .gpt4_1: return "GPT-4.1"
+            case .o3: return "o3"
+            case .o4Mini: return "o4-mini"
             }
         }
 
         public var shortName: String {
             switch self {
-            case .gpt4o: return "4o"
-            case .gpt4oMini: return "4o mini"
-            case .o1: return "o1"
-            case .o3Mini: return "o3-mini"
+            case .gpt5_2: return "5.2"
+            case .gpt4_1: return "4.1"
+            case .o3: return "o3"
+            case .o4Mini: return "o4-mini"
             }
         }
     }

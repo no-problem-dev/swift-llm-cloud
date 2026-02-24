@@ -129,7 +129,7 @@ extension GeminiClient: ToolCallableClient {
             case .text(let text):
                 parts.append(GeminiToolPart(text: text))
 
-            case .toolUse(_, let name, let input):
+            case .toolUse(let id, let name, let input):
                 // ツール呼び出し（モデルからの応答）
                 let args: [String: Any]?
                 if let argsDict = try? JSONSerialization.jsonObject(with: input) as? [String: Any] {
@@ -138,7 +138,8 @@ extension GeminiClient: ToolCallableClient {
                     args = nil
                 }
                 let functionCall = GeminiToolFunctionCall(name: name, args: args)
-                parts.append(GeminiToolPart(functionCall: functionCall))
+                let sig = GeminiThoughtSignatureEncoding.decodeThoughtSignature(from: id)
+                parts.append(GeminiToolPart(functionCall: functionCall, thoughtSignature: sig))
 
             case .toolResult(_, let name, let resultContent, _):
                 // ツール結果（ユーザーからの応答）
@@ -237,7 +238,8 @@ extension GeminiClient: ToolCallableClient {
             if let usageMetadata = response.usageMetadata {
                 usage = TokenUsage(
                     inputTokens: usageMetadata.promptTokenCount ?? 0,
-                    outputTokens: usageMetadata.candidatesTokenCount ?? 0
+                    outputTokens: usageMetadata.candidatesTokenCount ?? 0,
+                    reasoningTokens: usageMetadata.thoughtsTokenCount
                 )
             } else {
                 usage = TokenUsage(inputTokens: 0, outputTokens: 0)
@@ -261,7 +263,7 @@ extension GeminiClient: ToolCallableClient {
             if let functionCall = part.functionCall {
                 if let argsData = try? JSONSerialization.data(withJSONObject: functionCall.args ?? [:]) {
                     toolCalls.append(ToolCall(
-                        id: UUID().uuidString, // Gemini はIDを返さないので生成
+                        id: GeminiThoughtSignatureEncoding.encodeToolCallId(thoughtSignature: part.thoughtSignature),
                         name: functionCall.name,
                         arguments: argsData
                     ))
@@ -277,7 +279,8 @@ extension GeminiClient: ToolCallableClient {
         if let usageMetadata = response.usageMetadata {
             usage = TokenUsage(
                 inputTokens: usageMetadata.promptTokenCount ?? 0,
-                outputTokens: usageMetadata.candidatesTokenCount ?? 0
+                outputTokens: usageMetadata.candidatesTokenCount ?? 0,
+                reasoningTokens: usageMetadata.thoughtsTokenCount
             )
         } else {
             usage = TokenUsage(inputTokens: 0, outputTokens: 0)
@@ -372,23 +375,34 @@ private struct GeminiToolPart: Codable {
     let text: String?
     let functionCall: GeminiToolFunctionCall?
     let functionResponse: GeminiToolFunctionResponse?
+    let thoughtSignature: String?
 
     init(text: String) {
         self.text = text
         self.functionCall = nil
         self.functionResponse = nil
+        self.thoughtSignature = nil
     }
 
     init(functionCall: GeminiToolFunctionCall) {
         self.text = nil
         self.functionCall = functionCall
         self.functionResponse = nil
+        self.thoughtSignature = nil
+    }
+
+    init(functionCall: GeminiToolFunctionCall, thoughtSignature: String?) {
+        self.text = nil
+        self.functionCall = functionCall
+        self.functionResponse = nil
+        self.thoughtSignature = thoughtSignature
     }
 
     init(functionResponse: GeminiToolFunctionResponse) {
         self.text = nil
         self.functionCall = nil
         self.functionResponse = functionResponse
+        self.thoughtSignature = nil
     }
 }
 
@@ -575,6 +589,7 @@ private struct GeminiToolUsageMetadata: Decodable {
     let promptTokenCount: Int?
     let candidatesTokenCount: Int?
     let totalTokenCount: Int?
+    let thoughtsTokenCount: Int?
 }
 
 /// Gemini エラーレスポンス

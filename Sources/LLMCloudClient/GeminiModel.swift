@@ -5,15 +5,16 @@ import Foundation
 /// Google Gemini モデル
 public enum GeminiModel: Sendable, Equatable {
     // MARK: - Aliases (推奨)
+    case pro31
+    case pro3
     case flash3
     case pro25
     case flash25
     case flash25Lite
-    case flash20
-    case pro15
-    case flash15
 
     // MARK: - Preview/Experimental Versions
+    case pro31_preview(version: String)
+    case pro3_preview(version: String)
     case flash3_preview(version: String)
     case pro25_preview(version: String)
     case flash25_preview(version: String)
@@ -26,6 +27,10 @@ public enum GeminiModel: Sendable, Equatable {
 
     public var id: String {
         switch self {
+        case .pro31:
+            return "gemini-3.1-pro-preview"
+        case .pro3:
+            return "gemini-3-pro-preview"
         case .flash3:
             return "gemini-3-flash-preview"
         case .pro25:
@@ -34,12 +39,10 @@ public enum GeminiModel: Sendable, Equatable {
             return "gemini-2.5-flash"
         case .flash25Lite:
             return "gemini-2.5-flash-lite"
-        case .flash20:
-            return "gemini-2.0-flash"
-        case .pro15:
-            return "gemini-1.5-pro"
-        case .flash15:
-            return "gemini-1.5-flash"
+        case .pro31_preview(let version):
+            return "gemini-3.1-pro-preview-\(version)"
+        case .pro3_preview(let version):
+            return "gemini-3-pro-preview-\(version)"
         case .flash3_preview(let version):
             return "gemini-3-flash-preview-\(version)"
         case .pro25_preview(let version):
@@ -61,13 +64,12 @@ extension GeminiModel: RawRepresentable {
 
     public init?(rawValue: String) {
         switch rawValue {
+        case "gemini-3.1-pro-preview": self = .pro31
+        case "gemini-3-pro-preview": self = .pro3
         case "gemini-3-flash-preview": self = .flash3
         case "gemini-2.5-pro": self = .pro25
         case "gemini-2.5-flash": self = .flash25
         case "gemini-2.5-flash-lite": self = .flash25Lite
-        case "gemini-2.0-flash": self = .flash20
-        case "gemini-1.5-pro": self = .pro15
-        case "gemini-1.5-flash": self = .flash15
         default: self = .custom(rawValue)
         }
     }
@@ -77,37 +79,37 @@ extension GeminiModel: RawRepresentable {
 
 extension GeminiModel {
     public enum Preset: String, CaseIterable, Identifiable, Sendable {
+        case pro31 = "pro31"
         case flash3 = "flash3"
         case pro25 = "pro25"
         case flash25 = "flash25"
-        case flash25Lite = "flash25Lite"
 
         public var id: String { rawValue }
 
         public var model: GeminiModel {
             switch self {
+            case .pro31: return .pro31
             case .flash3: return .flash3
             case .pro25: return .pro25
             case .flash25: return .flash25
-            case .flash25Lite: return .flash25Lite
             }
         }
 
         public var displayName: String {
             switch self {
+            case .pro31: return "Gemini 3.1 Pro"
             case .flash3: return "Gemini 3 Flash"
             case .pro25: return "Gemini 2.5 Pro"
             case .flash25: return "Gemini 2.5 Flash"
-            case .flash25Lite: return "Gemini 2.5 Flash-Lite"
             }
         }
 
         public var shortName: String {
             switch self {
+            case .pro31: return "3.1 Pro"
             case .flash3: return "3 Flash"
             case .pro25: return "2.5 Pro"
             case .flash25: return "2.5 Flash"
-            case .flash25Lite: return "2.5 Flash-Lite"
             }
         }
     }

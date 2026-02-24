@@ -19,7 +19,7 @@ import Foundation
 /// ```swift
 /// let result: UserInfo = try await client.generate(
 ///     input: "...",
-///     model: .sonnet4_5("20250929")  // 特定バージョンを指定
+///     model: .opus4_6("20260210")  // 特定バージョンを指定
 /// )
 /// ```
 ///
@@ -27,47 +27,50 @@ import Foundation
 /// ```swift
 /// let result: UserInfo = try await client.generate(
 ///     input: "...",
-///     model: .custom("claude-3-opus-20240229")  // 任意のモデルID
+///     model: .custom("claude-opus-4-6-20260210")
 /// )
 /// ```
 public enum ClaudeModel: Sendable, Equatable {
     // MARK: - Aliases (推奨)
 
-    /// Claude Opus 4.5 最新版（最高性能）
+    /// Claude Opus 最新版（最高性能）
     case opus
 
-    /// Claude Sonnet 4.5 最新版（バランス型）
+    /// Claude Sonnet 最新版（バランス型）
     case sonnet
 
-    /// Claude Haiku 4.5 最新版（高速・低コスト）
+    /// Claude Haiku 最新版（高速・低コスト）
     case haiku
 
     // MARK: - Fixed Versions
 
+    /// Claude Opus 4.6 固定バージョン
+    case opus4_6(version: String)
+
+    /// Claude Sonnet 4.6 固定バージョン
+    case sonnet4_6(version: String)
+
     /// Claude Opus 4.5 固定バージョン
-    /// - Parameter version: バージョン文字列（例: "20251101"）
     case opus4_5(version: String)
 
     /// Claude Sonnet 4.5 固定バージョン
-    /// - Parameter version: バージョン文字列（例: "20250929"）
     case sonnet4_5(version: String)
 
     /// Claude Haiku 4.5 固定バージョン
-    /// - Parameter version: バージョン文字列（例: "20250929"）
     case haiku4_5(version: String)
 
     /// Claude Opus 4.1 固定バージョン
-    /// - Parameter version: バージョン文字列（例: "20250918"）
     case opus4_1(version: String)
 
+    /// Claude Opus 4 固定バージョン
+    case opus4(version: String)
+
     /// Claude Sonnet 4 固定バージョン
-    /// - Parameter version: バージョン文字列（例: "20250514"）
     case sonnet4(version: String)
 
     // MARK: - Custom
 
     /// カスタムモデルID
-    /// - Parameter id: 任意のモデルID文字列
     case custom(String)
 
     // MARK: - Model ID
@@ -75,14 +78,16 @@ public enum ClaudeModel: Sendable, Equatable {
     /// モデルID文字列を取得
     public var id: String {
         switch self {
-        // Aliases（常に最新のスナップショットを指す）
         case .opus:
-            return "claude-opus-4-5"
+            return "claude-opus-4-6"
         case .sonnet:
-            return "claude-sonnet-4-5"
+            return "claude-sonnet-4-6"
         case .haiku:
             return "claude-haiku-4-5"
-        // Fixed versions
+        case .opus4_6(let version):
+            return "claude-opus-4-6-\(version)"
+        case .sonnet4_6(let version):
+            return "claude-sonnet-4-6-\(version)"
         case .opus4_5(let version):
             return "claude-opus-4-5-\(version)"
         case .sonnet4_5(let version):
@@ -91,9 +96,10 @@ public enum ClaudeModel: Sendable, Equatable {
             return "claude-haiku-4-5-\(version)"
         case .opus4_1(let version):
             return "claude-opus-4-1-\(version)"
+        case .opus4(let version):
+            return "claude-opus-4-\(version)"
         case .sonnet4(let version):
             return "claude-sonnet-4-\(version)"
-        // Custom
         case .custom(let id):
             return id
         }
@@ -105,9 +111,9 @@ public enum ClaudeModel: Sendable, Equatable {
 extension ClaudeModel {
     /// UI選択用のプリセットモデル
     public enum Preset: String, CaseIterable, Identifiable, Sendable {
-        /// Claude Opus 4.5（最高性能）
+        /// Claude Opus 4.6（最高性能）
         case opus = "opus"
-        /// Claude Sonnet 4.5（バランス型）
+        /// Claude Sonnet 4.6（バランス型）
         case sonnet = "sonnet"
         /// Claude Haiku 4.5（高速・低コスト）
         case haiku = "haiku"
@@ -126,8 +132,8 @@ extension ClaudeModel {
         /// 表示名
         public var displayName: String {
             switch self {
-            case .opus: return "Claude Opus 4.5"
-            case .sonnet: return "Claude Sonnet 4.5"
+            case .opus: return "Claude Opus 4.6"
+            case .sonnet: return "Claude Sonnet 4.6"
             case .haiku: return "Claude Haiku 4.5"
             }
         }

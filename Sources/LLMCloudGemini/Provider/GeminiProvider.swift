@@ -264,7 +264,8 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
         if let usageMetadata = geminiResponse.usageMetadata {
             usage = TokenUsage(
                 inputTokens: usageMetadata.promptTokenCount ?? 0,
-                outputTokens: usageMetadata.candidatesTokenCount ?? 0
+                outputTokens: usageMetadata.candidatesTokenCount ?? 0,
+                reasoningTokens: usageMetadata.thoughtsTokenCount
             )
         } else {
             usage = TokenUsage(inputTokens: 0, outputTokens: 0)
@@ -512,6 +513,7 @@ private struct GeminiPart: Codable {
     let functionResponse: GeminiFunctionResponse?
     let inlineData: GeminiInlineData?
     let fileData: GeminiFileData?
+    let thoughtSignature: String?
 
     init(text: String) {
         self.text = text
@@ -519,6 +521,7 @@ private struct GeminiPart: Codable {
         self.functionResponse = nil
         self.inlineData = nil
         self.fileData = nil
+        self.thoughtSignature = nil
     }
 
     init(functionCall: GeminiFunctionCall) {
@@ -527,6 +530,16 @@ private struct GeminiPart: Codable {
         self.functionResponse = nil
         self.inlineData = nil
         self.fileData = nil
+        self.thoughtSignature = nil
+    }
+
+    init(functionCall: GeminiFunctionCall, thoughtSignature: String?) {
+        self.text = nil
+        self.functionCall = functionCall
+        self.functionResponse = nil
+        self.inlineData = nil
+        self.fileData = nil
+        self.thoughtSignature = thoughtSignature
     }
 
     init(functionResponse: GeminiFunctionResponse) {
@@ -535,6 +548,7 @@ private struct GeminiPart: Codable {
         self.functionResponse = functionResponse
         self.inlineData = nil
         self.fileData = nil
+        self.thoughtSignature = nil
     }
 
     init(inlineData: GeminiInlineData) {
@@ -543,6 +557,7 @@ private struct GeminiPart: Codable {
         self.functionResponse = nil
         self.inlineData = inlineData
         self.fileData = nil
+        self.thoughtSignature = nil
     }
 
     init(fileData: GeminiFileData) {
@@ -551,6 +566,7 @@ private struct GeminiPart: Codable {
         self.functionResponse = nil
         self.inlineData = nil
         self.fileData = fileData
+        self.thoughtSignature = nil
     }
 }
 
@@ -710,6 +726,7 @@ private struct GeminiUsageMetadata: Decodable {
     let promptTokenCount: Int?
     let candidatesTokenCount: Int?
     let totalTokenCount: Int?
+    let thoughtsTokenCount: Int?
 }
 
 /// Gemini エラーレスポンス
