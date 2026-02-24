@@ -117,6 +117,8 @@ extension GeminiClient: ChatCapableClient {
                 throw LLMError.mediaNotSupported(mediaType: "audio", provider: "Gemini Chat API")
             case .video:
                 throw LLMError.mediaNotSupported(mediaType: "video", provider: "Gemini Chat API")
+            case .thinking:
+                break // Gemini では thinking は無視
             }
         }
 

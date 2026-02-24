@@ -347,6 +347,9 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
                 if let geminiPart = convertMediaToGeminiPart(source: videoContent.source, mimeType: videoContent.mediaType) {
                     parts.append(geminiPart)
                 }
+
+            case .thinking:
+                break // Gemini では thinking は無視
             }
         }
 

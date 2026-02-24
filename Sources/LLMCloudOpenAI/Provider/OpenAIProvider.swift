@@ -273,6 +273,9 @@ internal struct OpenAIProvider: LLMProvider, RetryableProviderProtocol {
                 case .toolUse, .toolResult:
                     // ツール関連は別処理
                     break
+
+                case .thinking:
+                    break // OpenAI では thinking は無視
                 }
             }
 

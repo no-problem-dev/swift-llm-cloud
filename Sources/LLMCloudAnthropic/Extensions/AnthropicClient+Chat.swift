@@ -136,6 +136,8 @@ extension AnthropicClient: ChatCapableClient {
                 throw LLMError.mediaNotSupported(mediaType: "audio", provider: "Anthropic Chat API")
             case .video:
                 throw LLMError.mediaNotSupported(mediaType: "video", provider: "Anthropic Chat API")
+            case .thinking:
+                break // Chat API では thinking は無視
             }
         }
 

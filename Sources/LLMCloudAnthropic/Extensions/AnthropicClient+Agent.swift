@@ -138,6 +138,8 @@ extension AnthropicClient: AgentCapableClient {
                 throw LLMError.mediaNotSupported(mediaType: "audio", provider: "Anthropic Agent API")
             case .video:
                 throw LLMError.mediaNotSupported(mediaType: "video", provider: "Anthropic Agent API")
+            case .thinking(let text, let signature):
+                contentBlocks.append(.thinking(text: text, signature: signature))
             }
         }
 
@@ -208,6 +210,11 @@ extension AnthropicClient: AgentCapableClient {
                     return .toolUse(id: id, name: name, input: inputData)
                 }
                 return nil
+            case "thinking":
+                if let text = block.text {
+                    return .thinking(text: text, signature: block.signature)
+                }
+                return nil
             default:
                 return nil
             }
@@ -226,6 +233,450 @@ extension AnthropicClient: AgentCapableClient {
             ),
             stopReason: stopReason
         )
+    }
+    // MARK: - Streaming Agent Step
+
+    /// エージェントステップをストリーミング実行
+    ///
+    /// thinking が有効な場合、SSE ストリーミングで thinking_delta/text_delta をリアルタイムに返します。
+    /// thinking が無効な場合は既存の `executeAgentStep()` にフォールバックします。
+    public func streamAgentStep(
+        messages: [LLMMessage],
+        model: ClaudeModel,
+        systemPrompt: Prompt?,
+        tools: ToolSet,
+        toolChoice: ToolChoice?,
+        responseSchema: JSONSchema?,
+        thinkingMode: ThinkingMode
+    ) -> AsyncThrowingStream<StreamingAgentEvent, Error> {
+        // thinking 無効時はデフォルト実装（非ストリーミング）にフォールバック
+        guard thinkingMode == .adaptive else {
+            return AsyncThrowingStream { continuation in
+                Task {
+                    do {
+                        let response = try await executeAgentStep(
+                            messages: messages,
+                            model: model,
+                            systemPrompt: systemPrompt,
+                            tools: tools,
+                            toolChoice: toolChoice,
+                            responseSchema: responseSchema
+                        )
+                        continuation.yield(.completed(response))
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+        }
+
+        return AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    try await self.executeStreamingAgentStep(
+                        messages: messages,
+                        model: model,
+                        systemPrompt: systemPrompt,
+                        tools: tools,
+                        toolChoice: toolChoice,
+                        responseSchema: responseSchema,
+                        continuation: continuation
+                    )
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// ストリーミングリクエストを実行
+    private func executeStreamingAgentStep(
+        messages: [LLMMessage],
+        model: ClaudeModel,
+        systemPrompt: Prompt?,
+        tools: ToolSet,
+        toolChoice: ToolChoice?,
+        responseSchema: JSONSchema?,
+        continuation: AsyncThrowingStream<StreamingAgentEvent, Error>.Continuation
+    ) async throws {
+        var urlRequest = URLRequest(url: endpoint)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        urlRequest.setValue(Self.apiVersion, forHTTPHeaderField: "anthropic-version")
+
+        // 構造化出力ベータヘッダー
+        if responseSchema != nil {
+            urlRequest.setValue(Self.structuredOutputsBeta, forHTTPHeaderField: "anthropic-beta")
+        }
+
+        // ストリーミング + thinking 付きリクエストボディ
+        let body = try buildStreamingAgentRequestBody(
+            model: model,
+            messages: messages,
+            systemPrompt: systemPrompt,
+            tools: tools,
+            toolChoice: toolChoice,
+            responseSchema: responseSchema
+        )
+        urlRequest.httpBody = try JSONEncoder().encode(body)
+
+        // URLSession でストリーミング
+        let (bytes, urlResponse) = try await session.bytes(for: urlRequest)
+
+        guard let httpResponse = urlResponse as? HTTPURLResponse else {
+            throw LLMError.emptyResponse
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            // エラーレスポンスを収集
+            var errorData = Data()
+            for try await byte in bytes {
+                errorData.append(byte)
+            }
+            let error = try parseAgentError(data: errorData, statusCode: httpResponse.statusCode)
+            throw error
+        }
+
+        // SSE パースとデルタ配信
+        var lineBuffer = DataLineBuffer()
+        var sseParser = SSELineParser()
+        var accumulator = AnthropicStreamAccumulator()
+
+        for try await byte in bytes {
+            let lines = lineBuffer.append(Data([byte]))
+            for line in lines {
+                if let event = sseParser.parseLine(line) {
+                    let actions = accumulator.processEvent(event)
+                    for action in actions {
+                        switch action {
+                        case .yieldDelta(let delta):
+                            continuation.yield(.delta(delta))
+                        case .yieldCompleted(let response):
+                            continuation.yield(.completed(response))
+                        case .error(let error):
+                            continuation.finish(throwing: error)
+                            return
+                        }
+                    }
+                }
+            }
+        }
+
+        // ストリーム終了後にまだ完了イベントが来ていない場合
+        if let response = accumulator.buildFinalResponse() {
+            continuation.yield(.completed(response))
+        }
+
+        continuation.finish()
+    }
+
+    /// ストリーミング用リクエストボディを構築
+    private func buildStreamingAgentRequestBody(
+        model: ClaudeModel,
+        messages: [LLMMessage],
+        systemPrompt: Prompt?,
+        tools: ToolSet,
+        toolChoice: ToolChoice?,
+        responseSchema: JSONSchema?
+    ) throws -> AnthropicStreamingAgentRequestBody {
+        let anthropicMessages = try messages.map { try convertToAnthropicMessage($0) }
+
+        let anthropicTools: [[String: Any]]? = tools.isEmpty ? nil : tools.toAnthropicFormat()
+        let anthropicToolChoice: AnthropicAgentToolChoice? = tools.isEmpty ? nil : (toolChoice.map { mapToolChoice($0) } ?? .auto)
+
+        var outputFormat: AnthropicAgentOutputFormat?
+        if let schema = responseSchema {
+            outputFormat = AnthropicAgentOutputFormat(
+                type: "json_schema",
+                schema: schema
+            )
+        }
+
+        return AnthropicStreamingAgentRequestBody(
+            model: model.id,
+            messages: anthropicMessages,
+            system: systemPrompt?.render(),
+            maxTokens: Self.defaultMaxTokens,
+            tools: anthropicTools,
+            toolChoice: anthropicToolChoice,
+            outputConfig: outputFormat.map { AnthropicAgentOutputConfig(format: $0) },
+            stream: true,
+            thinking: AnthropicThinkingConfig(type: "enabled", budgetTokens: Self.defaultMaxTokens)
+        )
+    }
+}
+
+// MARK: - AnthropicStreamAccumulator
+
+/// SSE イベントからストリーミングデルタと完全レスポンスを生成するアキュムレータ
+private struct AnthropicStreamAccumulator {
+    enum Action {
+        case yieldDelta(StreamDelta)
+        case yieldCompleted(LLMResponse)
+        case error(LLMError)
+    }
+
+    private var thinkingTexts: [(text: String, signature: String?)] = []
+    private var currentThinkingText = ""
+    private var currentThinkingSignature: String?
+    private var textContent = ""
+    private var toolUseBlocks: [(id: String, name: String, inputJSON: String)] = []
+    private var currentToolId: String?
+    private var currentToolName: String?
+    private var currentToolInput = ""
+    private var model = ""
+    private var inputTokens = 0
+    private var outputTokens = 0
+    private var cacheCreationTokens: Int?
+    private var cacheReadTokens: Int?
+    private var stopReason: String?
+    private var completed = false
+
+    mutating func processEvent(_ event: SSEParsedEvent) -> [Action] {
+        guard let eventType = event.event else { return [] }
+
+        switch eventType {
+        case "message_start":
+            return processMessageStart(event.data)
+        case "content_block_start":
+            return processContentBlockStart(event.data)
+        case "content_block_delta":
+            return processContentBlockDelta(event.data)
+        case "content_block_stop":
+            return processContentBlockStop()
+        case "message_delta":
+            return processMessageDelta(event.data)
+        case "message_stop":
+            return processMessageStop()
+        case "error":
+            return processError(event.data)
+        default:
+            return []
+        }
+    }
+
+    /// ストリーム終了後にまだレスポンスが返されていない場合に最終レスポンスを構築
+    func buildFinalResponse() -> LLMResponse? {
+        guard !completed else { return nil }
+        return buildResponse()
+    }
+
+    // MARK: - Private Event Handlers
+
+    private mutating func processMessageStart(_ data: String) -> [Action] {
+        guard let jsonData = data.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let message = json["message"] as? [String: Any] else { return [] }
+
+        model = message["model"] as? String ?? ""
+        if let usage = message["usage"] as? [String: Any] {
+            inputTokens = usage["input_tokens"] as? Int ?? 0
+            outputTokens = usage["output_tokens"] as? Int ?? 0
+            cacheCreationTokens = usage["cache_creation_input_tokens"] as? Int
+            cacheReadTokens = usage["cache_read_input_tokens"] as? Int
+        }
+        return []
+    }
+
+    private mutating func processContentBlockStart(_ data: String) -> [Action] {
+        guard let jsonData = data.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let contentBlock = json["content_block"] as? [String: Any],
+              let type = contentBlock["type"] as? String else { return [] }
+
+        switch type {
+        case "thinking":
+            currentThinkingText = ""
+            currentThinkingSignature = nil
+        case "text":
+            break
+        case "tool_use":
+            currentToolId = contentBlock["id"] as? String
+            currentToolName = contentBlock["name"] as? String
+            currentToolInput = ""
+        default:
+            break
+        }
+        return []
+    }
+
+    private mutating func processContentBlockDelta(_ data: String) -> [Action] {
+        guard let jsonData = data.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let delta = json["delta"] as? [String: Any],
+              let type = delta["type"] as? String else { return [] }
+
+        switch type {
+        case "thinking_delta":
+            if let thinking = delta["thinking"] as? String {
+                currentThinkingText += thinking
+                return [.yieldDelta(.thinkingDelta(thinking))]
+            }
+        case "signature_delta":
+            if let signature = delta["signature"] as? String {
+                currentThinkingSignature = (currentThinkingSignature ?? "") + signature
+            }
+        case "text_delta":
+            if let text = delta["text"] as? String {
+                textContent += text
+                return [.yieldDelta(.textDelta(text))]
+            }
+        case "input_json_delta":
+            if let partialJson = delta["partial_json"] as? String {
+                currentToolInput += partialJson
+            }
+        default:
+            break
+        }
+        return []
+    }
+
+    private mutating func processContentBlockStop() -> [Action] {
+        // thinking ブロック完了
+        if !currentThinkingText.isEmpty {
+            thinkingTexts.append((text: currentThinkingText, signature: currentThinkingSignature))
+            currentThinkingText = ""
+            currentThinkingSignature = nil
+        }
+
+        // tool_use ブロック完了
+        if let id = currentToolId, let name = currentToolName {
+            toolUseBlocks.append((id: id, name: name, inputJSON: currentToolInput))
+            currentToolId = nil
+            currentToolName = nil
+            currentToolInput = ""
+        }
+
+        return []
+    }
+
+    private mutating func processMessageDelta(_ data: String) -> [Action] {
+        guard let jsonData = data.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let delta = json["delta"] as? [String: Any] else { return [] }
+
+        stopReason = delta["stop_reason"] as? String
+
+        if let usage = json["usage"] as? [String: Any] {
+            outputTokens = usage["output_tokens"] as? Int ?? outputTokens
+        }
+        return []
+    }
+
+    private mutating func processMessageStop() -> [Action] {
+        completed = true
+        if let response = buildResponse() {
+            return [.yieldCompleted(response)]
+        }
+        return []
+    }
+
+    private mutating func processError(_ data: String) -> [Action] {
+        guard let jsonData = data.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let error = json["error"] as? [String: Any] else {
+            return [.error(.serverError(0, "Unknown streaming error"))]
+        }
+
+        let message = error["message"] as? String ?? "Unknown error"
+        return [.error(.serverError(0, message))]
+    }
+
+    // MARK: - Response Building
+
+    private func buildResponse() -> LLMResponse? {
+        var contentBlocks: [LLMResponse.ContentBlock] = []
+
+        // thinking ブロック
+        for thinking in thinkingTexts {
+            contentBlocks.append(.thinking(text: thinking.text, signature: thinking.signature))
+        }
+
+        // テキストブロック
+        if !textContent.isEmpty {
+            contentBlocks.append(.text(textContent))
+        }
+
+        // tool_use ブロック
+        for tool in toolUseBlocks {
+            let inputData = tool.inputJSON.data(using: .utf8) ?? Data()
+            contentBlocks.append(.toolUse(id: tool.id, name: tool.name, input: inputData))
+        }
+
+        guard !contentBlocks.isEmpty else { return nil }
+
+        let parsedStopReason = stopReason.flatMap { LLMResponse.StopReason(rawValue: $0) }
+
+        return LLMResponse(
+            content: contentBlocks,
+            model: model,
+            usage: TokenUsage(
+                inputTokens: inputTokens,
+                outputTokens: outputTokens,
+                cacheCreationTokens: cacheCreationTokens,
+                cacheReadTokens: cacheReadTokens
+            ),
+            stopReason: parsedStopReason
+        )
+    }
+}
+
+// MARK: - Streaming Request Body
+
+/// ストリーミング用 Anthropic リクエストボディ
+private struct AnthropicStreamingAgentRequestBody: Encodable {
+    let model: String
+    let messages: [AnthropicAgentMessage]
+    let system: String?
+    let maxTokens: Int
+    let tools: [[String: Any]]?
+    let toolChoice: AnthropicAgentToolChoice?
+    let outputConfig: AnthropicAgentOutputConfig?
+    let stream: Bool
+    let thinking: AnthropicThinkingConfig
+
+    enum CodingKeys: String, CodingKey {
+        case model, messages, system, tools, stream, thinking
+        case maxTokens = "max_tokens"
+        case toolChoice = "tool_choice"
+        case outputConfig = "output_config"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(model, forKey: .model)
+        try container.encode(messages, forKey: .messages)
+        if let system = system {
+            try container.encode(system, forKey: .system)
+        }
+        try container.encode(maxTokens, forKey: .maxTokens)
+        // temperature は thinking 有効時には指定不可（API 制約）
+
+        if let tools = tools {
+            let toolDefs = tools.map { AnthropicAgentToolDef(dict: $0) }
+            try container.encode(toolDefs, forKey: .tools)
+        }
+        if let toolChoice = toolChoice {
+            try container.encode(toolChoice, forKey: .toolChoice)
+        }
+        if let outputConfig = outputConfig {
+            try container.encode(outputConfig, forKey: .outputConfig)
+        }
+        try container.encode(stream, forKey: .stream)
+        try container.encode(thinking, forKey: .thinking)
+    }
+}
+
+/// Anthropic thinking 設定
+private struct AnthropicThinkingConfig: Encodable {
+    let type: String
+    let budgetTokens: Int
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case budgetTokens = "budget_tokens"
     }
 }
 
@@ -347,6 +798,7 @@ private enum AnthropicAgentMessageContent: Encodable {
     case text(String)
     case toolUse(id: String, name: String, input: Data)
     case toolResult(toolUseId: String, content: String, isError: Bool)
+    case thinking(text: String, signature: String?)
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
@@ -381,6 +833,16 @@ private enum AnthropicAgentMessageContent: Encodable {
             ]
             if isError {
                 dict["is_error"] = .bool(true)
+            }
+            try container.encode(dict)
+
+        case .thinking(let text, let signature):
+            var dict: [String: AgentJSONValue] = [
+                "type": .string("thinking"),
+                "thinking": .string(text)
+            ]
+            if let signature {
+                dict["signature"] = .string(signature)
             }
             try container.encode(dict)
         }
@@ -457,9 +919,10 @@ private struct AnthropicAgentContentBlock: Decodable {
     let id: String?
     let name: String?
     let input: [String: Any]?
+    let signature: String?
 
     enum CodingKeys: String, CodingKey {
-        case type, text, id, name, input
+        case type, text, id, name, input, signature
     }
 
     init(from decoder: Decoder) throws {
@@ -468,6 +931,7 @@ private struct AnthropicAgentContentBlock: Decodable {
         text = try container.decodeIfPresent(String.self, forKey: .text)
         id = try container.decodeIfPresent(String.self, forKey: .id)
         name = try container.decodeIfPresent(String.self, forKey: .name)
+        signature = try container.decodeIfPresent(String.self, forKey: .signature)
         if let inputData = try? container.decodeIfPresent(AgentAnyCodable.self, forKey: .input) {
             input = inputData.value as? [String: Any]
         } else {

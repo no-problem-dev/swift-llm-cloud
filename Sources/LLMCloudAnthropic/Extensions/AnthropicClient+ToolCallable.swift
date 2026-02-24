@@ -111,6 +111,8 @@ extension AnthropicClient: ToolCallableClient {
                 throw LLMError.mediaNotSupported(mediaType: "audio", provider: "Anthropic Tool API")
             case .video:
                 throw LLMError.mediaNotSupported(mediaType: "video", provider: "Anthropic Tool API")
+            case .thinking:
+                break // Tool API では thinking は無視
             }
         }
 

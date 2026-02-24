@@ -194,6 +194,9 @@ internal struct AnthropicProvider: LLMProvider, RetryableProviderProtocol {
             case .video:
                 // Anthropic does not support video input
                 throw LLMError.mediaNotSupported(mediaType: "video", provider: "Anthropic")
+
+            case .thinking:
+                break // Provider レベルでは thinking は無視
             }
         }
 

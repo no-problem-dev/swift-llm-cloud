@@ -154,6 +154,8 @@ extension GeminiClient: ToolCallableClient {
                 throw LLMError.mediaNotSupported(mediaType: "audio", provider: "Gemini Tool API")
             case .video:
                 throw LLMError.mediaNotSupported(mediaType: "video", provider: "Gemini Tool API")
+            case .thinking:
+                break // Gemini では thinking は無視
             }
         }
 

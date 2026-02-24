@@ -168,6 +168,8 @@ extension GeminiClient: AgentCapableClient {
                 throw LLMError.mediaNotSupported(mediaType: "audio", provider: "Gemini Agent API")
             case .video:
                 throw LLMError.mediaNotSupported(mediaType: "video", provider: "Gemini Agent API")
+            case .thinking:
+                break // Gemini では thinking は無視
             }
         }
 
