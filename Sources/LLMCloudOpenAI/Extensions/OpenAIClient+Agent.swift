@@ -22,7 +22,8 @@ extension OpenAIClient: AgentCapableClient {
         systemPrompt: Prompt?,
         tools: ToolSet,
         toolChoice: ToolChoice?,
-        responseSchema: JSONSchema?
+        responseSchema: JSONSchema?,
+        maxTokens: Int?
     ) async throws -> LLMResponse {
         // HTTPリクエストを構築
         var urlRequest = URLRequest(url: endpoint)
@@ -41,7 +42,8 @@ extension OpenAIClient: AgentCapableClient {
             systemPrompt: systemPrompt,
             tools: tools,
             toolChoice: toolChoice,
-            responseSchema: responseSchema
+            responseSchema: responseSchema,
+            maxTokens: maxTokens
         )
         urlRequest.httpBody = try JSONEncoder().encode(body)
 
@@ -77,7 +79,8 @@ extension OpenAIClient: AgentCapableClient {
         systemPrompt: Prompt?,
         tools: ToolSet,
         toolChoice: ToolChoice?,
-        responseSchema: JSONSchema?
+        responseSchema: JSONSchema?,
+        maxTokens: Int?
     ) -> OpenAIAgentRequestBody {
         var openAIMessages: [OpenAIAgentMessage] = []
 
@@ -117,7 +120,7 @@ extension OpenAIClient: AgentCapableClient {
         return OpenAIAgentRequestBody(
             model: model.id,
             messages: openAIMessages,
-            maxCompletionTokens: Self.defaultMaxTokens,
+            maxCompletionTokens: maxTokens ?? Self.defaultMaxTokens,
             temperature: nil,
             tools: openAITools,
             toolChoice: openAIToolChoice,

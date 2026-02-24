@@ -22,7 +22,8 @@ extension AnthropicClient: AgentCapableClient {
         systemPrompt: Prompt?,
         tools: ToolSet,
         toolChoice: ToolChoice?,
-        responseSchema: JSONSchema?
+        responseSchema: JSONSchema?,
+        maxTokens: Int?
     ) async throws -> LLMResponse {
         // HTTPリクエストを構築
         var urlRequest = URLRequest(url: endpoint)
@@ -43,7 +44,8 @@ extension AnthropicClient: AgentCapableClient {
             systemPrompt: systemPrompt,
             tools: tools,
             toolChoice: toolChoice,
-            responseSchema: responseSchema
+            responseSchema: responseSchema,
+            maxTokens: maxTokens
         )
         urlRequest.httpBody = try JSONEncoder().encode(body)
 
@@ -73,8 +75,17 @@ extension AnthropicClient: AgentCapableClient {
     /// 構造化出力のベータヘッダー
     private static let structuredOutputsBeta = "structured-outputs-2025-11-13"
 
-    /// デフォルトの最大トークン数
+    /// デフォルトの最大トークン数（non-thinking 用）
     private static let defaultMaxTokens = 4096
+
+    /// Extended Thinking 有効時のデフォルト最大トークン数
+    private static let defaultMaxTokensWithThinking = 16384
+
+    /// Extended Thinking 有効時のデフォルト思考バジェットトークン数
+    ///
+    /// `defaultMaxTokensWithThinking` (16384) のうち 10240 を思考に割り当て、
+    /// 残り 6144 を出力用に確保します。
+    private static let defaultThinkingBudgetTokens = 10240
 
     // MARK: - Private Helpers
 
@@ -87,7 +98,8 @@ extension AnthropicClient: AgentCapableClient {
         systemPrompt: Prompt?,
         tools: ToolSet,
         toolChoice: ToolChoice?,
-        responseSchema: JSONSchema?
+        responseSchema: JSONSchema?,
+        maxTokens: Int?
     ) throws -> AnthropicAgentRequestBody {
         let anthropicMessages = try messages.map { try convertToAnthropicMessage($0) }
 
@@ -108,7 +120,7 @@ extension AnthropicClient: AgentCapableClient {
             model: model.id,
             messages: anthropicMessages,
             system: systemPrompt?.render(),
-            maxTokens: Self.defaultMaxTokens,
+            maxTokens: maxTokens ?? Self.defaultMaxTokens,
             temperature: nil,
             tools: anthropicTools,
             toolChoice: anthropicToolChoice,
@@ -247,11 +259,20 @@ extension AnthropicClient: AgentCapableClient {
         tools: ToolSet,
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
-        thinkingMode: ThinkingMode
+        thinkingMode: ThinkingMode,
+        maxTokens: Int?
     ) -> AsyncThrowingStream<StreamingAgentEvent, Error> {
+        // 非対応モデル（Haiku 等）は自動で thinking 無効にフォールバック
+        let effectiveThinkingMode: ThinkingMode
+        if thinkingMode == .adaptive && !model.supportsExtendedThinking {
+            effectiveThinkingMode = .disabled
+        } else {
+            effectiveThinkingMode = thinkingMode
+        }
+
         // thinking 無効時はデフォルト実装（非ストリーミング）にフォールバック
-        guard thinkingMode == .adaptive else {
-            return AsyncThrowingStream { continuation in
+        guard effectiveThinkingMode == .adaptive else {
+            return makeCancellableStream { continuation in
                 Task {
                     do {
                         let response = try await executeAgentStep(
@@ -260,7 +281,8 @@ extension AnthropicClient: AgentCapableClient {
                             systemPrompt: systemPrompt,
                             tools: tools,
                             toolChoice: toolChoice,
-                            responseSchema: responseSchema
+                            responseSchema: responseSchema,
+                            maxTokens: maxTokens
                         )
                         continuation.yield(.completed(response))
                         continuation.finish()
@@ -271,7 +293,7 @@ extension AnthropicClient: AgentCapableClient {
             }
         }
 
-        return AsyncThrowingStream { continuation in
+        return makeCancellableStream { continuation in
             Task {
                 do {
                     try await self.executeStreamingAgentStep(
@@ -281,6 +303,7 @@ extension AnthropicClient: AgentCapableClient {
                         tools: tools,
                         toolChoice: toolChoice,
                         responseSchema: responseSchema,
+                        maxTokens: maxTokens,
                         continuation: continuation
                     )
                 } catch {
@@ -298,6 +321,7 @@ extension AnthropicClient: AgentCapableClient {
         tools: ToolSet,
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
+        maxTokens: Int?,
         continuation: AsyncThrowingStream<StreamingAgentEvent, Error>.Continuation
     ) async throws {
         var urlRequest = URLRequest(url: endpoint)
@@ -318,7 +342,8 @@ extension AnthropicClient: AgentCapableClient {
             systemPrompt: systemPrompt,
             tools: tools,
             toolChoice: toolChoice,
-            responseSchema: responseSchema
+            responseSchema: responseSchema,
+            maxTokens: maxTokens
         )
         urlRequest.httpBody = try JSONEncoder().encode(body)
 
@@ -379,7 +404,8 @@ extension AnthropicClient: AgentCapableClient {
         systemPrompt: Prompt?,
         tools: ToolSet,
         toolChoice: ToolChoice?,
-        responseSchema: JSONSchema?
+        responseSchema: JSONSchema?,
+        maxTokens: Int?
     ) throws -> AnthropicStreamingAgentRequestBody {
         let anthropicMessages = try messages.map { try convertToAnthropicMessage($0) }
 
@@ -394,16 +420,19 @@ extension AnthropicClient: AgentCapableClient {
             )
         }
 
+        let effectiveMaxTokens = maxTokens ?? Self.defaultMaxTokensWithThinking
+        let effectiveBudget = min(Self.defaultThinkingBudgetTokens, effectiveMaxTokens - 1)
+
         return AnthropicStreamingAgentRequestBody(
             model: model.id,
             messages: anthropicMessages,
             system: systemPrompt?.render(),
-            maxTokens: Self.defaultMaxTokens,
+            maxTokens: effectiveMaxTokens,
             tools: anthropicTools,
             toolChoice: anthropicToolChoice,
             outputConfig: outputFormat.map { AnthropicAgentOutputConfig(format: $0) },
             stream: true,
-            thinking: AnthropicThinkingConfig(type: "enabled", budgetTokens: Self.defaultMaxTokens)
+            thinking: AnthropicThinkingConfig(type: "enabled", budgetTokens: effectiveBudget)
         )
     }
 }

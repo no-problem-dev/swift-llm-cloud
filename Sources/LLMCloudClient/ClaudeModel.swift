@@ -75,6 +75,22 @@ public enum ClaudeModel: Sendable, Equatable {
 
     // MARK: - Model ID
 
+    /// Extended Thinking をサポートするか
+    ///
+    /// Haiku モデルは Extended Thinking に非対応です。
+    /// カスタムモデルは安全側で `true`（API が弾けば分かる）。
+    public var supportsExtendedThinking: Bool {
+        switch self {
+        case .haiku, .haiku4_5:
+            return false
+        case .opus, .sonnet, .opus4_6, .sonnet4_6, .opus4_5, .sonnet4_5,
+             .opus4_1, .opus4, .sonnet4:
+            return true
+        case .custom:
+            return true
+        }
+    }
+
     /// モデルID文字列を取得
     public var id: String {
         switch self {

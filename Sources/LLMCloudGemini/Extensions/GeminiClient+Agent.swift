@@ -22,7 +22,8 @@ extension GeminiClient: AgentCapableClient {
         systemPrompt: Prompt?,
         tools: ToolSet,
         toolChoice: ToolChoice?,
-        responseSchema: JSONSchema?
+        responseSchema: JSONSchema?,
+        maxTokens: Int?
     ) async throws -> LLMResponse {
         // エンドポイントを構築
         let endpoint = URL(string: "\(baseURL)/\(model.id):generateContent?key=\(apiKey)")!
@@ -39,7 +40,8 @@ extension GeminiClient: AgentCapableClient {
             systemPrompt: systemPrompt,
             tools: tools,
             toolChoice: toolChoice,
-            responseSchema: responseSchema
+            responseSchema: responseSchema,
+            maxTokens: maxTokens
         )
         urlRequest.httpBody = try JSONEncoder().encode(body)
 
@@ -77,7 +79,8 @@ extension GeminiClient: AgentCapableClient {
         systemPrompt: Prompt?,
         tools: ToolSet,
         toolChoice: ToolChoice?,
-        responseSchema: JSONSchema?
+        responseSchema: JSONSchema?,
+        maxTokens: Int?
     ) throws -> GeminiAgentRequestBody {
         // コンテンツを構築
         var contents: [GeminiAgentContent] = []
@@ -97,7 +100,7 @@ extension GeminiClient: AgentCapableClient {
 
         // 生成設定
         var generationConfig = GeminiAgentGenerationConfig(
-            maxOutputTokens: Self.defaultMaxTokens,
+            maxOutputTokens: maxTokens ?? Self.defaultMaxTokens,
             temperature: nil
         )
 
