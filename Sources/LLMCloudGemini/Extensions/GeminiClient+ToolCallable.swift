@@ -363,7 +363,7 @@ private struct GeminiToolFunctionCallingConfig: Encodable {
 
 /// Gemini コンテンツ
 private struct GeminiToolContent: Codable {
-    let role: String
+    let role: String?
     let parts: [GeminiToolPart]
 }
 
@@ -566,8 +566,8 @@ private struct GeminiToolPromptFeedback: Decodable {
 
 /// Gemini 安全性評価
 private struct GeminiToolSafetyRating: Decodable {
-    let category: String
-    let probability: String
+    let category: String?
+    let probability: String?
 }
 
 /// Gemini 使用量メタデータ

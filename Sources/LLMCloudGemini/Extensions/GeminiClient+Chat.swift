@@ -162,7 +162,7 @@ extension GeminiClient: ChatCapableClient {
         }
 
         // 最初の候補からコンテンツを取得
-        guard let candidate = geminiResponse.candidates.first,
+        guard let candidate = geminiResponse.candidates?.first,
               let part = candidate.content.parts.first,
               let rawText = part.text else {
             throw LLMError.emptyResponse
@@ -195,8 +195,8 @@ extension GeminiClient: ChatCapableClient {
         // トークン使用量を取得
         let usage = geminiResponse.usageMetadata.map {
             TokenUsage(
-                inputTokens: $0.promptTokenCount,
-                outputTokens: $0.candidatesTokenCount
+                inputTokens: $0.promptTokenCount ?? 0,
+                outputTokens: $0.candidatesTokenCount ?? 0
             )
         } ?? TokenUsage(inputTokens: 0, outputTokens: 0)
 
@@ -339,7 +339,7 @@ private enum JSONValue: Codable {
 
 /// Gemini チャットレスポンスボディ
 private struct GeminiChatResponseBody: Decodable {
-    let candidates: [GeminiChatCandidate]
+    let candidates: [GeminiChatCandidate]?
     let usageMetadata: GeminiChatUsageMetadata?
 }
 
@@ -352,7 +352,7 @@ private struct GeminiChatCandidate: Decodable {
 /// Gemini レスポンスコンテンツ
 private struct GeminiChatResponseContent: Decodable {
     let parts: [GeminiChatResponsePart]
-    let role: String
+    let role: String?
 }
 
 /// Gemini レスポンスパーツ
@@ -362,9 +362,9 @@ private struct GeminiChatResponsePart: Decodable {
 
 /// Gemini 使用量メタデータ
 private struct GeminiChatUsageMetadata: Decodable {
-    let promptTokenCount: Int
-    let candidatesTokenCount: Int
-    let totalTokenCount: Int
+    let promptTokenCount: Int?
+    let candidatesTokenCount: Int?
+    let totalTokenCount: Int?
 }
 
 /// Gemini エラーレスポンス

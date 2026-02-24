@@ -379,7 +379,7 @@ private struct GeminiAgentGenerationConfig: Encodable {
 
 /// Gemini コンテンツ
 private struct GeminiAgentContent: Codable {
-    let role: String
+    let role: String?
     let parts: [GeminiAgentPart]
 }
 
@@ -576,8 +576,8 @@ private struct GeminiAgentPromptFeedback: Decodable {
 
 /// Gemini 安全性評価
 private struct GeminiAgentSafetyRating: Decodable {
-    let category: String
-    let probability: String
+    let category: String?
+    let probability: String?
 }
 
 /// Gemini 使用量メタデータ
