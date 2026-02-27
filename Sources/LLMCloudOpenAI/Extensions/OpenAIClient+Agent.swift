@@ -19,7 +19,7 @@ extension OpenAIClient: AgentCapableClient {
     public func executeAgentStep(
         messages: [LLMMessage],
         model: GPTModel,
-        systemPrompt: Prompt?,
+        systemPrompt: SystemPrompt?,
         tools: ToolSet,
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
@@ -76,7 +76,7 @@ extension OpenAIClient: AgentCapableClient {
     private func buildAgentRequestBody(
         model: GPTModel,
         messages: [LLMMessage],
-        systemPrompt: Prompt?,
+        systemPrompt: SystemPrompt?,
         tools: ToolSet,
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,

@@ -102,7 +102,7 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
         )
 
         // 構造化出力の設定と制約プロンプトの生成
-        var constraintPrompt: Prompt?
+        var constraintPrompt: SystemPrompt?
 
         if let schema = request.responseSchema {
             // Gemini用にスキーマを適合（制約追跡付き）
@@ -114,8 +114,8 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
             generationConfig.responseMimeType = "application/json"
             generationConfig.responseSchema = adaptationResult.schema
 
-            // 除去された制約を Prompt に変換（Prompt DSL を活用）
-            constraintPrompt = adaptationResult.toConstraintPrompt()
+            // 除去された制約を SystemPrompt に変換（SystemPrompt DSL を活用）
+            constraintPrompt = adaptationResult.toConstraintSystemPrompt()
         }
 
         // システムインストラクションを構築（制約プロンプトを統合）
@@ -145,9 +145,9 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
     ///
     /// - Parameters:
     ///   - base: ベースのシステムプロンプト
-    ///   - constraints: 制約プロンプト（Prompt DSL）
+    ///   - constraints: 制約プロンプト（SystemPrompt DSL）
     /// - Returns: 統合されたシステムプロンプト
-    private func buildEffectiveSystemPrompt(base: String?, constraints: Prompt?) -> String? {
+    private func buildEffectiveSystemPrompt(base: String?, constraints: SystemPrompt?) -> String? {
         switch (base, constraints) {
         case (let base?, let constraints?):
             // 両方ある場合：ベース + 制約プロンプト

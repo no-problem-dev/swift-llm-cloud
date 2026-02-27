@@ -19,7 +19,7 @@ extension GeminiClient: AgentCapableClient {
     public func executeAgentStep(
         messages: [LLMMessage],
         model: GeminiModel,
-        systemPrompt: Prompt?,
+        systemPrompt: SystemPrompt?,
         tools: ToolSet,
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
@@ -76,7 +76,7 @@ extension GeminiClient: AgentCapableClient {
     private func buildAgentRequestBody(
         model: GeminiModel,
         messages: [LLMMessage],
-        systemPrompt: Prompt?,
+        systemPrompt: SystemPrompt?,
         tools: ToolSet,
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,

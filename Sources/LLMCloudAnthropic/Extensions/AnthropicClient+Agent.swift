@@ -19,7 +19,7 @@ extension AnthropicClient: AgentCapableClient {
     public func executeAgentStep(
         messages: [LLMMessage],
         model: ClaudeModel,
-        systemPrompt: Prompt?,
+        systemPrompt: SystemPrompt?,
         tools: ToolSet,
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
@@ -95,7 +95,7 @@ extension AnthropicClient: AgentCapableClient {
     private func buildAgentRequestBody(
         model: ClaudeModel,
         messages: [LLMMessage],
-        systemPrompt: Prompt?,
+        systemPrompt: SystemPrompt?,
         tools: ToolSet,
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
@@ -255,7 +255,7 @@ extension AnthropicClient: AgentCapableClient {
     public func streamAgentStep(
         messages: [LLMMessage],
         model: ClaudeModel,
-        systemPrompt: Prompt?,
+        systemPrompt: SystemPrompt?,
         tools: ToolSet,
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
@@ -317,7 +317,7 @@ extension AnthropicClient: AgentCapableClient {
     private func executeStreamingAgentStep(
         messages: [LLMMessage],
         model: ClaudeModel,
-        systemPrompt: Prompt?,
+        systemPrompt: SystemPrompt?,
         tools: ToolSet,
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
@@ -401,7 +401,7 @@ extension AnthropicClient: AgentCapableClient {
     private func buildStreamingAgentRequestBody(
         model: ClaudeModel,
         messages: [LLMMessage],
-        systemPrompt: Prompt?,
+        systemPrompt: SystemPrompt?,
         tools: ToolSet,
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
