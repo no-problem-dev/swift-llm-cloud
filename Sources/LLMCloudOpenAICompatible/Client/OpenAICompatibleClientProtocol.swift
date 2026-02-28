@@ -127,7 +127,7 @@ extension OpenAICompatibleClientProtocol {
     }
 }
 
-// MARK: - DynamicStructured Default Implementation
+// MARK: - DynamicJSON Default Implementation
 
 extension OpenAICompatibleClientProtocol {
     public func generate(
@@ -137,7 +137,7 @@ extension OpenAICompatibleClientProtocol {
         systemPrompt: String? = nil,
         temperature: Double? = nil,
         maxTokens: Int? = nil
-    ) async throws -> DynamicStructuredResult {
+    ) async throws -> DynamicJSON {
         try await engine.generateDynamic(
             input: input,
             modelId: model.id,
@@ -156,7 +156,7 @@ extension OpenAICompatibleClientProtocol {
         systemPrompt: String? = nil,
         temperature: Double? = nil,
         maxTokens: Int? = nil
-    ) async throws -> DynamicStructuredResult {
+    ) async throws -> DynamicJSON {
         try await engine.generateDynamic(
             messages: messages,
             modelId: model.id,

@@ -2,7 +2,6 @@ import LLMCloudClient
 import LLMClient
 import LLMDynamicStructured
 import Foundation
-import LLMClient
 
 // MARK: - AnthropicClient + DynamicStructured
 
@@ -20,7 +19,7 @@ extension AnthropicClient {
     ///   - temperature: 温度パラメータ（オプション）
     ///   - maxTokens: 最大トークン数（オプション）
     /// - Returns: 構造化された結果
-    /// - Throws: `LLMError` または `DynamicStructuredResultError`
+    /// - Throws: `LLMError` または `DynamicJSONError`
     ///
     /// ## 使用例
     ///
@@ -57,7 +56,7 @@ extension AnthropicClient {
         systemPrompt: String? = nil,
         temperature: Double? = nil,
         maxTokens: Int? = nil
-    ) async throws -> DynamicStructuredResult {
+    ) async throws -> DynamicJSON {
         try await generate(
             messages: [input.toLLMMessage()],
             model: model,
@@ -85,7 +84,7 @@ extension AnthropicClient {
         systemPrompt: String? = nil,
         temperature: Double? = nil,
         maxTokens: Int? = nil
-    ) async throws -> DynamicStructuredResult {
+    ) async throws -> DynamicJSON {
         let schema = output.toJSONSchema()
 
         // スキーマ情報を含むシステムプロンプトを構築
@@ -126,11 +125,11 @@ extension AnthropicClient {
     }
 
     /// レスポンスをデコード
-    private func decodeResponse(_ response: LLMResponse) throws -> DynamicStructuredResult {
+    private func decodeResponse(_ response: LLMResponse) throws -> DynamicJSON {
         guard let text = response.content.first?.text else {
             throw LLMError.emptyResponse
         }
 
-        return try DynamicStructuredResult(from: text)
+        return try DynamicJSON(from: text)
     }
 }

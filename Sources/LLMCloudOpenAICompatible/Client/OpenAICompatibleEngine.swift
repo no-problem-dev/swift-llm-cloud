@@ -320,7 +320,7 @@ package struct OpenAICompatibleEngine: Sendable {
         )
     }
 
-    // MARK: - DynamicStructured
+    // MARK: - DynamicJSON
 
     package func generateDynamic(
         input: LLMInput,
@@ -330,7 +330,7 @@ package struct OpenAICompatibleEngine: Sendable {
         systemPrompt: String?,
         temperature: Double?,
         maxTokens: Int?
-    ) async throws -> DynamicStructuredResult {
+    ) async throws -> DynamicJSON {
         try await generateDynamic(
             messages: [input.toLLMMessage()],
             modelId: modelId,
@@ -350,7 +350,7 @@ package struct OpenAICompatibleEngine: Sendable {
         systemPrompt: String?,
         temperature: Double?,
         maxTokens: Int?
-    ) async throws -> DynamicStructuredResult {
+    ) async throws -> DynamicJSON {
         let schema = output.toJSONSchema()
         let enhancedSystemPrompt = buildSystemPrompt(base: systemPrompt, schema: schema)
 
@@ -369,7 +369,7 @@ package struct OpenAICompatibleEngine: Sendable {
             throw LLMError.emptyResponse
         }
 
-        return try DynamicStructuredResult(from: text)
+        return try DynamicJSON(from: text)
     }
 
     // MARK: - Private Helpers
