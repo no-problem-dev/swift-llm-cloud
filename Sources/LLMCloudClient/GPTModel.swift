@@ -1,4 +1,5 @@
 import Foundation
+import LLMClient
 
 // MARK: - GPT Models
 
@@ -187,6 +188,48 @@ extension GPTModel {
             case .gpt4_1: return "4.1"
             case .o3: return "o3"
             case .o4Mini: return "o4-mini"
+            }
+        }
+
+        /// モデルプロファイル
+        public var profile: ModelProfile {
+            switch self {
+            case .gpt5_2:
+                return ModelProfile(
+                    summary: "最新フラッグシップ。最高品質の推論",
+                    modelFamily: "GPT",
+                    toolCallSupport: .excellent,
+                    japaneseSupport: .excellent,
+                    modalities: [.text, .vision, .code, .audio],
+                    pricing: Pricing(inputPerMTok: 2.50, outputPerMTok: 10)
+                )
+            case .gpt4_1:
+                return ModelProfile(
+                    summary: "コーディング特化。コスト効率が良い",
+                    modelFamily: "GPT",
+                    toolCallSupport: .excellent,
+                    japaneseSupport: .good,
+                    modalities: [.text, .vision, .code],
+                    pricing: Pricing(inputPerMTok: 2, outputPerMTok: 8)
+                )
+            case .o3:
+                return ModelProfile(
+                    summary: "高度な推論特化。複雑な問題解決に最適",
+                    modelFamily: "o-series",
+                    toolCallSupport: .excellent,
+                    japaneseSupport: .excellent,
+                    modalities: [.text, .vision, .code],
+                    pricing: Pricing(inputPerMTok: 2, outputPerMTok: 8)
+                )
+            case .o4Mini:
+                return ModelProfile(
+                    summary: "軽量推論。高速かつ低コスト",
+                    modelFamily: "o-series",
+                    toolCallSupport: .excellent,
+                    japaneseSupport: .good,
+                    modalities: [.text, .vision, .code],
+                    pricing: Pricing(inputPerMTok: 1.10, outputPerMTok: 4.40)
+                )
             }
         }
     }

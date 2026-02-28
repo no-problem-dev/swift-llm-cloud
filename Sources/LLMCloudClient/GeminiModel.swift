@@ -1,4 +1,5 @@
 import Foundation
+import LLMClient
 
 // MARK: - Gemini Models
 
@@ -110,6 +111,44 @@ extension GeminiModel {
             case .flash3: return "3 Flash"
             case .pro25: return "2.5 Pro"
             case .flash25: return "2.5 Flash"
+            }
+        }
+
+        /// モデルプロファイル
+        public var profile: ModelProfile {
+            switch self {
+            case .pro31:
+                return ModelProfile(
+                    summary: "最新 Pro。最高品質の推論",
+                    modelFamily: "Gemini",
+                    toolCallSupport: .excellent,
+                    japaneseSupport: .excellent,
+                    modalities: [.text, .vision, .code, .audio]
+                )
+            case .flash3:
+                return ModelProfile(
+                    summary: "高速 Flash。コスト効率に優れる",
+                    modelFamily: "Gemini",
+                    toolCallSupport: .excellent,
+                    japaneseSupport: .good,
+                    modalities: [.text, .vision, .code]
+                )
+            case .pro25:
+                return ModelProfile(
+                    summary: "高品質 Pro。複雑なタスクに強い",
+                    modelFamily: "Gemini",
+                    toolCallSupport: .excellent,
+                    japaneseSupport: .excellent,
+                    modalities: [.text, .vision, .code, .audio]
+                )
+            case .flash25:
+                return ModelProfile(
+                    summary: "バランス型 Flash。速度と品質の両立",
+                    modelFamily: "Gemini",
+                    toolCallSupport: .excellent,
+                    japaneseSupport: .good,
+                    modalities: [.text, .vision, .code]
+                )
             }
         }
     }

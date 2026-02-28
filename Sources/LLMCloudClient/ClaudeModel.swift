@@ -1,4 +1,5 @@
 import Foundation
+import LLMClient
 
 // MARK: - Claude Models
 
@@ -160,6 +161,39 @@ extension ClaudeModel {
             case .opus: return "Opus"
             case .sonnet: return "Sonnet"
             case .haiku: return "Haiku"
+            }
+        }
+
+        /// モデルプロファイル
+        public var profile: ModelProfile {
+            switch self {
+            case .opus:
+                return ModelProfile(
+                    summary: "最高性能。複雑な推論・コード生成に最適",
+                    modelFamily: "Claude",
+                    toolCallSupport: .excellent,
+                    japaneseSupport: .excellent,
+                    modalities: [.text, .vision, .code],
+                    pricing: Pricing(inputPerMTok: 15, outputPerMTok: 75, cacheInputPerMTok: 1.875)
+                )
+            case .sonnet:
+                return ModelProfile(
+                    summary: "バランス型。速度と品質の最適なトレードオフ",
+                    modelFamily: "Claude",
+                    toolCallSupport: .excellent,
+                    japaneseSupport: .excellent,
+                    modalities: [.text, .vision, .code],
+                    pricing: Pricing(inputPerMTok: 3, outputPerMTok: 15, cacheInputPerMTok: 0.375)
+                )
+            case .haiku:
+                return ModelProfile(
+                    summary: "高速・低コスト。軽量タスクに最適",
+                    modelFamily: "Claude",
+                    toolCallSupport: .excellent,
+                    japaneseSupport: .excellent,
+                    modalities: [.text, .vision, .code],
+                    pricing: Pricing(inputPerMTok: 0.80, outputPerMTok: 4, cacheInputPerMTok: 0.08)
+                )
             }
         }
     }
