@@ -72,6 +72,21 @@ public enum LLMModel: Sendable, Equatable {
     /// Google Gemini モデル
     case gemini(GeminiModel)
 
+    /// DeepSeek モデル
+    case deepseek(DeepSeekModel)
+
+    /// xAI Grok モデル
+    case grok(GrokModel)
+
+    /// Groq ホステッドモデル
+    case groq(GroqModel)
+
+    /// Mistral AI モデル
+    case mistral(MistralModel)
+
+    /// OpenRouter モデル（モデルIDをそのまま使用）
+    case openRouter(String)
+
     /// カスタムモデル ID
     case custom(String)
 
@@ -84,6 +99,16 @@ public enum LLMModel: Sendable, Equatable {
             return model.id
         case .gemini(let model):
             return model.id
+        case .deepseek(let model):
+            return model.id
+        case .grok(let model):
+            return model.id
+        case .groq(let model):
+            return model.id
+        case .mistral(let model):
+            return model.id
+        case .openRouter(let id):
+            return id
         case .custom(let id):
             return id
         }

@@ -1,9 +1,17 @@
 import LLMCloudClient
+import LLMCloudOpenAICompatible
 import LLMClient
+import LLMDynamicStructured
 import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
+
+// MARK: - GPTModel + OpenAICompatibleModelProtocol
+
+extension GPTModel: OpenAICompatibleModelProtocol {
+    public func toLLMModel() -> LLMModel { .gpt(self) }
+}
 
 // MARK: - OpenAIClient
 
@@ -26,59 +34,33 @@ import FoundationNetworking
 ///     var age: Int
 /// }
 ///
-/// // 戻り値の型から自動的にスキーマが推論される
 /// let result: UserInfo = try await client.generate(
 ///     input: "山田太郎さんは35歳です。",
 ///     model: .gpt4o
 /// )
-/// print(result.name)  // "山田太郎"
-/// print(result.age)   // 35
-///
-/// // トークン使用量を取得
-/// let resultWithUsage: GenerationResult<UserInfo> = try await client.generateWithUsage(
-///     input: "山田太郎さんは35歳です。",
-///     model: .gpt4o
-/// )
-/// print("Input tokens: \(resultWithUsage.usage.inputTokens)")
-/// print("Output tokens: \(resultWithUsage.usage.outputTokens)")
-///
-/// // マルチモーダル入力
-/// let result: ImageAnalysis = try await client.generate(
-///     input: LLMInput("この画像を分析してください", images: [imageContent]),
-///     model: .gpt4o
-/// )
 /// ```
-///
-/// ## 対応モデル
-/// - `.gpt5_2` - GPT-5.2（最新）
-/// - `.gpt4_1` - GPT-4.1
-/// - `.gpt4o` - GPT-4o
-/// - `.o3` - o3（高度な推論）
-/// - `.o4Mini` - o4 mini
-public struct OpenAIClient: StructuredLLMClient {
+public struct OpenAIClient: OpenAICompatibleClientProtocol {
     public typealias Model = GPTModel
 
-    public let provider: any LLMProvider
+    package let engine: OpenAICompatibleEngine
 
-    // MARK: - Package Access (for extension by other modules)
+    /// API キー
+    public var apiKey: String { engine.apiKey }
 
-    /// API キー（パッケージ内の他モジュールからアクセス可能）
-    public let apiKey: String
+    /// エンドポイント
+    public var endpoint: URL { engine.endpoint }
 
-    /// エンドポイント（パッケージ内の他モジュールからアクセス可能）
-    public let endpoint: URL
+    /// URLSession
+    public var session: URLSession { engine.session }
 
-    /// URLSession（パッケージ内の他モジュールからアクセス可能）
-    public let session: URLSession
-
-    /// 組織 ID（パッケージ内の他モジュールからアクセス可能）
+    /// 組織 ID
     public let organization: String?
 
-    /// リトライ設定（パッケージ内の他モジュールからアクセス可能）
-    public let retryConfiguration: RetryConfiguration
+    /// リトライ設定
+    public var retryConfiguration: RetryConfiguration { engine.retryConfiguration }
 
-    /// リトライイベントハンドラー（パッケージ内の他モジュールからアクセス可能）
-    public let retryEventHandler: RetryEventHandler?
+    /// リトライイベントハンドラー
+    public var retryEventHandler: RetryEventHandler? { engine.retryEventHandler }
 
     /// デフォルトエンドポイント
     public static let defaultEndpoint = URL(string: "https://api.openai.com/v1/chat/completions")!
@@ -102,119 +84,21 @@ public struct OpenAIClient: StructuredLLMClient {
         retryConfiguration: RetryConfiguration = .default,
         retryEventHandler: RetryEventHandler? = nil
     ) {
-        self.apiKey = apiKey
         self.organization = organization
-        self.endpoint = endpoint ?? Self.defaultEndpoint
-        self.session = session
-        self.retryConfiguration = retryConfiguration
-        self.retryEventHandler = retryEventHandler
 
-        let baseProvider = OpenAIProvider(
+        var customHeaders: [String: String] = [:]
+        if let org = organization {
+            customHeaders["OpenAI-Organization"] = org
+        }
+
+        self.engine = OpenAICompatibleEngine(
             apiKey: apiKey,
-            organization: organization,
-            endpoint: endpoint,
-            session: session
-        )
-
-        if retryConfiguration.isEnabled {
-            self.provider = RetryableProvider(
-                provider: baseProvider,
-                extractorType: OpenAIRateLimitExtractor.self,
-                retryPolicy: retryConfiguration.policy,
-                eventHandler: retryEventHandler
-            )
-        } else {
-            self.provider = baseProvider
-        }
-    }
-
-    // MARK: - StructuredLLMClient
-
-    public func generateWithUsage<T: StructuredProtocol>(
-        input: LLMInput,
-        model: GPTModel,
-        systemPrompt: String?,
-        temperature: Double?,
-        maxTokens: Int?
-    ) async throws -> GenerationResult<T> {
-        try await generateWithUsage(
-            messages: [input.toLLMMessage()],
-            model: model,
-            systemPrompt: systemPrompt,
-            temperature: temperature,
-            maxTokens: maxTokens
+            endpoint: endpoint ?? Self.defaultEndpoint,
+            providerName: "OpenAI",
+            session: session,
+            customHeaders: customHeaders,
+            retryConfiguration: retryConfiguration,
+            retryEventHandler: retryEventHandler
         )
     }
-
-    public func generateWithUsage<T: StructuredProtocol>(
-        messages: [LLMMessage],
-        model: GPTModel,
-        systemPrompt: String?,
-        temperature: Double?,
-        maxTokens: Int?
-    ) async throws -> GenerationResult<T> {
-        // スキーマ情報を含むシステムプロンプトを構築
-        let enhancedSystemPrompt = buildSystemPrompt(
-            base: systemPrompt,
-            schema: T.jsonSchema
-        )
-
-        let request = LLMRequest(
-            model: .gpt(model),
-            messages: messages,
-            systemPrompt: enhancedSystemPrompt,
-            responseSchema: T.jsonSchema,
-            temperature: temperature,
-            maxTokens: maxTokens
-        )
-
-        let response = try await provider.send(request)
-        return try decodeResponse(response, model: model.id)
-    }
-
-    // MARK: - Private Helpers
-
-    /// システムプロンプトにスキーマ情報を付加
-    private func buildSystemPrompt(base: String?, schema: JSONSchema) -> String {
-        var parts: [String] = []
-
-        if let base = base {
-            parts.append(base)
-        }
-
-        // スキーマの説明を追加
-        if let description = schema.description {
-            parts.append("出力形式: \(description)")
-        }
-
-        return parts.isEmpty ? "" : parts.joined(separator: "\n\n")
-    }
-
-    /// レスポンスをデコード
-    private func decodeResponse<T: StructuredProtocol>(_ response: LLMResponse, model: String) throws -> GenerationResult<T> {
-        guard let text = response.content.first?.text else {
-            throw LLMError.emptyResponse
-        }
-
-        guard let data = text.data(using: .utf8) else {
-            throw LLMError.invalidEncoding
-        }
-
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-
-        do {
-            let result = try decoder.decode(T.self, from: data)
-            return GenerationResult(
-                result: result,
-                usage: response.usage,
-                model: model,
-                rawText: text,
-                stopReason: response.stopReason
-            )
-        } catch {
-            throw LLMError.decodingFailed(error)
-        }
-    }
-
 }
