@@ -27,6 +27,22 @@ package enum OpenAICompatibleMessageConverter {
                     toolCalls: nil
                 ))
             }
+            // 同メッセージ内の画像を user メッセージとして追加
+            let images = message.contents.compactMap { content -> ImageContent? in
+                if case .image(let ic) = content { return ic }
+                return nil
+            }
+            if !images.isEmpty {
+                let parts = images.compactMap { convertImageToPart($0) }
+                if !parts.isEmpty {
+                    result.append(OpenAICompatibleMessage(
+                        role: "user",
+                        contentParts: parts,
+                        toolCallId: nil,
+                        toolCalls: nil
+                    ))
+                }
+            }
             return result
         }
 

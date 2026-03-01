@@ -104,9 +104,10 @@ extension AnthropicClient: ToolCallableClient {
                 contentBlocks.append(.toolUse(id: id, name: name, input: input))
             case .toolResult(let toolCallId, _, let resultContent, let isError):
                 contentBlocks.append(.toolResult(toolUseId: toolCallId, content: resultContent, isError: isError))
-            case .image:
-                // Tool APIではメディアコンテンツは現在サポートされていません
-                throw LLMError.mediaNotSupported(mediaType: "image", provider: "Anthropic Tool API")
+            case .image(let imageContent):
+                if case .base64(let data) = imageContent.source {
+                    contentBlocks.append(.image(data: data, mediaType: imageContent.mimeType))
+                }
             case .audio:
                 throw LLMError.mediaNotSupported(mediaType: "audio", provider: "Anthropic Tool API")
             case .video:
@@ -308,6 +309,7 @@ private enum AnthropicToolMessageContent: Encodable {
     case text(String)
     case toolUse(id: String, name: String, input: Data)
     case toolResult(toolUseId: String, content: String, isError: Bool)
+    case image(data: Data, mediaType: String)
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
@@ -343,6 +345,17 @@ private enum AnthropicToolMessageContent: Encodable {
             if isError {
                 dict["is_error"] = .bool(true)
             }
+            try container.encode(dict)
+
+        case .image(let data, let mediaType):
+            let dict: [String: JSONValue] = [
+                "type": .string("image"),
+                "source": .object([
+                    "type": .string("base64"),
+                    "media_type": .string(mediaType),
+                    "data": .string(data.base64EncodedString())
+                ])
+            ]
             try container.encode(dict)
         }
     }
