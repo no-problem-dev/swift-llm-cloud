@@ -34,7 +34,7 @@ extension GeminiClient: AgentCapableClient {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         // リクエストボディを構築
-        let body = try buildAgentRequestBody(
+        let body = buildAgentRequestBody(
             model: model,
             messages: messages,
             systemPrompt: systemPrompt,
@@ -71,8 +71,6 @@ extension GeminiClient: AgentCapableClient {
     // MARK: - Private Helpers
 
     /// エージェントリクエストボディを構築
-    ///
-    /// - Throws: `LLMError.mediaNotSupported` メディアコンテンツが含まれている場合
     private func buildAgentRequestBody(
         model: GeminiModel,
         messages: [LLMMessage],
@@ -81,12 +79,12 @@ extension GeminiClient: AgentCapableClient {
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
         maxTokens: Int?
-    ) throws -> GeminiAgentRequestBody {
+    ) -> GeminiAgentRequestBody {
         // コンテンツを構築
         var contents: [GeminiAgentContent] = []
 
         for message in messages {
-            contents.append(contentsOf: try convertToGeminiContent(message))
+            contents.append(contentsOf: convertToGeminiContent(message))
         }
 
         // システムインストラクション
@@ -134,9 +132,7 @@ extension GeminiClient: AgentCapableClient {
     }
 
     /// LLMMessage を Gemini コンテンツ形式に変換
-    ///
-    /// - Throws: `LLMError.mediaNotSupported` メディアコンテンツが含まれている場合
-    private func convertToGeminiContent(_ message: LLMMessage) throws -> [GeminiAgentContent] {
+    private func convertToGeminiContent(_ message: LLMMessage) -> [GeminiAgentContent] {
         let role = message.role == .user ? "user" : "model"
         var parts: [GeminiAgentPart] = []
         var toolResultParts: [GeminiAgentPart] = []
@@ -164,13 +160,18 @@ extension GeminiClient: AgentCapableClient {
                 let functionResponse = GeminiAgentFunctionResponse(name: name, response: responseDict)
                 toolResultParts.append(GeminiAgentPart(functionResponse: functionResponse))
 
-            case .image:
-                // Agent APIではメディアコンテンツは現在サポートされていません
-                throw LLMError.mediaNotSupported(mediaType: "image", provider: "Gemini Agent API")
-            case .audio:
-                throw LLMError.mediaNotSupported(mediaType: "audio", provider: "Gemini Agent API")
-            case .video:
-                throw LLMError.mediaNotSupported(mediaType: "video", provider: "Gemini Agent API")
+            case .image(let imageContent):
+                if let part = convertMediaToAgentPart(source: imageContent.source, mimeType: imageContent.mediaType) {
+                    parts.append(part)
+                }
+            case .audio(let audioContent):
+                if let part = convertMediaToAgentPart(source: audioContent.source, mimeType: audioContent.mediaType) {
+                    parts.append(part)
+                }
+            case .video(let videoContent):
+                if let part = convertMediaToAgentPart(source: videoContent.source, mimeType: videoContent.mediaType) {
+                    parts.append(part)
+                }
             case .thinking:
                 break // Gemini では thinking は無視
             }
@@ -205,6 +206,22 @@ extension GeminiClient: AgentCapableClient {
             config = GeminiAgentFunctionCallingConfig(mode: "ANY", allowedFunctionNames: [name])
         }
         return GeminiAgentToolConfig(functionCallingConfig: config)
+    }
+
+    /// メディアソースを Agent API パーツに変換
+    private func convertMediaToAgentPart<T: MediaType>(source: MediaSource, mimeType: T) -> GeminiAgentPart? {
+        switch source {
+        case .base64(let data):
+            let base64String = data.base64EncodedString()
+            let inlineData = GeminiAgentInlineData(mimeType: mimeType.mimeType, data: base64String)
+            return GeminiAgentPart(inlineData: inlineData)
+        case .url(let url):
+            let fileData = GeminiAgentFileData(mimeType: mimeType.mimeType, fileUri: url.absoluteString)
+            return GeminiAgentPart(fileData: fileData)
+        case .fileReference(let id):
+            let fileData = GeminiAgentFileData(mimeType: mimeType.mimeType, fileUri: id)
+            return GeminiAgentPart(fileData: fileData)
+        }
     }
 
     /// エラーステータスコードから LLMError を生成
@@ -396,12 +413,16 @@ private struct GeminiAgentPart: Codable {
     let text: String?
     let functionCall: GeminiAgentFunctionCall?
     let functionResponse: GeminiAgentFunctionResponse?
+    let inlineData: GeminiAgentInlineData?
+    let fileData: GeminiAgentFileData?
     let thoughtSignature: String?
 
     init(text: String) {
         self.text = text
         self.functionCall = nil
         self.functionResponse = nil
+        self.inlineData = nil
+        self.fileData = nil
         self.thoughtSignature = nil
     }
 
@@ -409,6 +430,8 @@ private struct GeminiAgentPart: Codable {
         self.text = nil
         self.functionCall = functionCall
         self.functionResponse = nil
+        self.inlineData = nil
+        self.fileData = nil
         self.thoughtSignature = nil
     }
 
@@ -416,6 +439,8 @@ private struct GeminiAgentPart: Codable {
         self.text = nil
         self.functionCall = functionCall
         self.functionResponse = nil
+        self.inlineData = nil
+        self.fileData = nil
         self.thoughtSignature = thoughtSignature
     }
 
@@ -423,7 +448,49 @@ private struct GeminiAgentPart: Codable {
         self.text = nil
         self.functionCall = nil
         self.functionResponse = functionResponse
+        self.inlineData = nil
+        self.fileData = nil
         self.thoughtSignature = nil
+    }
+
+    init(inlineData: GeminiAgentInlineData) {
+        self.text = nil
+        self.functionCall = nil
+        self.functionResponse = nil
+        self.inlineData = inlineData
+        self.fileData = nil
+        self.thoughtSignature = nil
+    }
+
+    init(fileData: GeminiAgentFileData) {
+        self.text = nil
+        self.functionCall = nil
+        self.functionResponse = nil
+        self.inlineData = nil
+        self.fileData = fileData
+        self.thoughtSignature = nil
+    }
+}
+
+/// Gemini インラインデータ（Base64エンコードされたメディア）
+private struct GeminiAgentInlineData: Codable {
+    let mimeType: String
+    let data: String
+
+    enum CodingKeys: String, CodingKey {
+        case mimeType = "mime_type"
+        case data
+    }
+}
+
+/// Gemini ファイルデータ（URL/ファイル参照）
+private struct GeminiAgentFileData: Codable {
+    let mimeType: String
+    let fileUri: String
+
+    enum CodingKeys: String, CodingKey {
+        case mimeType = "mime_type"
+        case fileUri = "file_uri"
     }
 }
 

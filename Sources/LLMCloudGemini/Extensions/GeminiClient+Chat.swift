@@ -63,7 +63,7 @@ extension GeminiClient: ChatCapableClient {
         var geminiContents: [GeminiChatContent] = []
 
         for message in messages {
-            geminiContents.append(try convertToGeminiContent(message))
+            geminiContents.append(convertToGeminiContent(message))
         }
 
         // システム指示
@@ -97,9 +97,7 @@ extension GeminiClient: ChatCapableClient {
     }
 
     /// LLMMessage を Gemini コンテンツ形式に変換
-    ///
-    /// - Throws: `LLMError.mediaNotSupported` メディアコンテンツが含まれている場合
-    private func convertToGeminiContent(_ message: LLMMessage) throws -> GeminiChatContent {
+    private func convertToGeminiContent(_ message: LLMMessage) -> GeminiChatContent {
         let role = message.role == .user ? "user" : "model"
         var parts: [GeminiChatPart] = []
 
@@ -110,19 +108,40 @@ extension GeminiClient: ChatCapableClient {
             case .toolUse, .toolResult:
                 // チャットではツール関連は無視
                 break
-            case .image:
-                // Chat APIではメディアコンテンツは現在サポートされていません
-                throw LLMError.mediaNotSupported(mediaType: "image", provider: "Gemini Chat API")
-            case .audio:
-                throw LLMError.mediaNotSupported(mediaType: "audio", provider: "Gemini Chat API")
-            case .video:
-                throw LLMError.mediaNotSupported(mediaType: "video", provider: "Gemini Chat API")
+            case .image(let imageContent):
+                if let part = convertMediaToChatPart(source: imageContent.source, mimeType: imageContent.mediaType) {
+                    parts.append(part)
+                }
+            case .audio(let audioContent):
+                if let part = convertMediaToChatPart(source: audioContent.source, mimeType: audioContent.mediaType) {
+                    parts.append(part)
+                }
+            case .video(let videoContent):
+                if let part = convertMediaToChatPart(source: videoContent.source, mimeType: videoContent.mediaType) {
+                    parts.append(part)
+                }
             case .thinking:
                 break // Gemini では thinking は無視
             }
         }
 
         return GeminiChatContent(role: role, parts: parts)
+    }
+
+    /// メディアソースを Chat API パーツに変換
+    private func convertMediaToChatPart<T: MediaType>(source: MediaSource, mimeType: T) -> GeminiChatPart? {
+        switch source {
+        case .base64(let data):
+            let base64String = data.base64EncodedString()
+            let inlineData = GeminiChatInlineData(mimeType: mimeType.mimeType, data: base64String)
+            return GeminiChatPart(inlineData: inlineData)
+        case .url(let url):
+            let fileData = GeminiChatFileData(mimeType: mimeType.mimeType, fileUri: url.absoluteString)
+            return GeminiChatPart(fileData: fileData)
+        case .fileReference(let id):
+            let fileData = GeminiChatFileData(mimeType: mimeType.mimeType, fileUri: id)
+            return GeminiChatPart(fileData: fileData)
+        }
     }
 
     /// レスポンスを処理
@@ -246,9 +265,47 @@ private struct GeminiChatContent: Encodable {
 /// Gemini パーツ
 private struct GeminiChatPart: Encodable {
     let text: String?
+    let inlineData: GeminiChatInlineData?
+    let fileData: GeminiChatFileData?
 
     init(text: String) {
         self.text = text
+        self.inlineData = nil
+        self.fileData = nil
+    }
+
+    init(inlineData: GeminiChatInlineData) {
+        self.text = nil
+        self.inlineData = inlineData
+        self.fileData = nil
+    }
+
+    init(fileData: GeminiChatFileData) {
+        self.text = nil
+        self.inlineData = nil
+        self.fileData = fileData
+    }
+}
+
+/// Gemini インラインデータ（Base64エンコードされたメディア）
+private struct GeminiChatInlineData: Encodable {
+    let mimeType: String
+    let data: String
+
+    enum CodingKeys: String, CodingKey {
+        case mimeType = "mime_type"
+        case data
+    }
+}
+
+/// Gemini ファイルデータ（URL/ファイル参照）
+private struct GeminiChatFileData: Encodable {
+    let mimeType: String
+    let fileUri: String
+
+    enum CodingKeys: String, CodingKey {
+        case mimeType = "mime_type"
+        case fileUri = "file_uri"
     }
 }
 

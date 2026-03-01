@@ -31,7 +31,7 @@ extension GeminiClient: ToolCallableClient {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         // リクエストボディを構築
-        let body = try buildToolRequestBody(
+        let body = buildToolRequestBody(
             model: model,
             messages: messages,
             tools: tools,
@@ -61,8 +61,6 @@ extension GeminiClient: ToolCallableClient {
     // MARK: - Private Helpers
 
     /// ツールリクエストボディを構築
-    ///
-    /// - Throws: `LLMError.mediaNotSupported` メディアコンテンツが含まれている場合
     private func buildToolRequestBody(
         model: GeminiModel,
         messages: [LLMMessage],
@@ -71,12 +69,12 @@ extension GeminiClient: ToolCallableClient {
         systemPrompt: String?,
         temperature: Double?,
         maxTokens: Int?
-    ) throws -> GeminiToolRequestBody {
+    ) -> GeminiToolRequestBody {
         // コンテンツを構築
         var contents: [GeminiToolContent] = []
 
         for message in messages {
-            contents.append(contentsOf: try convertToGeminiContents(message))
+            contents.append(contentsOf: convertToGeminiContents(message))
         }
 
         // システムインストラクション
@@ -117,9 +115,7 @@ extension GeminiClient: ToolCallableClient {
     }
 
     /// LLMMessage を Gemini コンテンツ形式に変換
-    ///
-    /// - Throws: `LLMError.mediaNotSupported` メディアコンテンツが含まれている場合
-    private func convertToGeminiContents(_ message: LLMMessage) throws -> [GeminiToolContent] {
+    private func convertToGeminiContents(_ message: LLMMessage) -> [GeminiToolContent] {
         let role = message.role == .user ? "user" : "model"
         var parts: [GeminiToolPart] = []
         var toolResultParts: [GeminiToolPart] = []
@@ -147,13 +143,18 @@ extension GeminiClient: ToolCallableClient {
                 let functionResponse = GeminiToolFunctionResponse(name: name, response: responseDict)
                 toolResultParts.append(GeminiToolPart(functionResponse: functionResponse))
 
-            case .image:
-                // Tool APIではメディアコンテンツは現在サポートされていません
-                throw LLMError.mediaNotSupported(mediaType: "image", provider: "Gemini Tool API")
-            case .audio:
-                throw LLMError.mediaNotSupported(mediaType: "audio", provider: "Gemini Tool API")
-            case .video:
-                throw LLMError.mediaNotSupported(mediaType: "video", provider: "Gemini Tool API")
+            case .image(let imageContent):
+                if let part = convertMediaToToolPart(source: imageContent.source, mimeType: imageContent.mediaType) {
+                    parts.append(part)
+                }
+            case .audio(let audioContent):
+                if let part = convertMediaToToolPart(source: audioContent.source, mimeType: audioContent.mediaType) {
+                    parts.append(part)
+                }
+            case .video(let videoContent):
+                if let part = convertMediaToToolPart(source: videoContent.source, mimeType: videoContent.mediaType) {
+                    parts.append(part)
+                }
             case .thinking:
                 break // Gemini では thinking は無視
             }
@@ -188,6 +189,22 @@ extension GeminiClient: ToolCallableClient {
             config = GeminiToolFunctionCallingConfig(mode: "ANY", allowedFunctionNames: [name])
         }
         return GeminiToolToolConfig(functionCallingConfig: config)
+    }
+
+    /// メディアソースを Tool API パーツに変換
+    private func convertMediaToToolPart<T: MediaType>(source: MediaSource, mimeType: T) -> GeminiToolPart? {
+        switch source {
+        case .base64(let data):
+            let base64String = data.base64EncodedString()
+            let inlineData = GeminiToolInlineData(mimeType: mimeType.mimeType, data: base64String)
+            return GeminiToolPart(inlineData: inlineData)
+        case .url(let url):
+            let fileData = GeminiToolFileData(mimeType: mimeType.mimeType, fileUri: url.absoluteString)
+            return GeminiToolPart(fileData: fileData)
+        case .fileReference(let id):
+            let fileData = GeminiToolFileData(mimeType: mimeType.mimeType, fileUri: id)
+            return GeminiToolPart(fileData: fileData)
+        }
     }
 
     /// レスポンスを処理
@@ -377,12 +394,16 @@ private struct GeminiToolPart: Codable {
     let text: String?
     let functionCall: GeminiToolFunctionCall?
     let functionResponse: GeminiToolFunctionResponse?
+    let inlineData: GeminiToolInlineData?
+    let fileData: GeminiToolFileData?
     let thoughtSignature: String?
 
     init(text: String) {
         self.text = text
         self.functionCall = nil
         self.functionResponse = nil
+        self.inlineData = nil
+        self.fileData = nil
         self.thoughtSignature = nil
     }
 
@@ -390,6 +411,8 @@ private struct GeminiToolPart: Codable {
         self.text = nil
         self.functionCall = functionCall
         self.functionResponse = nil
+        self.inlineData = nil
+        self.fileData = nil
         self.thoughtSignature = nil
     }
 
@@ -397,6 +420,8 @@ private struct GeminiToolPart: Codable {
         self.text = nil
         self.functionCall = functionCall
         self.functionResponse = nil
+        self.inlineData = nil
+        self.fileData = nil
         self.thoughtSignature = thoughtSignature
     }
 
@@ -404,7 +429,49 @@ private struct GeminiToolPart: Codable {
         self.text = nil
         self.functionCall = nil
         self.functionResponse = functionResponse
+        self.inlineData = nil
+        self.fileData = nil
         self.thoughtSignature = nil
+    }
+
+    init(inlineData: GeminiToolInlineData) {
+        self.text = nil
+        self.functionCall = nil
+        self.functionResponse = nil
+        self.inlineData = inlineData
+        self.fileData = nil
+        self.thoughtSignature = nil
+    }
+
+    init(fileData: GeminiToolFileData) {
+        self.text = nil
+        self.functionCall = nil
+        self.functionResponse = nil
+        self.inlineData = nil
+        self.fileData = fileData
+        self.thoughtSignature = nil
+    }
+}
+
+/// Gemini インラインデータ（Base64エンコードされたメディア）
+private struct GeminiToolInlineData: Codable {
+    let mimeType: String
+    let data: String
+
+    enum CodingKeys: String, CodingKey {
+        case mimeType = "mime_type"
+        case data
+    }
+}
+
+/// Gemini ファイルデータ（URL/ファイル参照）
+private struct GeminiToolFileData: Codable {
+    let mimeType: String
+    let fileUri: String
+
+    enum CodingKeys: String, CodingKey {
+        case mimeType = "mime_type"
+        case fileUri = "file_uri"
     }
 }
 
