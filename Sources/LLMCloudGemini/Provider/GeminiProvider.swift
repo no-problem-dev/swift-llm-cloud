@@ -507,6 +507,17 @@ private enum GeminiJSONValue: Codable {
 private struct GeminiContent: Codable {
     let role: String
     let parts: [GeminiPart]
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        role = try container.decode(String.self, forKey: .role)
+        parts = (try? container.decodeIfPresent([GeminiPart].self, forKey: .parts)) ?? []
+    }
+
+    init(role: String, parts: [GeminiPart]) {
+        self.role = role
+        self.parts = parts
+    }
 }
 
 /// Gemini パーツ

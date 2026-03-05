@@ -387,6 +387,19 @@ private struct GeminiToolFunctionCallingConfig: Encodable {
 private struct GeminiToolContent: Codable {
     let role: String?
     let parts: [GeminiToolPart]
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        role = try container.decodeIfPresent(String.self, forKey: .role)
+        // Gemini が空レスポンス（ツール呼び出し後に停止等）を返す場合、
+        // parts キーが省略されることがある。その場合は空配列として扱う。
+        parts = (try? container.decodeIfPresent([GeminiToolPart].self, forKey: .parts)) ?? []
+    }
+
+    init(role: String?, parts: [GeminiToolPart]) {
+        self.role = role
+        self.parts = parts
+    }
 }
 
 /// Gemini パーツ

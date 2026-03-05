@@ -406,6 +406,17 @@ private struct GeminiAgentGenerationConfig: Encodable {
 private struct GeminiAgentContent: Codable {
     let role: String?
     let parts: [GeminiAgentPart]
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        role = try container.decodeIfPresent(String.self, forKey: .role)
+        parts = (try? container.decodeIfPresent([GeminiAgentPart].self, forKey: .parts)) ?? []
+    }
+
+    init(role: String?, parts: [GeminiAgentPart]) {
+        self.role = role
+        self.parts = parts
+    }
 }
 
 /// Gemini パーツ
