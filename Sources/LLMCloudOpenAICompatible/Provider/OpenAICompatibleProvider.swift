@@ -1,5 +1,7 @@
 import LLMClient
 import LLMCloudClient
+import APIClient
+import APIContract
 import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -7,17 +9,31 @@ import FoundationNetworking
 
 /// OpenAI 互換 API プロバイダー（共通実装）
 ///
-/// OpenAI 互換 API を持つ全プロバイダーの内部実装。
+/// APIClient + APIContract を使用して OpenAI 互換 API を呼び出す。
 /// 各プロバイダーのクライアントから使用される。
 package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol {
-    private let endpoint: URL
-    private let apiKey: String
-    private let session: URLSession
+    /// APIClient
+    private let apiClient: APIClientImpl
+
+    /// プロバイダー名（エラーメッセージ用）
     private let providerName: String
+
+    /// プロバイダー固有のカスタムヘッダー
     private let customHeaders: [String: String]
 
+    /// デフォルトの最大トークン数
     private static let defaultMaxTokens = 4096
 
+    // MARK: - Initializers
+
+    /// API キーを指定して初期化
+    ///
+    /// - Parameters:
+    ///   - apiKey: API キー
+    ///   - endpoint: 完全なエンドポイント URL
+    ///   - providerName: プロバイダー名
+    ///   - session: カスタム URLSession（オプション）
+    ///   - customHeaders: プロバイダー固有のカスタムヘッダー
     package init(
         apiKey: String,
         endpoint: URL,
@@ -25,11 +41,15 @@ package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol 
         session: URLSession = .shared,
         customHeaders: [String: String] = [:]
     ) {
-        self.apiKey = apiKey
-        self.endpoint = endpoint
         self.providerName = providerName
-        self.session = session
         self.customHeaders = customHeaders
+
+        self.apiClient = APIClientImpl(
+            baseURL: endpoint,
+            session: session,
+            authTokenProvider: StaticTokenProvider(token: apiKey),
+            keyDecodingStrategy: .convertFromSnakeCase
+        )
     }
 
     // MARK: - LLMProvider
@@ -42,29 +62,42 @@ package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol 
     // MARK: - RetryableProviderProtocol
 
     package func sendWithResponse(_ request: LLMRequest) async throws -> (LLMResponse, HTTPURLResponse) {
-        var urlRequest = URLRequest(url: endpoint)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        for (key, value) in customHeaders {
-            urlRequest.setValue(value, forHTTPHeaderField: key)
-        }
-
+        // リクエストボディを構築
         let body = try buildRequestBody(from: request)
-        urlRequest.httpBody = try JSONEncoder().encode(body)
 
-        let (data, response) = try await performRequest(urlRequest)
+        // APIContract エンドポイント経由で実行
+        let endpoint = OpenAICompatibleAPI.CreateChatCompletion(
+            customHeaders: customHeaders,
+            request: body
+        )
 
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw LLMError.invalidRequest("Invalid response type")
+        do {
+            let apiResponse = try await apiClient.executeWithResponse(endpoint)
+
+            // LLMResponse に変換
+            let llmResponse = OpenAICompatibleResponseConverter.toLLMResponse(apiResponse.output)
+
+            // HTTPURLResponse を構成（RetryableProvider 互換）
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://api.openai.com/v1/chat/completions")!,
+                statusCode: apiResponse.statusCode,
+                httpVersion: nil,
+                headerFields: apiResponse.headers
+            )!
+
+            return (llmResponse, httpResponse)
+        } catch let error as LLMError {
+            throw error
+        } catch let error as RateLimitAwareError {
+            throw error
+        } catch let error as APIError {
+            throw mapAPIError(error)
+        } catch {
+            throw LLMError.networkError(error)
         }
-
-        let llmResponse = try handleResponse(data: data, httpResponse: httpResponse)
-        return (llmResponse, httpResponse)
     }
 
-    // MARK: - Private Helpers
+    // MARK: - Request Building
 
     private func buildRequestBody(from request: LLMRequest) throws -> OpenAICompatibleRequestBody {
         var messages: [OpenAICompatibleMessage] = []
@@ -132,55 +165,32 @@ package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol 
         }
     }
 
-    private func performRequest(_ request: URLRequest) async throws -> (Data, URLResponse) {
-        do {
-            return try await session.data(for: request)
-        } catch {
-            throw LLMError.networkError(error)
+    // MARK: - Error Mapping
+
+    /// APIError を LLMError にマッピング
+    private func mapAPIError(_ error: APIError) -> LLMError {
+        switch error {
+        case .unauthorized:
+            return .unauthorized
+        case .networkError(let underlying):
+            return .networkError(underlying)
+        case .decodingError(let underlying):
+            return .decodingFailed(underlying)
+        case .invalidURL, .invalidResponse:
+            return .invalidRequest("Invalid URL or response")
+        case .httpError(let statusCode, _):
+            return .serverError(statusCode, "HTTP error")
         }
     }
+}
 
-    private func handleResponse(data: Data, httpResponse: HTTPURLResponse) throws -> LLMResponse {
-        let rateLimitInfo = OpenAICompatibleRateLimitExtractor.extractRateLimitInfo(from: httpResponse)
+// MARK: - Static Token Provider
 
-        switch httpResponse.statusCode {
-        case 200:
-            break
-        case 401:
-            throw LLMError.unauthorized
-        case 429:
-            throw RateLimitAwareError(
-                underlyingError: .rateLimitExceeded,
-                rateLimitInfo: rateLimitInfo,
-                statusCode: 429
-            )
-        case 400:
-            let errorResponse = try? JSONDecoder().decode(OpenAICompatibleErrorResponse.self, from: data)
-            throw LLMError.invalidRequest(errorResponse?.error.message ?? "Bad request")
-        case 404:
-            let errorResponse = try? JSONDecoder().decode(OpenAICompatibleErrorResponse.self, from: data)
-            throw LLMError.modelNotFound(errorResponse?.error.message ?? "Model not found")
-        case 500...599:
-            let errorResponse = try? JSONDecoder().decode(OpenAICompatibleErrorResponse.self, from: data)
-            throw RateLimitAwareError(
-                underlyingError: .serverError(httpResponse.statusCode, errorResponse?.error.message ?? "Server error"),
-                rateLimitInfo: rateLimitInfo,
-                statusCode: httpResponse.statusCode
-            )
-        default:
-            throw LLMError.serverError(httpResponse.statusCode, "Unexpected status code")
-        }
+/// 固定トークンを提供する AuthTokenProvider
+private struct StaticTokenProvider: AuthTokenProvider {
+    let token: String
 
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-
-        let openAIResponse: OpenAICompatibleResponseBody
-        do {
-            openAIResponse = try decoder.decode(OpenAICompatibleResponseBody.self, from: data)
-        } catch {
-            throw LLMError.decodingFailed(error)
-        }
-
-        return OpenAICompatibleResponseConverter.toLLMResponse(openAIResponse)
+    func getToken() async throws -> String? {
+        token
     }
 }

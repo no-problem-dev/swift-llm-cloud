@@ -104,7 +104,7 @@ public struct AnthropicClient: StructuredLLMClient {
 
         let baseProvider = AnthropicProvider(
             apiKey: apiKey,
-            endpoint: endpoint,
+            baseURL: endpoint,
             session: session
         )
 

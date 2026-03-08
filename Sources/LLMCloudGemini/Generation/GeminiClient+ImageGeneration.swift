@@ -313,7 +313,7 @@ private struct GeminiImageContent: Encodable {
 
 private struct GeminiImagePart: Encodable {
     let text: String?
-    let inlineData: GeminiInlineData?
+    let inlineData: GeminiImageInlineData?
 
     init(text: String) {
         self.text = text
@@ -321,7 +321,7 @@ private struct GeminiImagePart: Encodable {
     }
 }
 
-private struct GeminiInlineData: Codable {
+private struct GeminiImageInlineData: Codable {
     let mimeType: String?
     let data: String?
 }
@@ -343,6 +343,6 @@ private struct GeminiImageResponse: Decodable {
 
     struct GeminiResponsePart: Decodable {
         let text: String?
-        let inlineData: GeminiInlineData?
+        let inlineData: GeminiImageInlineData?
     }
 }

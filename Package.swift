@@ -19,6 +19,8 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../swift-llm-client"),
+        .package(url: "https://github.com/no-problem-dev/swift-api-contract.git", from: "1.1.0"),
+        .package(url: "https://github.com/no-problem-dev/swift-api-client.git", from: "1.1.0"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.4.0"),
     ],
     targets: [
@@ -34,6 +36,8 @@ let package = Package(
             .product(name: "LLMTool", package: "swift-llm-client"),
             .product(name: "LLMChat", package: "swift-llm-client"),
             .product(name: "LLMDynamicStructured", package: "swift-llm-client"),
+            .product(name: "APIContract", package: "swift-api-contract"),
+            .product(name: "APIClient", package: "swift-api-client"),
         ]),
         // Anthropic provider
         .target(name: "LLMCloudAnthropic", dependencies: [
@@ -42,6 +46,8 @@ let package = Package(
             .product(name: "LLMTool", package: "swift-llm-client"),
             .product(name: "LLMChat", package: "swift-llm-client"),
             .product(name: "LLMDynamicStructured", package: "swift-llm-client"),
+            .product(name: "APIContract", package: "swift-api-contract"),
+            .product(name: "APIClient", package: "swift-api-client"),
         ]),
         // OpenAI provider (depends on OpenAICompatible)
         .target(name: "LLMCloudOpenAI", dependencies: [
@@ -59,6 +65,8 @@ let package = Package(
             .product(name: "LLMTool", package: "swift-llm-client"),
             .product(name: "LLMChat", package: "swift-llm-client"),
             .product(name: "LLMDynamicStructured", package: "swift-llm-client"),
+            .product(name: "APIContract", package: "swift-api-contract"),
+            .product(name: "APIClient", package: "swift-api-client"),
         ]),
         // DeepSeek provider
         .target(name: "LLMCloudDeepSeek", dependencies: [

@@ -1,5 +1,7 @@
 import LLMClient
 import LLMCloudClient
+import APIClient
+import APIContract
 import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -9,20 +11,11 @@ import FoundationNetworking
 
 /// Google Gemini API プロバイダー（内部実装）
 ///
+/// APIClient + APIContract を使用して Gemini API を呼び出す。
 /// このプロバイダーは `GeminiClient` 内部で使用されます。
-/// 直接使用する場合は `GeminiClient` を使用してください。
 internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
-    /// API キー
-    private let apiKey: String
-
-    /// URLSession
-    private let session: URLSession
-
-    /// ベース URL
-    private let baseURL: String
-
-    /// デフォルトベース URL
-    private static let defaultBaseURL = "https://generativelanguage.googleapis.com/v1beta/models"
+    /// APIClient
+    private let apiClient: APIClientImpl
 
     /// デフォルトの最大トークン数
     private static let defaultMaxTokens = 4096
@@ -35,14 +28,18 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
     ///   - apiKey: Google AI API キー
     ///   - baseURL: カスタムベース URL（オプション）
     ///   - session: カスタム URLSession（オプション）
-    public init(
+    init(
         apiKey: String,
         baseURL: String? = nil,
         session: URLSession = .shared
     ) {
-        self.apiKey = apiKey
-        self.baseURL = baseURL ?? Self.defaultBaseURL
-        self.session = session
+        let effectiveBaseURL = URL(string: baseURL ?? "https://generativelanguage.googleapis.com/v1beta/models")!
+
+        self.apiClient = APIClientImpl(
+            baseURL: effectiveBaseURL,
+            session: session,
+            authTokenProvider: StaticTokenProvider(token: apiKey)
+        )
     }
 
     // MARK: - LLMProvider
@@ -60,31 +57,42 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
             throw LLMError.modelNotSupported(model: request.model.id, provider: "Gemini")
         }
 
-        // エンドポイントを構築
-        let endpoint = URL(string: "\(baseURL)/\(request.model.id):generateContent?key=\(apiKey)")!
-
-        // HTTPリクエストを構築
-        var urlRequest = URLRequest(url: endpoint)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
         // リクエストボディを構築
         let body = try buildRequestBody(from: request)
-        urlRequest.httpBody = try JSONEncoder().encode(body)
 
-        // リクエストを送信
-        let (data, response) = try await performRequest(urlRequest)
+        // APIContract エンドポイント経由で実行
+        let endpoint = GeminiAPI.GenerateContent(
+            modelId: request.model.id,
+            request: body
+        )
 
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw LLMError.invalidRequest("Invalid response type")
+        do {
+            let apiResponse = try await apiClient.executeWithResponse(endpoint)
+
+            // LLMResponse に変換
+            let llmResponse = try convertToLLMResponse(apiResponse.output, model: request.model.id)
+
+            // HTTPURLResponse を構成（RetryableProvider 互換）
+            let httpResponse = HTTPURLResponse(
+                url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models")!,
+                statusCode: apiResponse.statusCode,
+                httpVersion: nil,
+                headerFields: apiResponse.headers
+            )!
+
+            return (llmResponse, httpResponse)
+        } catch let error as LLMError {
+            throw error
+        } catch let error as RateLimitAwareError {
+            throw error
+        } catch let error as APIError {
+            throw mapAPIError(error)
+        } catch {
+            throw LLMError.networkError(error)
         }
-
-        // レスポンスを処理
-        let llmResponse = try handleResponse(data: data, httpResponse: httpResponse, model: request.model.id)
-        return (llmResponse, httpResponse)
     }
 
-    // MARK: - Private Helpers
+    // MARK: - Request Building
 
     /// リクエストボディを構築
     private func buildRequestBody(from request: LLMRequest) throws -> GeminiRequestBody {
@@ -105,16 +113,12 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
         var constraintPrompt: SystemPrompt?
 
         if let schema = request.responseSchema {
-            // Gemini用にスキーマを適合（制約追跡付き）
-            // - additionalProperties を除去（一部APIバージョンで未サポート）
-            // - サポートされていない制約は PromptComponent.outputConstraint に変換
             let adapter = GeminiSchemaAdapter()
             let adaptationResult = adapter.adaptWithConstraints(schema, fieldPath: "")
 
             generationConfig.responseMimeType = "application/json"
             generationConfig.responseSchema = adaptationResult.schema
 
-            // 除去された制約を SystemPrompt に変換（SystemPrompt DSL を活用）
             constraintPrompt = adaptationResult.toConstraintSystemPrompt()
         }
 
@@ -142,87 +146,26 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
     }
 
     /// システムプロンプトと制約プロンプトを統合
-    ///
-    /// - Parameters:
-    ///   - base: ベースのシステムプロンプト
-    ///   - constraints: 制約プロンプト（SystemPrompt DSL）
-    /// - Returns: 統合されたシステムプロンプト
     private func buildEffectiveSystemPrompt(base: String?, constraints: SystemPrompt?) -> String? {
         switch (base, constraints) {
         case (let base?, let constraints?):
-            // 両方ある場合：ベース + 制約プロンプト
             return "\(base)\n\n\(constraints.render())"
         case (let base?, nil):
-            // ベースのみ
             return base
         case (nil, let constraints?):
-            // 制約のみ
             return constraints.render()
         case (nil, nil):
-            // どちらもない
             return nil
         }
     }
 
-    /// HTTPリクエストを実行
-    private func performRequest(_ request: URLRequest) async throws -> (Data, URLResponse) {
-        do {
-            return try await session.data(for: request)
-        } catch {
-            throw LLMError.networkError(error)
-        }
-    }
+    // MARK: - Response Conversion
 
-    /// レスポンスを処理
-    private func handleResponse(data: Data, httpResponse: HTTPURLResponse, model: String) throws -> LLMResponse {
-        // レート制限情報を抽出
-        let rateLimitInfo = GeminiRateLimitExtractor.extractRateLimitInfo(from: httpResponse)
-
-        // エラーステータスコードの処理
-        switch httpResponse.statusCode {
-        case 200:
-            break
-        case 401, 403:
-            throw LLMError.unauthorized
-        case 429:
-            // レート制限情報付きでエラーを投げる
-            throw RateLimitAwareError(
-                underlyingError: .rateLimitExceeded,
-                rateLimitInfo: rateLimitInfo,
-                statusCode: 429
-            )
-        case 400:
-            let errorResponse = try? JSONDecoder().decode(GeminiErrorResponse.self, from: data)
-            throw LLMError.invalidRequest(errorResponse?.error.message ?? "Bad request")
-        case 404:
-            let errorResponse = try? JSONDecoder().decode(GeminiErrorResponse.self, from: data)
-            throw LLMError.modelNotFound(errorResponse?.error.message ?? "Model not found")
-        case 500...599:
-            let errorResponse = try? JSONDecoder().decode(GeminiErrorResponse.self, from: data)
-            // サーバーエラーもレート制限情報を含める（リトライ時に参照できるように）
-            throw RateLimitAwareError(
-                underlyingError: .serverError(httpResponse.statusCode, errorResponse?.error.message ?? "Server error"),
-                rateLimitInfo: rateLimitInfo,
-                statusCode: httpResponse.statusCode
-            )
-        default:
-            throw LLMError.serverError(httpResponse.statusCode, "Unexpected status code")
-        }
-
-        // 成功レスポンスをデコード
-        let decoder = JSONDecoder()
-
-        let geminiResponse: GeminiResponseBody
-        do {
-            geminiResponse = try decoder.decode(GeminiResponseBody.self, from: data)
-        } catch {
-            throw LLMError.decodingFailed(error)
-        }
-
+    /// GeminiResponseBody を LLMResponse に変換
+    private func convertToLLMResponse(_ response: GeminiResponseBody, model: String) throws -> LLMResponse {
         // 最初の候補を取得
-        guard let candidate = geminiResponse.candidates?.first else {
-            // コンテンツがブロックされた可能性をチェック
-            if let promptFeedback = geminiResponse.promptFeedback,
+        guard let candidate = response.candidates?.first else {
+            if let promptFeedback = response.promptFeedback,
                let blockReason = promptFeedback.blockReason {
                 throw LLMError.contentBlocked(reason: blockReason)
             }
@@ -237,15 +180,14 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
 
         if let content = candidate.content {
             for part in content.parts {
-                // テキストコンテンツ
                 if let text = part.text {
                     contentBlocks.append(.text(text))
                 }
-                // 関数呼び出し
                 if let functionCall = part.functionCall {
-                    if let argsData = try? JSONSerialization.data(withJSONObject: functionCall.args ?? [:]) {
+                    let argsDict = functionCall.args?.mapValues { $0.toAny() } ?? [:]
+                    if let argsData = try? JSONSerialization.data(withJSONObject: argsDict) {
                         contentBlocks.append(.toolUse(
-                            id: UUID().uuidString, // Gemini はIDを返さないので生成
+                            id: UUID().uuidString,
                             name: functionCall.name,
                             input: argsData
                         ))
@@ -254,14 +196,13 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
             }
         }
 
-        // tool_use の場合は空でもOK
         guard !contentBlocks.isEmpty || stopReason == .toolUse else {
             throw LLMError.emptyResponse
         }
 
-        // 使用量を取得（Gemini は usageMetadata で返す）
+        // 使用量を取得
         let usage: TokenUsage
-        if let usageMetadata = geminiResponse.usageMetadata {
+        if let usageMetadata = response.usageMetadata {
             usage = TokenUsage(
                 inputTokens: usageMetadata.promptTokenCount ?? 0,
                 outputTokens: usageMetadata.candidatesTokenCount ?? 0,
@@ -288,19 +229,13 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
         case "MAX_TOKENS":
             return .maxTokens
         case "SAFETY":
-            return nil // contentBlocked として扱う
+            return nil
         default:
             return nil
         }
     }
 
     /// LLMMessage を Gemini コンテンツ形式に変換
-    ///
-    /// Gemini APIでは:
-    /// - テキストメッセージ: role="user"|"model", parts=[{text: "..."}]
-    /// - ツール呼び出し: role="model", parts=[{functionCall: {name, args}}]
-    /// - ツール結果: role="user", parts=[{functionResponse: {name, response}}]
-    /// - メディア: role="user", parts=[{inlineData: {mimeType, data}}] または parts=[{fileData: {mimeType, fileUri}}]
     private func convertToGeminiContents(_ message: LLMMessage) -> [GeminiContent] {
         let role = message.role == .user ? "user" : "model"
         var parts: [GeminiPart] = []
@@ -312,8 +247,6 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
                 parts.append(GeminiPart(text: text))
 
             case .toolUse(_, let name, let input):
-                // ツール呼び出し（モデルからの応答）
-                // inputをJSON辞書に変換
                 let args: [String: Any]?
                 if let argsDict = try? JSONSerialization.jsonObject(with: input) as? [String: Any] {
                     args = argsDict
@@ -324,43 +257,36 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
                 parts.append(GeminiPart(functionCall: functionCall))
 
             case .toolResult(_, let name, let resultContent, _):
-                // ツール結果（ユーザーからの応答）
-                // Gemini APIではfunctionResponseにはnameが必須
                 let responseDict: [String: Any] = ["result": resultContent]
                 let functionResponse = GeminiFunctionResponse(name: name, response: responseDict)
                 toolResultParts.append(GeminiPart(functionResponse: functionResponse))
 
             case .image(let imageContent):
-                // 画像コンテンツ
                 if let geminiPart = convertMediaToGeminiPart(source: imageContent.source, mimeType: imageContent.mediaType) {
                     parts.append(geminiPart)
                 }
 
             case .audio(let audioContent):
-                // 音声コンテンツ
                 if let geminiPart = convertMediaToGeminiPart(source: audioContent.source, mimeType: audioContent.mediaType) {
                     parts.append(geminiPart)
                 }
 
             case .video(let videoContent):
-                // 動画コンテンツ
                 if let geminiPart = convertMediaToGeminiPart(source: videoContent.source, mimeType: videoContent.mediaType) {
                     parts.append(geminiPart)
                 }
 
             case .thinking:
-                break // Gemini では thinking は無視
+                break
             }
         }
 
         var contents: [GeminiContent] = []
 
-        // 通常のパーツ（テキストとツール呼び出し）
         if !parts.isEmpty {
             contents.append(GeminiContent(role: role, parts: parts))
         }
 
-        // ツール結果は常にuserロールで送信
         if !toolResultParts.isEmpty {
             contents.append(GeminiContent(role: "user", parts: toolResultParts))
         }
@@ -369,388 +295,49 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
     }
 
     /// メディアソースをGeminiパーツに変換
-    ///
-    /// - Parameters:
-    ///   - source: メディアソース（base64, URL, またはファイル参照）
-    ///   - mimeType: MIMEタイプを持つメディアタイプ
-    /// - Returns: GeminiPart、変換できない場合はnil
     private func convertMediaToGeminiPart<T: MediaType>(source: MediaSource, mimeType: T) -> GeminiPart? {
         switch source {
         case .base64(let data):
-            // Base64エンコードされたデータ
             let base64String = data.base64EncodedString()
             let inlineData = GeminiInlineData(mimeType: mimeType.mimeType, data: base64String)
             return GeminiPart(inlineData: inlineData)
 
         case .url(let url):
-            // URLの場合もGeminiではinlineDataとして送信
-            // 注: 実際の実装では、URLからデータを取得してbase64エンコードする必要がある場合がある
-            // ここではfileDataとして扱う
             let fileData = GeminiFileData(mimeType: mimeType.mimeType, fileUri: url.absoluteString)
             return GeminiPart(fileData: fileData)
 
         case .fileReference(let id):
-            // File API経由でアップロードされたファイル
             let fileData = GeminiFileData(mimeType: mimeType.mimeType, fileUri: id)
             return GeminiPart(fileData: fileData)
         }
     }
-}
 
-// MARK: - Request/Response Types
+    // MARK: - Error Mapping
 
-/// Gemini API リクエストボディ
-private struct GeminiRequestBody: Encodable {
-    let contents: [GeminiContent]
-    let systemInstruction: GeminiContent?
-    let generationConfig: GeminiGenerationConfig
-    let tools: [GeminiTool]?
-    let toolConfig: GeminiToolConfig?
-}
-
-/// Gemini ツール
-private struct GeminiTool: Encodable {
-    let functionDeclarations: [GeminiFunctionDeclaration]
-}
-
-/// Gemini 関数宣言
-private struct GeminiFunctionDeclaration: Encodable {
-    let name: String
-    let description: String
-    let parameters: [String: Any]
-
-    init(dict: [String: Any]) {
-        self.name = dict["name"] as? String ?? ""
-        self.description = dict["description"] as? String ?? ""
-        self.parameters = dict["parameters"] as? [String: Any] ?? [:]
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case name, description, parameters
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(name, forKey: .name)
-        try container.encode(description, forKey: .description)
-        // parameters を JSON として手動エンコード
-        let paramsData = try JSONSerialization.data(withJSONObject: parameters)
-        let paramsJSON = try JSONDecoder().decode(GeminiJSONValue.self, from: paramsData)
-        try container.encode(paramsJSON, forKey: .parameters)
-    }
-}
-
-/// Gemini ツール設定
-private struct GeminiToolConfig: Encodable {
-    let functionCallingConfig: GeminiFunctionCallingConfig
-}
-
-/// Gemini 関数呼び出し設定
-private struct GeminiFunctionCallingConfig: Encodable {
-    let mode: String
-    let allowedFunctionNames: [String]?
-}
-
-/// JSON 値の汎用エンコード用
-private enum GeminiJSONValue: Codable {
-    case null
-    case bool(Bool)
-    case int(Int)
-    case double(Double)
-    case string(String)
-    case array([GeminiJSONValue])
-    case object([String: GeminiJSONValue])
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if container.decodeNil() {
-            self = .null
-        } else if let bool = try? container.decode(Bool.self) {
-            self = .bool(bool)
-        } else if let int = try? container.decode(Int.self) {
-            self = .int(int)
-        } else if let double = try? container.decode(Double.self) {
-            self = .double(double)
-        } else if let string = try? container.decode(String.self) {
-            self = .string(string)
-        } else if let array = try? container.decode([GeminiJSONValue].self) {
-            self = .array(array)
-        } else if let object = try? container.decode([String: GeminiJSONValue].self) {
-            self = .object(object)
-        } else {
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode JSON value")
-        }
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        switch self {
-        case .null:
-            try container.encodeNil()
-        case .bool(let value):
-            try container.encode(value)
-        case .int(let value):
-            try container.encode(value)
-        case .double(let value):
-            try container.encode(value)
-        case .string(let value):
-            try container.encode(value)
-        case .array(let value):
-            try container.encode(value)
-        case .object(let value):
-            try container.encode(value)
+    /// APIError を LLMError にマッピング
+    private func mapAPIError(_ error: APIError) -> LLMError {
+        switch error {
+        case .unauthorized:
+            return .unauthorized
+        case .networkError(let underlying):
+            return .networkError(underlying)
+        case .decodingError(let underlying):
+            return .decodingFailed(underlying)
+        case .invalidURL, .invalidResponse:
+            return .invalidRequest("Invalid URL or response")
+        case .httpError(let statusCode, _):
+            return .serverError(statusCode, "HTTP error")
         }
     }
 }
 
-/// Gemini コンテンツ
-private struct GeminiContent: Codable {
-    let role: String
-    let parts: [GeminiPart]
+// MARK: - Static Token Provider
 
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        role = try container.decode(String.self, forKey: .role)
-        parts = (try? container.decodeIfPresent([GeminiPart].self, forKey: .parts)) ?? []
+/// 固定トークンを提供する AuthTokenProvider
+private struct StaticTokenProvider: AuthTokenProvider {
+    let token: String
+
+    func getToken() async throws -> String? {
+        token
     }
-
-    init(role: String, parts: [GeminiPart]) {
-        self.role = role
-        self.parts = parts
-    }
-}
-
-/// Gemini パーツ
-private struct GeminiPart: Codable {
-    let text: String?
-    let functionCall: GeminiFunctionCall?
-    let functionResponse: GeminiFunctionResponse?
-    let inlineData: GeminiInlineData?
-    let fileData: GeminiFileData?
-    let thoughtSignature: String?
-
-    init(text: String) {
-        self.text = text
-        self.functionCall = nil
-        self.functionResponse = nil
-        self.inlineData = nil
-        self.fileData = nil
-        self.thoughtSignature = nil
-    }
-
-    init(functionCall: GeminiFunctionCall) {
-        self.text = nil
-        self.functionCall = functionCall
-        self.functionResponse = nil
-        self.inlineData = nil
-        self.fileData = nil
-        self.thoughtSignature = nil
-    }
-
-    init(functionCall: GeminiFunctionCall, thoughtSignature: String?) {
-        self.text = nil
-        self.functionCall = functionCall
-        self.functionResponse = nil
-        self.inlineData = nil
-        self.fileData = nil
-        self.thoughtSignature = thoughtSignature
-    }
-
-    init(functionResponse: GeminiFunctionResponse) {
-        self.text = nil
-        self.functionCall = nil
-        self.functionResponse = functionResponse
-        self.inlineData = nil
-        self.fileData = nil
-        self.thoughtSignature = nil
-    }
-
-    init(inlineData: GeminiInlineData) {
-        self.text = nil
-        self.functionCall = nil
-        self.functionResponse = nil
-        self.inlineData = inlineData
-        self.fileData = nil
-        self.thoughtSignature = nil
-    }
-
-    init(fileData: GeminiFileData) {
-        self.text = nil
-        self.functionCall = nil
-        self.functionResponse = nil
-        self.inlineData = nil
-        self.fileData = fileData
-        self.thoughtSignature = nil
-    }
-}
-
-/// Gemini インラインデータ（Base64エンコードされたメディア）
-private struct GeminiInlineData: Codable {
-    let mimeType: String
-    let data: String  // Base64エンコードされたデータ
-
-    enum CodingKeys: String, CodingKey {
-        case mimeType = "mime_type"
-        case data
-    }
-}
-
-/// Gemini ファイルデータ（File API経由でアップロードされたファイル）
-private struct GeminiFileData: Codable {
-    let mimeType: String
-    let fileUri: String
-
-    enum CodingKeys: String, CodingKey {
-        case mimeType = "mime_type"
-        case fileUri = "file_uri"
-    }
-}
-
-/// Gemini 関数呼び出し
-private struct GeminiFunctionCall: Codable {
-    let name: String
-    let args: [String: Any]?
-
-    enum CodingKeys: String, CodingKey {
-        case name, args
-    }
-
-    init(name: String, args: [String: Any]?) {
-        self.name = name
-        self.args = args
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        name = try container.decode(String.self, forKey: .name)
-        // args は任意の JSON なので手動でデコード
-        if let argsJSON = try? container.decodeIfPresent(GeminiAnyCodable.self, forKey: .args) {
-            args = argsJSON.value as? [String: Any]
-        } else {
-            args = nil
-        }
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(name, forKey: .name)
-        if let args = args {
-            let argsData = try JSONSerialization.data(withJSONObject: args)
-            let argsJSON = try JSONDecoder().decode(GeminiJSONValue.self, from: argsData)
-            try container.encode(argsJSON, forKey: .args)
-        }
-    }
-}
-
-/// Gemini 関数レスポンス（ツール実行結果）
-private struct GeminiFunctionResponse: Codable {
-    let name: String
-    let response: [String: Any]
-
-    enum CodingKeys: String, CodingKey {
-        case name, response
-    }
-
-    init(name: String, response: [String: Any]) {
-        self.name = name
-        self.response = response
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        name = try container.decode(String.self, forKey: .name)
-        if let responseJSON = try? container.decode(GeminiAnyCodable.self, forKey: .response) {
-            response = responseJSON.value as? [String: Any] ?? [:]
-        } else {
-            response = [:]
-        }
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(name, forKey: .name)
-        let responseData = try JSONSerialization.data(withJSONObject: response)
-        let responseJSON = try JSONDecoder().decode(GeminiJSONValue.self, from: responseData)
-        try container.encode(responseJSON, forKey: .response)
-    }
-}
-
-/// 任意の JSON 値をデコードするためのラッパー
-private struct GeminiAnyCodable: Decodable {
-    let value: Any
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if container.decodeNil() {
-            value = NSNull()
-        } else if let bool = try? container.decode(Bool.self) {
-            value = bool
-        } else if let int = try? container.decode(Int.self) {
-            value = int
-        } else if let double = try? container.decode(Double.self) {
-            value = double
-        } else if let string = try? container.decode(String.self) {
-            value = string
-        } else if let array = try? container.decode([GeminiAnyCodable].self) {
-            value = array.map { $0.value }
-        } else if let dict = try? container.decode([String: GeminiAnyCodable].self) {
-            value = dict.mapValues { $0.value }
-        } else {
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode value")
-        }
-    }
-}
-
-/// Gemini 生成設定
-private struct GeminiGenerationConfig: Encodable {
-    var maxOutputTokens: Int
-    var temperature: Double?
-    var responseMimeType: String?
-    var responseSchema: JSONSchema?
-}
-
-/// Gemini API レスポンスボディ
-private struct GeminiResponseBody: Decodable {
-    let candidates: [GeminiCandidate]?
-    let promptFeedback: GeminiPromptFeedback?
-    let usageMetadata: GeminiUsageMetadata?
-}
-
-/// Gemini 候補
-private struct GeminiCandidate: Decodable {
-    let content: GeminiContent?
-    let finishReason: String?
-    let safetyRatings: [GeminiSafetyRating]?
-}
-
-/// Gemini プロンプトフィードバック
-private struct GeminiPromptFeedback: Decodable {
-    let blockReason: String?
-    let safetyRatings: [GeminiSafetyRating]?
-}
-
-/// Gemini 安全性評価
-private struct GeminiSafetyRating: Decodable {
-    let category: String
-    let probability: String
-}
-
-/// Gemini 使用量メタデータ
-private struct GeminiUsageMetadata: Decodable {
-    let promptTokenCount: Int?
-    let candidatesTokenCount: Int?
-    let totalTokenCount: Int?
-    let thoughtsTokenCount: Int?
-}
-
-/// Gemini エラーレスポンス
-private struct GeminiErrorResponse: Decodable {
-    let error: GeminiError
-}
-
-/// Gemini エラー詳細
-private struct GeminiError: Decodable {
-    let code: Int
-    let message: String
-    let status: String
 }
