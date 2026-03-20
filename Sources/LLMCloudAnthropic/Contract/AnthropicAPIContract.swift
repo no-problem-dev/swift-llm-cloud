@@ -19,6 +19,18 @@ enum AnthropicAPI: APIContractGroup {
     static let endpoints: [EndpointDescriptor] = []
     static let commonHeaders: [String: String] = ["anthropic-version": "2023-06-01"]
 
+    private nonisolated(unsafe) static let isoFractionalFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private nonisolated(unsafe) static let isoFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
     // MARK: - Custom Error Decoding
 
     /// Anthropic 固有のエラーデコード
@@ -90,13 +102,10 @@ enum AnthropicAPI: APIContractGroup {
     }
 
     private static func parseRFC3339ToInterval(_ value: String) -> TimeInterval? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: value) {
+        if let date = isoFractionalFormatter.date(from: value) {
             return max(0, date.timeIntervalSinceNow)
         }
-        formatter.formatOptions = [.withInternetDateTime]
-        if let date = formatter.date(from: value) {
+        if let date = isoFormatter.date(from: value) {
             return max(0, date.timeIntervalSinceNow)
         }
         return nil

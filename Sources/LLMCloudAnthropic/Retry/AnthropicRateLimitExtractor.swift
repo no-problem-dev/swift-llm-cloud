@@ -11,6 +11,18 @@ import LLMCloudClient
 /// `retry-after`、`anthropic-ratelimit-*` ヘッダーを解析して
 /// リクエスト・トークン両方のレート制限情報を提供します。
 public enum AnthropicRateLimitExtractor: RateLimitInfoExtractable {
+    private nonisolated(unsafe) static let isoFractionalFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private nonisolated(unsafe) static let isoFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
     public static func extractRateLimitInfo(from response: HTTPURLResponse) -> RateLimitInfo {
         let retryAfter: TimeInterval? = response
             .value(forHTTPHeaderField: "retry-after")
@@ -42,15 +54,11 @@ public enum AnthropicRateLimitExtractor: RateLimitInfoExtractable {
     }
 
     private static func parseRFC3339ToInterval(_ value: String) -> TimeInterval? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
-        if let date = formatter.date(from: value) {
+        if let date = isoFractionalFormatter.date(from: value) {
             return max(0, date.timeIntervalSinceNow)
         }
 
-        formatter.formatOptions = [.withInternetDateTime]
-        if let date = formatter.date(from: value) {
+        if let date = isoFormatter.date(from: value) {
             return max(0, date.timeIntervalSinceNow)
         }
 
