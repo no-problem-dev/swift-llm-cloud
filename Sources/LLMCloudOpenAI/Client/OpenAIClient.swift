@@ -1,7 +1,6 @@
 import LLMCloudClient
 import LLMCloudOpenAICompatible
 import LLMClient
-import LLMDynamicStructured
 import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking

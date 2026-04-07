@@ -9,12 +9,13 @@ extension ToolSet {
     public func toOpenAIFormat() -> [[String: Any]] {
         toProviderFormat(adapter: OpenAISchemaAdapter()) { tool, adaptedSchema in
             var functionDict: [String: Any] = [
-                "name": tool.name,
+                "name": tool.toolName,
                 "description": tool.toolDescription,
                 "strict": true
             ]
-            if let schema = adaptedSchema {
-                functionDict["parameters"] = schema
+            if let schemaData = try? adaptedSchema.toJSONData(),
+               let schemaDict = try? JSONSerialization.jsonObject(with: schemaData) as? [String: Any] {
+                functionDict["parameters"] = schemaDict
             }
             return [
                 "type": "function",

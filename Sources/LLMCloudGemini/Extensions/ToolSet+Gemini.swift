@@ -9,11 +9,12 @@ extension ToolSet {
     public func toGeminiFormat() -> [[String: Any]] {
         toProviderFormat(adapter: GeminiSchemaAdapter()) { tool, adaptedSchema in
             var result: [String: Any] = [
-                "name": tool.name,
+                "name": tool.toolName,
                 "description": tool.toolDescription
             ]
-            if let schema = adaptedSchema {
-                result["parameters"] = schema
+            if let schemaData = try? adaptedSchema.toJSONData(),
+               let schemaDict = try? JSONSerialization.jsonObject(with: schemaData) as? [String: Any] {
+                result["parameters"] = schemaDict
             }
             return result
         }

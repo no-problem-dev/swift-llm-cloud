@@ -18,7 +18,7 @@ extension GeminiClient: ToolCallableClient {
         model: GeminiModel,
         tools: ToolSet,
         toolChoice: ToolChoice?,
-        systemPrompt: String?,
+        systemPrompt: SystemPrompt?,
         temperature: Double?,
         maxTokens: Int?
     ) async throws -> ToolCallResponse {
@@ -66,7 +66,7 @@ extension GeminiClient: ToolCallableClient {
         messages: [LLMMessage],
         tools: ToolSet,
         toolChoice: ToolChoice?,
-        systemPrompt: String?,
+        systemPrompt: SystemPrompt?,
         temperature: Double?,
         maxTokens: Int?
     ) -> GeminiToolRequestBody {
@@ -79,10 +79,10 @@ extension GeminiClient: ToolCallableClient {
 
         // システムインストラクション
         var systemInstruction: GeminiToolContent?
-        if let systemPrompt = systemPrompt {
+        if let prompt = systemPrompt {
             systemInstruction = GeminiToolContent(
                 role: "user",
-                parts: [GeminiToolPart(text: systemPrompt)]
+                parts: [GeminiToolPart(text: prompt.render())]
             )
         }
 
@@ -137,9 +137,9 @@ extension GeminiClient: ToolCallableClient {
                 let sig = GeminiThoughtSignatureEncoding.decodeThoughtSignature(from: id)
                 parts.append(GeminiToolPart(functionCall: functionCall, thoughtSignature: sig))
 
-            case .toolResult(_, let name, let resultContent, _):
+            case .toolResult(_, let name, let content):
                 // ツール結果（ユーザーからの応答）
-                let responseDict: [String: Any] = ["result": resultContent]
+                let responseDict: [String: Any] = ["result": content.contentValue]
                 let functionResponse = GeminiToolFunctionResponse(name: name, response: responseDict)
                 toolResultParts.append(GeminiToolPart(functionResponse: functionResponse))
 
@@ -181,7 +181,7 @@ extension GeminiClient: ToolCallableClient {
         switch choice {
         case .auto:
             config = GeminiToolFunctionCallingConfig(mode: "AUTO", allowedFunctionNames: nil)
-        case .none:
+        case .disabled:
             config = GeminiToolFunctionCallingConfig(mode: "NONE", allowedFunctionNames: nil)
         case .required:
             config = GeminiToolFunctionCallingConfig(mode: "ANY", allowedFunctionNames: nil)

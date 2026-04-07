@@ -106,7 +106,7 @@ public struct GeminiSchemaAdapter: ProviderSchemaAdapter {
             removedConstraints.append(RemovedConstraint(
                 type: .exclusiveMinimum,
                 fieldPath: fieldPath,
-                value: .int(exclusiveMinimum)
+                value: .double(exclusiveMinimum)
             ))
         }
 
@@ -114,7 +114,7 @@ public struct GeminiSchemaAdapter: ProviderSchemaAdapter {
             removedConstraints.append(RemovedConstraint(
                 type: .exclusiveMaximum,
                 fieldPath: fieldPath,
-                value: .int(exclusiveMaximum)
+                value: .double(exclusiveMaximum)
             ))
         }
 

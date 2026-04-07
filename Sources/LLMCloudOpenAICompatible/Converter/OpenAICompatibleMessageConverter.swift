@@ -22,7 +22,7 @@ package enum OpenAICompatibleMessageConverter {
             for toolResult in toolResults {
                 result.append(OpenAICompatibleMessage(
                     role: "tool",
-                    content: toolResult.content,
+                    content: toolResult.content.contentValue,
                     toolCallId: toolResult.toolCallId,
                     toolCalls: nil
                 ))

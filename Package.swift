@@ -19,8 +19,8 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../swift-llm-client"),
-        .package(url: "https://github.com/no-problem-dev/swift-api-contract.git", from: "1.1.0"),
-        .package(url: "https://github.com/no-problem-dev/swift-api-client.git", from: "1.1.0"),
+        .package(path: "../../swift-api-contract"),
+        .package(path: "../../swift-api-client"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.4.0"),
     ],
     targets: [
@@ -35,7 +35,6 @@ let package = Package(
             .product(name: "LLMClient", package: "swift-llm-client"),
             .product(name: "LLMTool", package: "swift-llm-client"),
             .product(name: "LLMChat", package: "swift-llm-client"),
-            .product(name: "LLMDynamicStructured", package: "swift-llm-client"),
             .product(name: "APIContract", package: "swift-api-contract"),
             .product(name: "APIClient", package: "swift-api-client"),
         ]),
@@ -45,9 +44,10 @@ let package = Package(
             .product(name: "LLMClient", package: "swift-llm-client"),
             .product(name: "LLMTool", package: "swift-llm-client"),
             .product(name: "LLMChat", package: "swift-llm-client"),
-            .product(name: "LLMDynamicStructured", package: "swift-llm-client"),
             .product(name: "APIContract", package: "swift-api-contract"),
             .product(name: "APIClient", package: "swift-api-client"),
+        ], exclude: [
+            "Extensions/AnthropicClient+Dynamic.swift",
         ]),
         // OpenAI provider (depends on OpenAICompatible)
         .target(name: "LLMCloudOpenAI", dependencies: [
@@ -56,7 +56,6 @@ let package = Package(
             .product(name: "LLMClient", package: "swift-llm-client"),
             .product(name: "LLMTool", package: "swift-llm-client"),
             .product(name: "LLMChat", package: "swift-llm-client"),
-            .product(name: "LLMDynamicStructured", package: "swift-llm-client"),
         ]),
         // Gemini provider
         .target(name: "LLMCloudGemini", dependencies: [
@@ -64,9 +63,10 @@ let package = Package(
             .product(name: "LLMClient", package: "swift-llm-client"),
             .product(name: "LLMTool", package: "swift-llm-client"),
             .product(name: "LLMChat", package: "swift-llm-client"),
-            .product(name: "LLMDynamicStructured", package: "swift-llm-client"),
             .product(name: "APIContract", package: "swift-api-contract"),
             .product(name: "APIClient", package: "swift-api-client"),
+        ], exclude: [
+            "Extensions/GeminiClient+Dynamic.swift",
         ]),
         // DeepSeek provider
         .target(name: "LLMCloudDeepSeek", dependencies: [
@@ -75,7 +75,6 @@ let package = Package(
             .product(name: "LLMClient", package: "swift-llm-client"),
             .product(name: "LLMTool", package: "swift-llm-client"),
             .product(name: "LLMChat", package: "swift-llm-client"),
-            .product(name: "LLMDynamicStructured", package: "swift-llm-client"),
         ]),
         // xAI provider
         .target(name: "LLMCloudXAI", dependencies: [
@@ -84,7 +83,6 @@ let package = Package(
             .product(name: "LLMClient", package: "swift-llm-client"),
             .product(name: "LLMTool", package: "swift-llm-client"),
             .product(name: "LLMChat", package: "swift-llm-client"),
-            .product(name: "LLMDynamicStructured", package: "swift-llm-client"),
         ]),
         // Groq provider
         .target(name: "LLMCloudGroq", dependencies: [
@@ -93,7 +91,6 @@ let package = Package(
             .product(name: "LLMClient", package: "swift-llm-client"),
             .product(name: "LLMTool", package: "swift-llm-client"),
             .product(name: "LLMChat", package: "swift-llm-client"),
-            .product(name: "LLMDynamicStructured", package: "swift-llm-client"),
         ]),
         // Mistral provider
         .target(name: "LLMCloudMistral", dependencies: [
@@ -102,7 +99,6 @@ let package = Package(
             .product(name: "LLMClient", package: "swift-llm-client"),
             .product(name: "LLMTool", package: "swift-llm-client"),
             .product(name: "LLMChat", package: "swift-llm-client"),
-            .product(name: "LLMDynamicStructured", package: "swift-llm-client"),
         ]),
         // OpenRouter provider
         .target(name: "LLMCloudOpenRouter", dependencies: [
@@ -111,7 +107,6 @@ let package = Package(
             .product(name: "LLMClient", package: "swift-llm-client"),
             .product(name: "LLMTool", package: "swift-llm-client"),
             .product(name: "LLMChat", package: "swift-llm-client"),
-            .product(name: "LLMDynamicStructured", package: "swift-llm-client"),
         ]),
         // Umbrella re-export
         .target(name: "LLMCloud", dependencies: [

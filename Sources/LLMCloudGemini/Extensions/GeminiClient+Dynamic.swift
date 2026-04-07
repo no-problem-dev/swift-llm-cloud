@@ -1,6 +1,5 @@
 import LLMCloudClient
 import LLMClient
-import LLMDynamicStructured
 import Foundation
 
 // MARK: - GeminiClient + DynamicStructured

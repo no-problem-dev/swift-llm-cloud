@@ -9,11 +9,12 @@ extension ToolSet {
     public func toAnthropicFormat() -> [[String: Any]] {
         toProviderFormat(adapter: AnthropicSchemaAdapter()) { tool, adaptedSchema in
             var result: [String: Any] = [
-                "name": tool.name,
+                "name": tool.toolName,
                 "description": tool.toolDescription
             ]
-            if let schema = adaptedSchema {
-                result["input_schema"] = schema
+            if let schemaData = try? adaptedSchema.toJSONData(),
+               let schemaDict = try? JSONSerialization.jsonObject(with: schemaData) as? [String: Any] {
+                result["input_schema"] = schemaDict
             }
             return result
         }

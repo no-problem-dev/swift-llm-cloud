@@ -159,8 +159,8 @@ internal struct AnthropicProvider: LLMProvider, RetryableProviderProtocol {
                 contentBlocks.append(.text(text))
             case .toolUse(let id, let name, let input):
                 contentBlocks.append(.toolUse(id: id, name: name, input: input))
-            case .toolResult(let toolCallId, _, let resultContent, let isError):
-                contentBlocks.append(.toolResult(toolUseId: toolCallId, content: resultContent, isError: isError))
+            case .toolResult(let toolCallId, _, let resultContent):
+                contentBlocks.append(.toolResult(toolUseId: toolCallId, content: resultContent.contentValue, isError: resultContent.isError))
             case .image(let imageContent):
                 contentBlocks.append(.image(imageContent))
             case .audio:

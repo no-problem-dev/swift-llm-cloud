@@ -23,6 +23,7 @@ extension AnthropicClient: AgentCapableClient {
         tools: ToolSet,
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
+        thinkingMode: ThinkingMode,
         maxTokens: Int?
     ) async throws -> LLMResponse {
         // HTTPリクエストを構築
@@ -45,6 +46,7 @@ extension AnthropicClient: AgentCapableClient {
             tools: tools,
             toolChoice: toolChoice,
             responseSchema: responseSchema,
+            thinkingMode: thinkingMode,
             maxTokens: maxTokens
         )
         urlRequest.httpBody = try JSONEncoder().encode(body)
@@ -99,8 +101,10 @@ extension AnthropicClient: AgentCapableClient {
         tools: ToolSet,
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
+        thinkingMode: ThinkingMode,
         maxTokens: Int?
     ) throws -> AnthropicAgentRequestBody {
+        _ = thinkingMode // Anthropic API は thinkingMode を使う場合は別途 thinking パラメータが必要
         let anthropicMessages = try messages.map { try convertToAnthropicMessage($0) }
 
         // ツール設定（空の場合は nil）
@@ -141,8 +145,8 @@ extension AnthropicClient: AgentCapableClient {
                 contentBlocks.append(.text(text))
             case .toolUse(let id, let name, let input):
                 contentBlocks.append(.toolUse(id: id, name: name, input: input))
-            case .toolResult(let toolCallId, _, let resultContent, let isError):
-                contentBlocks.append(.toolResult(toolUseId: toolCallId, content: resultContent, isError: isError))
+            case .toolResult(let toolCallId, _, let resultContent):
+                contentBlocks.append(.toolResult(toolUseId: toolCallId, content: resultContent.contentValue, isError: resultContent.isError))
             case .image(let imageContent):
                 if case .base64(let data) = imageContent.source {
                     contentBlocks.append(.image(data: data, mediaType: imageContent.mimeType))
@@ -164,7 +168,7 @@ extension AnthropicClient: AgentCapableClient {
         switch choice {
         case .auto:
             return .auto
-        case .none:
+        case .disabled:
             return .none
         case .required:
             return .any
@@ -283,6 +287,7 @@ extension AnthropicClient: AgentCapableClient {
                             tools: tools,
                             toolChoice: toolChoice,
                             responseSchema: responseSchema,
+                            thinkingMode: effectiveThinkingMode,
                             maxTokens: maxTokens
                         )
                         continuation.yield(.completed(response))
