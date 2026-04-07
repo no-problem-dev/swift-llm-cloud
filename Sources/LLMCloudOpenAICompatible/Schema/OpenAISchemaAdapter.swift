@@ -85,25 +85,25 @@ public struct OpenAISchemaAdapter: ProviderSchemaAdapter {
 
         if let minimum = schema.minimum {
             removedConstraints.append(RemovedConstraint(
-                type: .minimum, fieldPath: fieldPath, value: .int(minimum)
+                type: .minimum, fieldPath: fieldPath, value: .double(minimum)
             ))
         }
 
         if let maximum = schema.maximum {
             removedConstraints.append(RemovedConstraint(
-                type: .maximum, fieldPath: fieldPath, value: .int(maximum)
+                type: .maximum, fieldPath: fieldPath, value: .double(maximum)
             ))
         }
 
         if let exclusiveMinimum = schema.exclusiveMinimum {
             removedConstraints.append(RemovedConstraint(
-                type: .exclusiveMinimum, fieldPath: fieldPath, value: .int(exclusiveMinimum)
+                type: .exclusiveMinimum, fieldPath: fieldPath, value: .double(exclusiveMinimum)
             ))
         }
 
         if let exclusiveMaximum = schema.exclusiveMaximum {
             removedConstraints.append(RemovedConstraint(
-                type: .exclusiveMaximum, fieldPath: fieldPath, value: .int(exclusiveMaximum)
+                type: .exclusiveMaximum, fieldPath: fieldPath, value: .double(exclusiveMaximum)
             ))
         }
 

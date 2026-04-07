@@ -127,8 +127,8 @@ extension AnthropicClient: ChatCapableClient {
                 contentBlocks.append(.text(text))
             case .toolUse(let id, let name, let input):
                 contentBlocks.append(.toolUse(id: id, name: name, input: input))
-            case .toolResult(let toolCallId, _, let resultContent, let isError):
-                contentBlocks.append(.toolResult(toolUseId: toolCallId, content: resultContent, isError: isError))
+            case .toolResult(let toolCallId, _, let resultContent):
+                contentBlocks.append(.toolResult(toolUseId: toolCallId, content: resultContent.contentValue, isError: resultContent.isError))
             case .image:
                 // Chat APIではメディアコンテンツは現在サポートされていません
                 throw LLMError.mediaNotSupported(mediaType: "image", provider: "Anthropic Chat API")

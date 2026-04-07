@@ -18,7 +18,7 @@ extension AnthropicClient: ToolCallableClient {
         model: ClaudeModel,
         tools: ToolSet,
         toolChoice: ToolChoice?,
-        systemPrompt: String?,
+        systemPrompt: SystemPrompt?,
         temperature: Double?,
         maxTokens: Int?
     ) async throws -> ToolCallResponse {
@@ -70,7 +70,7 @@ extension AnthropicClient: ToolCallableClient {
         messages: [LLMMessage],
         tools: ToolSet,
         toolChoice: ToolChoice?,
-        systemPrompt: String?,
+        systemPrompt: SystemPrompt?,
         temperature: Double?,
         maxTokens: Int?
     ) throws -> AnthropicToolRequestBody {
@@ -81,7 +81,7 @@ extension AnthropicClient: ToolCallableClient {
         return AnthropicToolRequestBody(
             model: model.id,
             messages: anthropicMessages,
-            system: systemPrompt,
+            system: systemPrompt?.render(),
             maxTokens: maxTokens ?? Self.defaultMaxTokens,
             temperature: temperature,
             tools: anthropicTools,
@@ -102,8 +102,8 @@ extension AnthropicClient: ToolCallableClient {
                 contentBlocks.append(.text(text))
             case .toolUse(let id, let name, let input):
                 contentBlocks.append(.toolUse(id: id, name: name, input: input))
-            case .toolResult(let toolCallId, _, let resultContent, let isError):
-                contentBlocks.append(.toolResult(toolUseId: toolCallId, content: resultContent, isError: isError))
+            case .toolResult(let toolCallId, _, let resultContent):
+                contentBlocks.append(.toolResult(toolUseId: toolCallId, content: resultContent.contentValue, isError: resultContent.isError))
             case .image(let imageContent):
                 if case .base64(let data) = imageContent.source {
                     contentBlocks.append(.image(data: data, mediaType: imageContent.mimeType))
@@ -125,7 +125,7 @@ extension AnthropicClient: ToolCallableClient {
         switch choice {
         case .auto:
             return .auto
-        case .none:
+        case .disabled:
             return .none
         case .required:
             return .any

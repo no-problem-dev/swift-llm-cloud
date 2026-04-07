@@ -256,8 +256,8 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
                 let functionCall = GeminiFunctionCall(name: name, args: args)
                 parts.append(GeminiPart(functionCall: functionCall))
 
-            case .toolResult(_, let name, let resultContent, _):
-                let responseDict: [String: Any] = ["result": resultContent]
+            case .toolResult(_, let name, let content):
+                let responseDict: [String: Any] = ["result": content.contentValue]
                 let functionResponse = GeminiFunctionResponse(name: name, response: responseDict)
                 toolResultParts.append(GeminiPart(functionResponse: functionResponse))
 

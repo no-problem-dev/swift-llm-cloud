@@ -2,7 +2,6 @@ import LLMClient
 import LLMCloudClient
 import LLMTool
 import LLMChat
-import LLMDynamicStructured
 import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -320,58 +319,6 @@ package struct OpenAICompatibleEngine: Sendable {
         )
     }
 
-    // MARK: - DynamicJSON
-
-    package func generateDynamic(
-        input: LLMInput,
-        modelId: String,
-        toLLMModel: @Sendable () -> LLMModel,
-        output: DynamicStructured,
-        systemPrompt: String?,
-        temperature: Double?,
-        maxTokens: Int?
-    ) async throws -> DynamicJSON {
-        try await generateDynamic(
-            messages: [input.toLLMMessage()],
-            modelId: modelId,
-            toLLMModel: toLLMModel,
-            output: output,
-            systemPrompt: systemPrompt,
-            temperature: temperature,
-            maxTokens: maxTokens
-        )
-    }
-
-    package func generateDynamic(
-        messages: [LLMMessage],
-        modelId: String,
-        toLLMModel: @Sendable () -> LLMModel,
-        output: DynamicStructured,
-        systemPrompt: String?,
-        temperature: Double?,
-        maxTokens: Int?
-    ) async throws -> DynamicJSON {
-        let schema = output.toJSONSchema()
-        let enhancedSystemPrompt = buildSystemPrompt(base: systemPrompt, schema: schema)
-
-        let request = LLMRequest(
-            model: toLLMModel(),
-            messages: messages,
-            systemPrompt: enhancedSystemPrompt,
-            responseSchema: schema,
-            temperature: temperature,
-            maxTokens: maxTokens
-        )
-
-        let response = try await provider.send(request)
-
-        guard let text = response.content.first?.text else {
-            throw LLMError.emptyResponse
-        }
-
-        return try DynamicJSON(from: text)
-    }
-
     // MARK: - Private Helpers
 
     private func makeURLRequest() -> URLRequest {
@@ -405,7 +352,7 @@ package struct OpenAICompatibleEngine: Sendable {
         switch choice {
         case .auto:
             return .auto
-        case .none:
+        case .disabled:
             return .none
         case .required:
             return .required

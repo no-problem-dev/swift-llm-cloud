@@ -23,8 +23,10 @@ extension GeminiClient: AgentCapableClient {
         tools: ToolSet,
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
+        thinkingMode: ThinkingMode,
         maxTokens: Int?
     ) async throws -> LLMResponse {
+        _ = thinkingMode // Gemini は現状 thinking モードをそのまま渡す API を持たない
         // エンドポイントを構築
         let endpoint = URL(string: "\(baseURL)/\(model.id):generateContent?key=\(apiKey)")!
 
@@ -154,9 +156,9 @@ extension GeminiClient: AgentCapableClient {
                 let sig = GeminiThoughtSignatureEncoding.decodeThoughtSignature(from: id)
                 parts.append(GeminiAgentPart(functionCall: functionCall, thoughtSignature: sig))
 
-            case .toolResult(_, let name, let resultContent, _):
+            case .toolResult(_, let name, let content):
                 // ツール結果（ユーザーからの応答）
-                let responseDict: [String: Any] = ["result": resultContent]
+                let responseDict: [String: Any] = ["result": content.contentValue]
                 let functionResponse = GeminiAgentFunctionResponse(name: name, response: responseDict)
                 toolResultParts.append(GeminiAgentPart(functionResponse: functionResponse))
 
@@ -198,7 +200,7 @@ extension GeminiClient: AgentCapableClient {
         switch choice {
         case .auto:
             config = GeminiAgentFunctionCallingConfig(mode: "AUTO", allowedFunctionNames: nil)
-        case .none:
+        case .disabled:
             config = GeminiAgentFunctionCallingConfig(mode: "NONE", allowedFunctionNames: nil)
         case .required:
             config = GeminiAgentFunctionCallingConfig(mode: "ANY", allowedFunctionNames: nil)

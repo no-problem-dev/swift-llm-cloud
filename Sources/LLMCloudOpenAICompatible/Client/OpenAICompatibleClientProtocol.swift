@@ -2,7 +2,6 @@ import LLMClient
 import LLMCloudClient
 import LLMTool
 import LLMChat
-import LLMDynamicStructured
 import Foundation
 
 /// OpenAI 互換クライアントプロトコル
@@ -87,7 +86,7 @@ extension OpenAICompatibleClientProtocol {
         model: Model,
         tools: ToolSet,
         toolChoice: ToolChoice?,
-        systemPrompt: String?,
+        systemPrompt: SystemPrompt?,
         temperature: Double?,
         maxTokens: Int?
     ) async throws -> ToolCallResponse {
@@ -96,7 +95,7 @@ extension OpenAICompatibleClientProtocol {
             modelId: model.id,
             tools: tools,
             toolChoice: toolChoice,
-            systemPrompt: systemPrompt,
+            systemPrompt: systemPrompt?.render(),
             temperature: temperature,
             maxTokens: maxTokens
         )
@@ -113,9 +112,11 @@ extension OpenAICompatibleClientProtocol {
         tools: ToolSet,
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
+        thinkingMode: ThinkingMode,
         maxTokens: Int?
     ) async throws -> LLMResponse {
-        try await engine.executeAgentStep(
+        _ = thinkingMode // OpenAI 互換は thinking モード未対応
+        return try await engine.executeAgentStep(
             messages: messages,
             modelId: model.id,
             systemPrompt: systemPrompt,
@@ -127,44 +128,3 @@ extension OpenAICompatibleClientProtocol {
     }
 }
 
-// MARK: - DynamicJSON Default Implementation
-
-extension OpenAICompatibleClientProtocol {
-    public func generate(
-        input: LLMInput,
-        model: Model,
-        output: DynamicStructured,
-        systemPrompt: String? = nil,
-        temperature: Double? = nil,
-        maxTokens: Int? = nil
-    ) async throws -> DynamicJSON {
-        try await engine.generateDynamic(
-            input: input,
-            modelId: model.id,
-            toLLMModel: { model.toLLMModel() },
-            output: output,
-            systemPrompt: systemPrompt,
-            temperature: temperature,
-            maxTokens: maxTokens
-        )
-    }
-
-    public func generate(
-        messages: [LLMMessage],
-        model: Model,
-        output: DynamicStructured,
-        systemPrompt: String? = nil,
-        temperature: Double? = nil,
-        maxTokens: Int? = nil
-    ) async throws -> DynamicJSON {
-        try await engine.generateDynamic(
-            messages: messages,
-            modelId: model.id,
-            toLLMModel: { model.toLLMModel() },
-            output: output,
-            systemPrompt: systemPrompt,
-            temperature: temperature,
-            maxTokens: maxTokens
-        )
-    }
-}
