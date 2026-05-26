@@ -43,6 +43,11 @@ public struct OpenAIClient: OpenAICompatibleClientProtocol {
 
     package let engine: OpenAICompatibleEngine
 
+    /// Responses API (`/v1/responses`) 専用エンジン。
+    /// reasoning モデル + function tools の組み合わせは Chat Completions では拒否されるため、
+    /// `executeAgentStep` 内で必要に応じてこちらに routing する。
+    package let responsesEngine: OpenAIResponsesEngine
+
     /// API キー
     public var apiKey: String { engine.apiKey }
 
@@ -64,6 +69,9 @@ public struct OpenAIClient: OpenAICompatibleClientProtocol {
     /// デフォルトエンドポイント
     public static let defaultEndpoint = URL(string: "https://api.openai.com/v1/chat/completions")!
 
+    /// Responses API のデフォルトエンドポイント
+    public static let defaultResponsesEndpoint = URL(string: "https://api.openai.com/v1/responses")!
+
     // MARK: - Initializers
 
     /// API キーを指定して初期化
@@ -71,7 +79,8 @@ public struct OpenAIClient: OpenAICompatibleClientProtocol {
     /// - Parameters:
     ///   - apiKey: OpenAI API キー
     ///   - organization: 組織 ID（オプション）
-    ///   - endpoint: カスタムエンドポイント（オプション）
+    ///   - endpoint: Chat Completions のカスタムエンドポイント（オプション）
+    ///   - responsesEndpoint: Responses API のカスタムエンドポイント（オプション）
     ///   - session: カスタム URLSession（オプション）
     ///   - retryConfiguration: リトライ設定（デフォルト: 有効）
     ///   - retryEventHandler: リトライイベントハンドラー（オプション）
@@ -79,6 +88,7 @@ public struct OpenAIClient: OpenAICompatibleClientProtocol {
         apiKey: String,
         organization: String? = nil,
         endpoint: URL? = nil,
+        responsesEndpoint: URL? = nil,
         session: URLSession = .shared,
         retryConfiguration: RetryConfiguration = .default,
         retryEventHandler: RetryEventHandler? = nil
@@ -94,6 +104,15 @@ public struct OpenAIClient: OpenAICompatibleClientProtocol {
             apiKey: apiKey,
             endpoint: endpoint ?? Self.defaultEndpoint,
             providerName: "OpenAI",
+            session: session,
+            customHeaders: customHeaders,
+            retryConfiguration: retryConfiguration,
+            retryEventHandler: retryEventHandler
+        )
+
+        self.responsesEngine = OpenAIResponsesEngine(
+            apiKey: apiKey,
+            endpoint: responsesEndpoint ?? Self.defaultResponsesEndpoint,
             session: session,
             customHeaders: customHeaders,
             retryConfiguration: retryConfiguration,

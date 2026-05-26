@@ -24,9 +24,11 @@ extension GeminiClient: AgentCapableClient {
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
         thinkingMode: ThinkingMode,
+        reasoningEffort: ReasoningEffort?,
         maxTokens: Int?
     ) async throws -> LLMResponse {
         _ = thinkingMode // Gemini は現状 thinking モードをそのまま渡す API を持たない
+        _ = reasoningEffort // Gemini は OpenAI の reasoning_effort 概念を持たない
         // エンドポイントを構築
         let endpoint = URL(string: "\(baseURL)/\(model.id):generateContent?key=\(apiKey)")!
 

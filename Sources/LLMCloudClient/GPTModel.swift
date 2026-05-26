@@ -21,6 +21,9 @@ public enum GPTModel: Sendable, Equatable {
     /// GPT-5 mini 最新版
     case gpt5Mini
 
+    /// GPT-5.4 mini（2026-03 リリース。最新世代の mini）
+    case gpt5_4Mini
+
     /// GPT-4.1 最新版
     case gpt4_1
 
@@ -104,6 +107,8 @@ public enum GPTModel: Sendable, Equatable {
             return "gpt-5"
         case .gpt5Mini:
             return "gpt-5-mini"
+        case .gpt5_4Mini:
+            return "gpt-5.4-mini"
         case .gpt4_1:
             return "gpt-4.1"
         case .gpt4_1Mini:

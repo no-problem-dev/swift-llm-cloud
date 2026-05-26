@@ -257,6 +257,7 @@ package struct OpenAICompatibleEngine: Sendable {
         tools: ToolSet,
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
+        reasoningEffort: ReasoningEffort?,
         maxTokens: Int?
     ) async throws -> LLMResponse {
         var urlRequest = makeURLRequest()
@@ -298,7 +299,8 @@ package struct OpenAICompatibleEngine: Sendable {
             temperature: nil,
             responseFormat: responseFormat,
             tools: openAITools,
-            toolChoice: openAIToolChoice
+            toolChoice: openAIToolChoice,
+            reasoningEffort: reasoningEffort?.rawValue
         )
         urlRequest.httpBody = try JSONEncoder().encode(body)
 

@@ -113,9 +113,10 @@ extension OpenAICompatibleClientProtocol {
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
         thinkingMode: ThinkingMode,
+        reasoningEffort: ReasoningEffort?,
         maxTokens: Int?
     ) async throws -> LLMResponse {
-        _ = thinkingMode // OpenAI 互換は thinking モード未対応
+        _ = thinkingMode // OpenAI 互換は thinking モード未対応（reasoning_effort で表現する）
         return try await engine.executeAgentStep(
             messages: messages,
             modelId: model.id,
@@ -123,6 +124,7 @@ extension OpenAICompatibleClientProtocol {
             tools: tools,
             toolChoice: toolChoice,
             responseSchema: responseSchema,
+            reasoningEffort: reasoningEffort,
             maxTokens: maxTokens
         )
     }

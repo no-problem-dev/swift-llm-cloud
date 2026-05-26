@@ -24,8 +24,10 @@ extension AnthropicClient: AgentCapableClient {
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
         thinkingMode: ThinkingMode,
+        reasoningEffort: ReasoningEffort?,
         maxTokens: Int?
     ) async throws -> LLMResponse {
+        _ = reasoningEffort // Anthropic は OpenAI の reasoning_effort 概念を持たず、Extended Thinking で表現する
         // HTTPリクエストを構築
         var urlRequest = URLRequest(url: endpoint)
         urlRequest.httpMethod = "POST"
@@ -265,8 +267,11 @@ extension AnthropicClient: AgentCapableClient {
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
         thinkingMode: ThinkingMode,
+        reasoningEffort: ReasoningEffort?,
         maxTokens: Int?
     ) -> AsyncThrowingStream<StreamingAgentEvent, Error> {
+        _ = reasoningEffort // Anthropic 側では Extended Thinking が思考量制御の主役
+
         // 非対応モデル（Haiku 等）は自動で thinking 無効にフォールバック
         let effectiveThinkingMode: ThinkingMode
         if thinkingMode == .adaptive && !model.supportsExtendedThinking {
@@ -288,6 +293,7 @@ extension AnthropicClient: AgentCapableClient {
                             toolChoice: toolChoice,
                             responseSchema: responseSchema,
                             thinkingMode: effectiveThinkingMode,
+                            reasoningEffort: nil,
                             maxTokens: maxTokens
                         )
                         continuation.yield(.completed(response))

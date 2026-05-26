@@ -10,6 +10,8 @@ package struct OpenAICompatibleRequestBody: Encodable, Sendable {
     package let responseFormat: OpenAICompatibleResponseFormat?
     package let tools: [OpenAICompatibleToolDef]?
     package let toolChoice: OpenAICompatibleToolChoice?
+    /// OpenAI GPT-5 系の `reasoning_effort`。nil の場合は API デフォルト。
+    package let reasoningEffort: String?
 
     package init(
         model: String,
@@ -18,7 +20,8 @@ package struct OpenAICompatibleRequestBody: Encodable, Sendable {
         temperature: Double?,
         responseFormat: OpenAICompatibleResponseFormat?,
         tools: [OpenAICompatibleToolDef]?,
-        toolChoice: OpenAICompatibleToolChoice?
+        toolChoice: OpenAICompatibleToolChoice?,
+        reasoningEffort: String? = nil
     ) {
         self.model = model
         self.messages = messages
@@ -27,6 +30,7 @@ package struct OpenAICompatibleRequestBody: Encodable, Sendable {
         self.responseFormat = responseFormat
         self.tools = tools
         self.toolChoice = toolChoice
+        self.reasoningEffort = reasoningEffort
     }
 
     enum CodingKeys: String, CodingKey {
@@ -37,6 +41,7 @@ package struct OpenAICompatibleRequestBody: Encodable, Sendable {
         case responseFormat = "response_format"
         case tools
         case toolChoice = "tool_choice"
+        case reasoningEffort = "reasoning_effort"
     }
 
     package func encode(to encoder: Encoder) throws {
@@ -55,6 +60,9 @@ package struct OpenAICompatibleRequestBody: Encodable, Sendable {
         }
         if let toolChoice = toolChoice {
             try container.encode(toolChoice, forKey: .toolChoice)
+        }
+        if let reasoningEffort = reasoningEffort {
+            try container.encode(reasoningEffort, forKey: .reasoningEffort)
         }
     }
 }
