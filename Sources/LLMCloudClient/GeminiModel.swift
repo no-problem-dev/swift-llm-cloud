@@ -6,6 +6,7 @@ import LLMClient
 /// Google Gemini モデル
 public enum GeminiModel: Sendable, Equatable {
     // MARK: - Aliases (推奨)
+    case flash35
     case pro31
     case flashLite31
     case pro3
@@ -15,6 +16,7 @@ public enum GeminiModel: Sendable, Equatable {
     case flash25Lite
 
     // MARK: - Preview/Experimental Versions
+    case flash35_preview(version: String)
     case pro31_preview(version: String)
     case flashLite31_preview(version: String)
     case pro3_preview(version: String)
@@ -30,10 +32,12 @@ public enum GeminiModel: Sendable, Equatable {
 
     public var id: String {
         switch self {
+        case .flash35:
+            return "gemini-3.5-flash"
         case .pro31:
             return "gemini-3.1-pro-preview"
         case .flashLite31:
-            return "gemini-3.1-flash-lite-preview"
+            return "gemini-3.1-flash-lite"
         case .pro3:
             return "gemini-3-pro-preview"
         case .flash3:
@@ -44,6 +48,8 @@ public enum GeminiModel: Sendable, Equatable {
             return "gemini-2.5-flash"
         case .flash25Lite:
             return "gemini-2.5-flash-lite"
+        case .flash35_preview(let version):
+            return "gemini-3.5-flash-preview-\(version)"
         case .pro31_preview(let version):
             return "gemini-3.1-pro-preview-\(version)"
         case .flashLite31_preview(let version):
@@ -71,8 +77,9 @@ extension GeminiModel: RawRepresentable {
 
     public init?(rawValue: String) {
         switch rawValue {
+        case "gemini-3.5-flash": self = .flash35
         case "gemini-3.1-pro-preview": self = .pro31
-        case "gemini-3.1-flash-lite-preview": self = .flashLite31
+        case "gemini-3.1-flash-lite": self = .flashLite31
         case "gemini-3-pro-preview": self = .pro3
         case "gemini-3-flash-preview": self = .flash3
         case "gemini-2.5-pro": self = .pro25
@@ -87,6 +94,7 @@ extension GeminiModel: RawRepresentable {
 
 extension GeminiModel {
     public enum Preset: String, CaseIterable, Identifiable, Sendable {
+        case flash35 = "flash35"
         case pro31 = "pro31"
         case flashLite31 = "flashLite31"
         case flash3 = "flash3"
@@ -97,6 +105,7 @@ extension GeminiModel {
 
         public var model: GeminiModel {
             switch self {
+            case .flash35: return .flash35
             case .pro31: return .pro31
             case .flashLite31: return .flashLite31
             case .flash3: return .flash3
@@ -107,6 +116,7 @@ extension GeminiModel {
 
         public var displayName: String {
             switch self {
+            case .flash35: return "Gemini 3.5 Flash"
             case .pro31: return "Gemini 3.1 Pro"
             case .flashLite31: return "Gemini 3.1 Flash-Lite"
             case .flash3: return "Gemini 3 Flash"
@@ -117,6 +127,7 @@ extension GeminiModel {
 
         public var shortName: String {
             switch self {
+            case .flash35: return "3.5 Flash"
             case .pro31: return "3.1 Pro"
             case .flashLite31: return "3.1 Flash-Lite"
             case .flash3: return "3 Flash"
@@ -128,6 +139,21 @@ extension GeminiModel {
         /// モデルプロファイル
         public var profile: ModelProfile {
             switch self {
+            case .flash35:
+                return ModelProfile(
+                    summary: "最新 Flash。エージェント・コーディングに最強",
+                    modelFamily: "Gemini",
+                    description: "Gemini 3.5 Flash は Google の最新 Flash モデルで、エージェントワークフローとコーディングタスクにおいてフロンティアレベルの知性を持続的に発揮します。高速・低コストながら長期的なマルチステップタスクやサブエージェント展開に最適化されています。",
+                    contextWindow: 1_048_576,
+                    maxOutputTokens: 65_536,
+                    knowledgeCutoff: "2025-01",
+                    strengths: ["フロンティアレベルの知性", "エージェント最適化", "高速レスポンス", "コーディング性能"],
+                    bestFor: ["エージェント開発", "マルチステップワークフロー", "コーディング支援", "大量処理"],
+                    toolCallSupport: .excellent,
+                    japaneseSupport: .excellent,
+                    modalities: [.text, .vision, .code],
+                    pricing: Pricing(inputPerMTok: 1.50, outputPerMTok: 9)
+                )
             case .pro31:
                 return ModelProfile(
                     summary: "最新 Pro。最高品質の推論",
