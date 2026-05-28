@@ -206,6 +206,7 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
             usage = TokenUsage(
                 inputTokens: usageMetadata.promptTokenCount ?? 0,
                 outputTokens: usageMetadata.candidatesTokenCount ?? 0,
+                cacheReadTokens: usageMetadata.cachedContentTokenCount,
                 reasoningTokens: usageMetadata.thoughtsTokenCount
             )
         } else {

@@ -120,7 +120,7 @@ package enum OpenAIResponsesConverter {
             inputTokens: body.usage?.inputTokens ?? 0,
             outputTokens: body.usage?.outputTokens ?? 0,
             cacheCreationTokens: nil,
-            cacheReadTokens: nil,
+            cacheReadTokens: body.usage?.inputTokensDetails?.cachedTokens,
             reasoningTokens: body.usage?.outputTokensDetails?.reasoningTokens
         )
 

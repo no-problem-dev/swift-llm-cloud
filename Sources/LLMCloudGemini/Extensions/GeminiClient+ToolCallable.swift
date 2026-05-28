@@ -258,6 +258,7 @@ extension GeminiClient: ToolCallableClient {
                 usage = TokenUsage(
                     inputTokens: usageMetadata.promptTokenCount ?? 0,
                     outputTokens: usageMetadata.candidatesTokenCount ?? 0,
+                    cacheReadTokens: usageMetadata.cachedContentTokenCount,
                     reasoningTokens: usageMetadata.thoughtsTokenCount
                 )
             } else {
@@ -299,6 +300,7 @@ extension GeminiClient: ToolCallableClient {
             usage = TokenUsage(
                 inputTokens: usageMetadata.promptTokenCount ?? 0,
                 outputTokens: usageMetadata.candidatesTokenCount ?? 0,
+                cacheReadTokens: usageMetadata.cachedContentTokenCount,
                 reasoningTokens: usageMetadata.thoughtsTokenCount
             )
         } else {
@@ -672,6 +674,7 @@ private struct GeminiToolUsageMetadata: Decodable {
     let candidatesTokenCount: Int?
     let totalTokenCount: Int?
     let thoughtsTokenCount: Int?
+    let cachedContentTokenCount: Int?
 }
 
 /// Gemini エラーレスポンス

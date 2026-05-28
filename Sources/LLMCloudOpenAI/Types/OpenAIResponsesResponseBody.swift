@@ -117,7 +117,16 @@ package struct OpenAIResponsesUsage: Decodable {
     package let inputTokens: Int?
     package let outputTokens: Int?
     package let totalTokens: Int?
+    package let inputTokensDetails: InputTokensDetails?
     package let outputTokensDetails: OutputTokensDetails?
+
+    package struct InputTokensDetails: Decodable {
+        package let cachedTokens: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case cachedTokens = "cached_tokens"
+        }
+    }
 
     package struct OutputTokensDetails: Decodable {
         package let reasoningTokens: Int?
@@ -131,6 +140,7 @@ package struct OpenAIResponsesUsage: Decodable {
         case inputTokens = "input_tokens"
         case outputTokens = "output_tokens"
         case totalTokens = "total_tokens"
+        case inputTokensDetails = "input_tokens_details"
         case outputTokensDetails = "output_tokens_details"
     }
 }

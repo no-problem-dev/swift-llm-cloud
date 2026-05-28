@@ -217,7 +217,9 @@ extension GeminiClient: ChatCapableClient {
         let usage = geminiResponse.usageMetadata.map {
             TokenUsage(
                 inputTokens: $0.promptTokenCount ?? 0,
-                outputTokens: $0.candidatesTokenCount ?? 0
+                outputTokens: $0.candidatesTokenCount ?? 0,
+                cacheReadTokens: $0.cachedContentTokenCount,
+                reasoningTokens: $0.thoughtsTokenCount
             )
         } ?? TokenUsage(inputTokens: 0, outputTokens: 0)
 
@@ -434,6 +436,8 @@ private struct GeminiChatUsageMetadata: Decodable {
     let promptTokenCount: Int?
     let candidatesTokenCount: Int?
     let totalTokenCount: Int?
+    let thoughtsTokenCount: Int?
+    let cachedContentTokenCount: Int?
 }
 
 /// Gemini エラーレスポンス

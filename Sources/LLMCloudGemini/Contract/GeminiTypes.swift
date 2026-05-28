@@ -233,6 +233,7 @@ struct GeminiUsageMetadata: Decodable, Sendable {
     let candidatesTokenCount: Int?
     let totalTokenCount: Int?
     let thoughtsTokenCount: Int?
+    let cachedContentTokenCount: Int?
 }
 
 /// Gemini エラーレスポンス
