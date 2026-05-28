@@ -27,9 +27,7 @@ extension GeminiClient: AgentCapableClient {
         reasoningEffort: ReasoningEffort?,
         maxTokens: Int?
     ) async throws -> LLMResponse {
-        _ = thinkingMode // Gemini は現状 thinking モードをそのまま渡す API を持たない
-        _ = reasoningEffort // Gemini は OpenAI の reasoning_effort 概念を持たない
-        // エンドポイントを構築
+        _ = thinkingMode // Gemini は thinkingMode (on/off スイッチ) は持たず、thinkingConfig で表現する
         let endpoint = URL(string: "\(baseURL)/\(model.id):generateContent?key=\(apiKey)")!
 
         // HTTPリクエストを構築
@@ -45,6 +43,7 @@ extension GeminiClient: AgentCapableClient {
             tools: tools,
             toolChoice: toolChoice,
             responseSchema: responseSchema,
+            reasoningEffort: reasoningEffort,
             maxTokens: maxTokens
         )
         urlRequest.httpBody = try JSONEncoder().encode(body)
@@ -72,6 +71,35 @@ extension GeminiClient: AgentCapableClient {
     /// デフォルトの最大トークン数
     private static let defaultMaxTokens = 4096
 
+    /// `ReasoningEffort` を Gemini の `thinkingConfig` にマップする。
+    /// 3 系: `thinkingLevel` 文字列。2.5 系: `thinkingBudget` 整数。
+    /// モデルが minimal を許容しない場合は low に丸める。
+    /// モデルが disable できないのに budget=0 が要求される場合は最小値に丸める。
+    private static func thinkingConfig(for effort: ReasoningEffort, model: GeminiModel) -> GeminiThinkingConfig {
+        switch model.thinkingControlStyle {
+        case .level:
+            let level: String
+            switch effort {
+            case .minimal: level = model.supportsMinimalThinkingLevel ? "minimal" : "low"
+            case .low: level = "low"
+            case .medium: level = "medium"
+            case .high: level = "high"
+            }
+            return GeminiThinkingConfig(thinkingLevel: level, thinkingBudget: nil)
+        case .budget:
+            let budget: Int
+            switch effort {
+            case .minimal: budget = model.canDisableThinking ? 0 : 128
+            case .low: budget = 1024
+            case .medium: budget = 8192
+            case .high: budget = 24576
+            }
+            return GeminiThinkingConfig(thinkingLevel: nil, thinkingBudget: budget)
+        case .unsupported:
+            return GeminiThinkingConfig(thinkingLevel: nil, thinkingBudget: nil)
+        }
+    }
+
     // MARK: - Private Helpers
 
     /// エージェントリクエストボディを構築
@@ -82,6 +110,7 @@ extension GeminiClient: AgentCapableClient {
         tools: ToolSet,
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
+        reasoningEffort: ReasoningEffort?,
         maxTokens: Int?
     ) -> GeminiAgentRequestBody {
         // コンテンツを構築
@@ -111,6 +140,12 @@ extension GeminiClient: AgentCapableClient {
             let adapter = GeminiSchemaAdapter()
             generationConfig.responseMimeType = "application/json"
             generationConfig.responseSchema = adapter.adapt(schema)
+        }
+
+        // thinkingConfig: モデルが対応している場合のみ送る。
+        // 非対応モデルにこのフィールドを送るとエラーになる。
+        if let effort = reasoningEffort, model.supportsThinkingConfig {
+            generationConfig.thinkingConfig = Self.thinkingConfig(for: effort, model: model)
         }
 
         // ツール設定（空の場合は nil）
@@ -270,14 +305,9 @@ extension GeminiClient: AgentCapableClient {
               let content = candidate.content else {
             let usage: TokenUsage
             if let usageMetadata = response.usageMetadata {
-                usage = TokenUsage(
-                    inputTokens: usageMetadata.promptTokenCount ?? 0,
-                    outputTokens: usageMetadata.candidatesTokenCount ?? 0,
-                    cacheReadTokens: usageMetadata.cachedContentTokenCount,
-                    reasoningTokens: usageMetadata.thoughtsTokenCount
-                )
+                usage = GeminiUsageNormalizer.normalize(usageMetadata)
             } else {
-                usage = TokenUsage(inputTokens: 0, outputTokens: 0)
+                usage = TokenUsage.zero
             }
             return LLMResponse(
                 content: [],
@@ -313,14 +343,9 @@ extension GeminiClient: AgentCapableClient {
         // 使用量を取得
         let usage: TokenUsage
         if let usageMetadata = response.usageMetadata {
-            usage = TokenUsage(
-                inputTokens: usageMetadata.promptTokenCount ?? 0,
-                outputTokens: usageMetadata.candidatesTokenCount ?? 0,
-                cacheReadTokens: usageMetadata.cachedContentTokenCount,
-                reasoningTokens: usageMetadata.thoughtsTokenCount
-            )
+            usage = GeminiUsageNormalizer.normalize(usageMetadata)
         } else {
-            usage = TokenUsage(inputTokens: 0, outputTokens: 0)
+            usage = TokenUsage.zero
         }
 
         return LLMResponse(
@@ -406,6 +431,14 @@ private struct GeminiAgentGenerationConfig: Encodable {
     var temperature: Double?
     var responseMimeType: String?
     var responseSchema: JSONSchema?
+    var thinkingConfig: GeminiThinkingConfig?
+}
+
+/// Gemini thinking 設定。Gemini 3 系は `thinkingLevel`、2.5 系は `thinkingBudget` を使う。
+/// 非対応モデルにこれを送るとエラーになるため、呼び出し側で gate する。
+private struct GeminiThinkingConfig: Encodable {
+    var thinkingLevel: String?
+    var thinkingBudget: Int?
 }
 
 /// Gemini コンテンツ
@@ -684,7 +717,7 @@ private struct GeminiAgentSafetyRating: Decodable {
 }
 
 /// Gemini 使用量メタデータ
-private struct GeminiAgentUsageMetadata: Decodable {
+private struct GeminiAgentUsageMetadata: Decodable, GeminiUsageMetadataRaw {
     let promptTokenCount: Int?
     let candidatesTokenCount: Int?
     let totalTokenCount: Int?

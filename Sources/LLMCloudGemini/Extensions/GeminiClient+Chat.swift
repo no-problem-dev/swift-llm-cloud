@@ -214,14 +214,8 @@ extension GeminiClient: ChatCapableClient {
         }()
 
         // トークン使用量を取得
-        let usage = geminiResponse.usageMetadata.map {
-            TokenUsage(
-                inputTokens: $0.promptTokenCount ?? 0,
-                outputTokens: $0.candidatesTokenCount ?? 0,
-                cacheReadTokens: $0.cachedContentTokenCount,
-                reasoningTokens: $0.thoughtsTokenCount
-            )
-        } ?? TokenUsage(inputTokens: 0, outputTokens: 0)
+        let usage = geminiResponse.usageMetadata.map { GeminiUsageNormalizer.normalize($0) }
+            ?? TokenUsage.zero
 
         return ChatResponse(
             result: result,
@@ -432,7 +426,7 @@ private struct GeminiChatResponsePart: Decodable {
 }
 
 /// Gemini 使用量メタデータ
-private struct GeminiChatUsageMetadata: Decodable {
+private struct GeminiChatUsageMetadata: Decodable, GeminiUsageMetadataRaw {
     let promptTokenCount: Int?
     let candidatesTokenCount: Int?
     let totalTokenCount: Int?

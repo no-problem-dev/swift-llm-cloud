@@ -116,12 +116,14 @@ package enum OpenAIResponsesConverter {
             blocks.append(.text(aggregatedText))
         }
 
+        let cachedTokens = body.usage?.inputTokensDetails?.cachedTokens
         let usage = TokenUsage(
             inputTokens: body.usage?.inputTokens ?? 0,
             outputTokens: body.usage?.outputTokens ?? 0,
+            reasoningTokens: body.usage?.outputTokensDetails?.reasoningTokens,
+            cacheReadTokens: cachedTokens,
             cacheCreationTokens: nil,
-            cacheReadTokens: body.usage?.inputTokensDetails?.cachedTokens,
-            reasoningTokens: body.usage?.outputTokensDetails?.reasoningTokens
+            cacheTier: (cachedTokens ?? 0) > 0 ? .short : nil
         )
 
         // ツールコールが含まれていれば stop reason を toolUse に。

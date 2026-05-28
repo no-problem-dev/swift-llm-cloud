@@ -107,7 +107,7 @@ extension GroqModel {
                     toolCallSupport: .good,
                     japaneseSupport: .good,
                     modalities: [.text, .code],
-                    pricing: Pricing(inputPerMTok: 0.11, outputPerMTok: 0.34)
+                    pricing: .flat(inputPerMTok: 0.11, outputPerMTok: 0.34)
                 )
             case .llama3_3_70b:
                 return ModelProfile(
@@ -122,7 +122,7 @@ extension GroqModel {
                     toolCallSupport: .good,
                     japaneseSupport: .good,
                     modalities: [.text, .code],
-                    pricing: Pricing(inputPerMTok: 0.59, outputPerMTok: 0.79)
+                    pricing: .flat(inputPerMTok: 0.59, outputPerMTok: 0.79)
                 )
             case .llama3_1_8b:
                 return ModelProfile(
@@ -137,7 +137,7 @@ extension GroqModel {
                     toolCallSupport: .basic,
                     japaneseSupport: .basic,
                     modalities: [.text, .code],
-                    pricing: Pricing(inputPerMTok: 0.05, outputPerMTok: 0.08)
+                    pricing: .flat(inputPerMTok: 0.05, outputPerMTok: 0.08)
                 )
             case .qwq32b:
                 return ModelProfile(
@@ -152,7 +152,7 @@ extension GroqModel {
                     toolCallSupport: .basic,
                     japaneseSupport: .good,
                     modalities: [.text, .code],
-                    pricing: Pricing(inputPerMTok: 0.29, outputPerMTok: 0.39)
+                    pricing: .flat(inputPerMTok: 0.29, outputPerMTok: 0.39)
                 )
             case .mistralSaba:
                 return ModelProfile(
@@ -167,7 +167,7 @@ extension GroqModel {
                     toolCallSupport: .basic,
                     japaneseSupport: .good,
                     modalities: [.text, .code],
-                    pricing: Pricing(inputPerMTok: 0.20, outputPerMTok: 0.60)
+                    pricing: .flat(inputPerMTok: 0.20, outputPerMTok: 0.60)
                 )
             }
         }

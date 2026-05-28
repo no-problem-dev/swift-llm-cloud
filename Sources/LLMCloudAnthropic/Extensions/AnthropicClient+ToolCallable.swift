@@ -197,12 +197,7 @@ extension AnthropicClient: ToolCallableClient {
         return ToolCallResponse(
             toolCalls: toolCalls,
             text: textContent,
-            usage: TokenUsage(
-                inputTokens: response.usage.inputTokens,
-                outputTokens: response.usage.outputTokens,
-                cacheCreationTokens: response.usage.cacheCreationInputTokens,
-                cacheReadTokens: response.usage.cacheReadInputTokens
-            ),
+            usage: AnthropicUsageNormalizer.normalize(response.usage),
             stopReason: stopReason,
             model: response.model
         )
@@ -403,7 +398,7 @@ private struct AnthropicToolContentBlock: Decodable {
 // AnyCodable は Contract/AnthropicTypes.swift で定義済み
 
 /// Anthropic 使用量
-private struct AnthropicToolUsage: Decodable {
+private struct AnthropicToolUsage: Decodable, AnthropicUsageRaw {
     let inputTokens: Int
     let outputTokens: Int
     let cacheCreationInputTokens: Int?

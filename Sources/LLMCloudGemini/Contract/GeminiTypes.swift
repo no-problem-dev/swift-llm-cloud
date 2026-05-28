@@ -228,7 +228,7 @@ struct GeminiSafetyRating: Decodable, Sendable {
 }
 
 /// Gemini 使用量メタデータ
-struct GeminiUsageMetadata: Decodable, Sendable {
+struct GeminiUsageMetadata: Decodable, Sendable, GeminiUsageMetadataRaw {
     let promptTokenCount: Int?
     let candidatesTokenCount: Int?
     let totalTokenCount: Int?

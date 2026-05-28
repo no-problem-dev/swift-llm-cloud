@@ -31,7 +31,17 @@ extension OpenAIClient {
     ) async throws -> LLMResponse {
         _ = thinkingMode // OpenAI 系は Extended Thinking ではなく reasoning_effort で思考量を制御する
 
-        if reasoningEffort != nil, !tools.isEmpty {
+        // モデルが対応しない場合は reasoning_effort を必ず落とす（API 拒否回避）。
+        // また minimal 非対応モデル（o-series）で minimal が来た場合は low に丸める。
+        let effectiveEffort: ReasoningEffort? = {
+            guard let effort = reasoningEffort, model.supportsReasoningEffort else { return nil }
+            if effort == .minimal, !model.supportsMinimalReasoningEffort {
+                return .low
+            }
+            return effort
+        }()
+
+        if effectiveEffort != nil, !tools.isEmpty {
             return try await responsesEngine.executeAgentStep(
                 messages: messages,
                 modelId: model.id,
@@ -39,12 +49,11 @@ extension OpenAIClient {
                 tools: tools,
                 toolChoice: toolChoice,
                 responseSchema: responseSchema,
-                reasoningEffort: reasoningEffort,
+                reasoningEffort: effectiveEffort,
                 maxTokens: maxTokens
             )
         }
 
-        // 既存の Chat Completions 経路にフォールバック。
         return try await engine.executeAgentStep(
             messages: messages,
             modelId: model.id,
@@ -52,7 +61,7 @@ extension OpenAIClient {
             tools: tools,
             toolChoice: toolChoice,
             responseSchema: responseSchema,
-            reasoningEffort: reasoningEffort,
+            reasoningEffort: effectiveEffort,
             maxTokens: maxTokens
         )
     }

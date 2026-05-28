@@ -145,11 +145,14 @@ package enum OpenAICompatibleResponseConverter {
 
     /// OpenAI 互換 Usage → TokenUsage 変換
     package static func toTokenUsage(_ usage: OpenAICompatibleUsage) -> TokenUsage {
-        TokenUsage(
+        let cachedTokens = usage.promptTokensDetails?.cachedTokens
+        return TokenUsage(
             inputTokens: usage.promptTokens,
             outputTokens: usage.completionTokens,
-            cacheReadTokens: usage.promptTokensDetails?.cachedTokens,
-            reasoningTokens: usage.completionTokensDetails?.reasoningTokens
+            reasoningTokens: usage.completionTokensDetails?.reasoningTokens,
+            cacheReadTokens: cachedTokens,
+            cacheCreationTokens: nil,
+            cacheTier: (cachedTokens ?? 0) > 0 ? .short : nil
         )
     }
 }

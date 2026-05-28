@@ -244,12 +244,7 @@ extension AnthropicClient: AgentCapableClient {
         return LLMResponse(
             content: contentBlocks,
             model: response.model,
-            usage: TokenUsage(
-                inputTokens: response.usage.inputTokens,
-                outputTokens: response.usage.outputTokens,
-                cacheCreationTokens: response.usage.cacheCreationInputTokens,
-                cacheReadTokens: response.usage.cacheReadInputTokens
-            ),
+            usage: AnthropicUsageNormalizer.normalize(response.usage),
             stopReason: stopReason
         )
     }
@@ -653,8 +648,8 @@ private struct AnthropicStreamAccumulator {
         return LLMResponse(
             content: contentBlocks,
             model: model,
-            usage: TokenUsage(
-                inputTokens: inputTokens,
+            usage: AnthropicUsageNormalizer.normalize(
+                rawInputTokens: inputTokens,
                 outputTokens: outputTokens,
                 cacheCreationTokens: cacheCreationTokens,
                 cacheReadTokens: cacheReadTokens
@@ -1020,7 +1015,7 @@ private struct AgentAnyCodable: Decodable {
 }
 
 /// Anthropic 使用量
-private struct AnthropicAgentUsage: Decodable {
+private struct AnthropicAgentUsage: Decodable, AnthropicUsageRaw {
     let inputTokens: Int
     let outputTokens: Int
     let cacheCreationInputTokens: Int?

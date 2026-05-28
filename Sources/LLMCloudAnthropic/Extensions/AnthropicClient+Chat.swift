@@ -206,12 +206,7 @@ extension AnthropicClient: ChatCapableClient {
         return ChatResponse(
             result: result,
             assistantMessage: .assistant(rawText),
-            usage: TokenUsage(
-                inputTokens: anthropicResponse.usage.inputTokens,
-                outputTokens: anthropicResponse.usage.outputTokens,
-                cacheCreationTokens: anthropicResponse.usage.cacheCreationInputTokens,
-                cacheReadTokens: anthropicResponse.usage.cacheReadInputTokens
-            ),
+            usage: AnthropicUsageNormalizer.normalize(anthropicResponse.usage),
             stopReason: stopReason,
             model: anthropicResponse.model,
             rawText: rawText
@@ -333,7 +328,7 @@ private struct AnthropicChatContentBlock: Decodable {
 }
 
 /// Anthropic 使用量
-private struct AnthropicChatUsage: Decodable {
+private struct AnthropicChatUsage: Decodable, AnthropicUsageRaw {
     let inputTokens: Int
     let outputTokens: Int
     let cacheCreationInputTokens: Int?

@@ -87,7 +87,7 @@ extension DeepSeekModel {
                     toolCallSupport: .good,
                     japaneseSupport: .good,
                     modalities: [.text, .code],
-                    pricing: Pricing(inputPerMTok: 0.27, outputPerMTok: 1.10)
+                    pricing: .flat(inputPerMTok: 0.27, outputPerMTok: 1.10)
                 )
             case .r1:
                 return ModelProfile(
@@ -102,7 +102,7 @@ extension DeepSeekModel {
                     toolCallSupport: .basic,
                     japaneseSupport: .good,
                     modalities: [.text, .code],
-                    pricing: Pricing(inputPerMTok: 0.55, outputPerMTok: 2.19)
+                    pricing: .flat(inputPerMTok: 0.55, outputPerMTok: 2.19)
                 )
             case .r1_0528:
                 return ModelProfile(
@@ -117,7 +117,7 @@ extension DeepSeekModel {
                     toolCallSupport: .basic,
                     japaneseSupport: .good,
                     modalities: [.text, .code],
-                    pricing: Pricing(inputPerMTok: 0.55, outputPerMTok: 2.19)
+                    pricing: .flat(inputPerMTok: 0.55, outputPerMTok: 2.19)
                 )
             }
         }

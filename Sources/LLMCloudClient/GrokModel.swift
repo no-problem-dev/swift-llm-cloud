@@ -97,7 +97,7 @@ extension GrokModel {
                     toolCallSupport: .good,
                     japaneseSupport: .good,
                     modalities: [.text, .code],
-                    pricing: Pricing(inputPerMTok: 3, outputPerMTok: 15)
+                    pricing: .flat(inputPerMTok: 3, outputPerMTok: 15)
                 )
             case .grok3Mini:
                 return ModelProfile(
@@ -112,7 +112,7 @@ extension GrokModel {
                     toolCallSupport: .good,
                     japaneseSupport: .good,
                     modalities: [.text, .code],
-                    pricing: Pricing(inputPerMTok: 0.30, outputPerMTok: 0.50)
+                    pricing: .flat(inputPerMTok: 0.30, outputPerMTok: 0.50)
                 )
             case .grok3Fast:
                 return ModelProfile(
@@ -127,7 +127,7 @@ extension GrokModel {
                     toolCallSupport: .good,
                     japaneseSupport: .good,
                     modalities: [.text, .code],
-                    pricing: Pricing(inputPerMTok: 5, outputPerMTok: 25)
+                    pricing: .flat(inputPerMTok: 5, outputPerMTok: 25)
                 )
             case .grok3MiniFast:
                 return ModelProfile(
@@ -142,7 +142,7 @@ extension GrokModel {
                     toolCallSupport: .good,
                     japaneseSupport: .basic,
                     modalities: [.text, .code],
-                    pricing: Pricing(inputPerMTok: 0.06, outputPerMTok: 0.10)
+                    pricing: .flat(inputPerMTok: 0.06, outputPerMTok: 0.10)
                 )
             }
         }

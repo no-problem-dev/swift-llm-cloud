@@ -203,12 +203,7 @@ internal struct AnthropicProvider: LLMProvider, RetryableProviderProtocol {
         return LLMResponse(
             content: contentBlocks,
             model: response.model,
-            usage: TokenUsage(
-                inputTokens: response.usage.inputTokens,
-                outputTokens: response.usage.outputTokens,
-                cacheCreationTokens: response.usage.cacheCreationInputTokens,
-                cacheReadTokens: response.usage.cacheReadInputTokens
-            ),
+            usage: AnthropicUsageNormalizer.normalize(response.usage),
             stopReason: stopReason
         )
     }

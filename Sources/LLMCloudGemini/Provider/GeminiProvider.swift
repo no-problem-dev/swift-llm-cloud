@@ -203,14 +203,9 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
         // 使用量を取得
         let usage: TokenUsage
         if let usageMetadata = response.usageMetadata {
-            usage = TokenUsage(
-                inputTokens: usageMetadata.promptTokenCount ?? 0,
-                outputTokens: usageMetadata.candidatesTokenCount ?? 0,
-                cacheReadTokens: usageMetadata.cachedContentTokenCount,
-                reasoningTokens: usageMetadata.thoughtsTokenCount
-            )
+            usage = GeminiUsageNormalizer.normalize(usageMetadata)
         } else {
-            usage = TokenUsage(inputTokens: 0, outputTokens: 0)
+            usage = TokenUsage.zero
         }
 
         return LLMResponse(

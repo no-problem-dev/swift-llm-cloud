@@ -175,7 +175,7 @@ struct AnthropicContentBlock: Decodable, Sendable {
 }
 
 /// Anthropic 使用量
-struct AnthropicUsage: Decodable, Sendable {
+struct AnthropicUsage: Decodable, Sendable, AnthropicUsageRaw {
     let inputTokens: Int
     let outputTokens: Int
     let cacheCreationInputTokens: Int?

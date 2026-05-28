@@ -107,7 +107,7 @@ extension MistralModel {
                     toolCallSupport: .good,
                     japaneseSupport: .good,
                     modalities: [.text, .code],
-                    pricing: Pricing(inputPerMTok: 0.10, outputPerMTok: 0.30)
+                    pricing: .flat(inputPerMTok: 0.10, outputPerMTok: 0.30)
                 )
             case .medium:
                 return ModelProfile(
@@ -122,7 +122,7 @@ extension MistralModel {
                     toolCallSupport: .good,
                     japaneseSupport: .good,
                     modalities: [.text, .code],
-                    pricing: Pricing(inputPerMTok: 0.40, outputPerMTok: 2)
+                    pricing: .flat(inputPerMTok: 0.40, outputPerMTok: 2)
                 )
             case .large:
                 return ModelProfile(
@@ -137,7 +137,7 @@ extension MistralModel {
                     toolCallSupport: .excellent,
                     japaneseSupport: .good,
                     modalities: [.text, .code],
-                    pricing: Pricing(inputPerMTok: 2, outputPerMTok: 6)
+                    pricing: .flat(inputPerMTok: 2, outputPerMTok: 6)
                 )
             case .codestral:
                 return ModelProfile(
@@ -152,7 +152,7 @@ extension MistralModel {
                     toolCallSupport: .good,
                     japaneseSupport: .basic,
                     modalities: [.text, .code],
-                    pricing: Pricing(inputPerMTok: 0.30, outputPerMTok: 0.90)
+                    pricing: .flat(inputPerMTok: 0.30, outputPerMTok: 0.90)
                 )
             case .nemo:
                 return ModelProfile(
@@ -167,7 +167,7 @@ extension MistralModel {
                     toolCallSupport: .basic,
                     japaneseSupport: .basic,
                     modalities: [.text, .code],
-                    pricing: Pricing(inputPerMTok: 0.15, outputPerMTok: 0.15)
+                    pricing: .flat(inputPerMTok: 0.15, outputPerMTok: 0.15)
                 )
             }
         }
