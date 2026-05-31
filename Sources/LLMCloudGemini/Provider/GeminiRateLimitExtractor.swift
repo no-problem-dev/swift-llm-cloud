@@ -4,23 +4,10 @@ import FoundationNetworking
 #endif
 import LLMCloudClient
 
-// MARK: - Gemini Rate Limit Header Extraction
-
-/// Gemini API のレート制限ヘッダーからレート制限情報を抽出する列挙型
-///
-/// `retry-after` ヘッダーを解析してリトライ待機時間を提供します。
+/// Gemini API のレート制限ヘッダー抽出。挙動は ``RateLimitHeaderExtraction`` の
+/// `.gemini` 設定（`retry-after` のみ）に集約。
 public enum GeminiRateLimitExtractor: RateLimitInfoExtractable {
     public static func extractRateLimitInfo(from response: HTTPURLResponse) -> RateLimitInfo {
-        let retryAfter: TimeInterval? = response
-            .value(forHTTPHeaderField: "retry-after")
-            .flatMap { Double($0) }
-
-        return RateLimitInfo(
-            retryAfter: retryAfter,
-            remainingRequests: nil,
-            requestsResetIn: nil,
-            remainingTokens: nil,
-            tokensResetIn: nil
-        )
+        RateLimitHeaderExtraction.gemini.extract(from: response)
     }
 }
