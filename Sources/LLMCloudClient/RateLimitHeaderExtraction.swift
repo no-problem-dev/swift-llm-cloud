@@ -41,7 +41,19 @@ public struct RateLimitHeaderExtraction: Sendable {
 
     public func extract(from response: HTTPURLResponse) -> RateLimitInfo {
         func value(_ name: String?) -> String? { name.flatMap { response.value(forHTTPHeaderField: $0) } }
-        return RateLimitInfo(
+        return build(value)
+    }
+
+    /// contract の `decodeError` が受け取る `[String: String]` ヘッダー辞書からの抽出
+    /// （大文字小文字を無視）。`HTTPURLResponse` 版と同一ロジックを共有する。
+    public func extract(from headers: [String: String]) -> RateLimitInfo {
+        let lowered = Dictionary(headers.map { ($0.key.lowercased(), $0.value) }, uniquingKeysWith: { _, b in b })
+        func value(_ name: String?) -> String? { name.flatMap { lowered[$0.lowercased()] } }
+        return build(value)
+    }
+
+    private func build(_ value: (String?) -> String?) -> RateLimitInfo {
+        RateLimitInfo(
             retryAfter: value(retryAfter).flatMap { Double($0) },
             remainingRequests: value(remainingRequests).flatMap { Int($0) },
             requestsResetIn: value(requestsReset).flatMap(parseReset),
