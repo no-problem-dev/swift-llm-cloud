@@ -23,7 +23,7 @@ extension AnthropicClient: ToolCallableClient {
             maxTokens: maxTokens ?? Self.toolDefaultMaxTokens,
             temperature: temperature,
             tools: anthropicTools,
-            toolChoice: toolChoice.map { Self.mapToolChoice($0) }
+            toolChoice: toolChoice.map { AnthropicToolChoiceValue($0) }
         )
 
         let (response, _, _) = try await baseProvider.sendBody(body, beta: nil)
@@ -31,15 +31,6 @@ extension AnthropicClient: ToolCallableClient {
     }
 
     private static let toolDefaultMaxTokens = 4096
-
-    private static func mapToolChoice(_ choice: ToolChoice) -> AnthropicToolChoiceValue {
-        switch choice {
-        case .auto: return .auto
-        case .disabled: return .none
-        case .required: return .any
-        case .tool(let name): return .tool(name)
-        }
-    }
 
     private static func parseToolCallResponse(_ response: AnthropicResponseBody) -> ToolCallResponse {
         var toolCalls: [ToolCall] = []

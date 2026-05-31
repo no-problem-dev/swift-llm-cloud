@@ -1,6 +1,7 @@
 import Foundation
 import StructuredDataCore
 import LLMClient
+import LLMTool
 
 // MARK: - Request Types
 
@@ -84,6 +85,15 @@ enum AnthropicToolChoiceValue: Encodable, Sendable {
     case none
     case tool(String)
 
+    init(_ choice: ToolChoice) {
+        switch choice {
+        case .auto: self = .auto
+        case .disabled: self = .none
+        case .required: self = .any
+        case .tool(let name): self = .tool(name)
+        }
+    }
+
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {
@@ -110,6 +120,7 @@ enum AnthropicMessageContent: Encodable, Sendable {
     case text(String)
     case toolUse(id: String, name: String, input: Data)
     case toolResult(toolUseId: String, content: String, isError: Bool)
+    case thinking(text: String, signature: String?)
     case image(ImageContent)
 
     func encode(to encoder: Encoder) throws {
@@ -118,6 +129,16 @@ enum AnthropicMessageContent: Encodable, Sendable {
         switch self {
         case .text(let text):
             try container.encode(["type": "text", "text": text])
+
+        case .thinking(let text, let signature):
+            var dict: [String: JSONValue] = [
+                "type": .string("thinking"),
+                "thinking": .string(text)
+            ]
+            if let signature {
+                dict["signature"] = .string(signature)
+            }
+            try container.encode(dict)
 
         case .toolUse(let id, let name, let input):
             let inputDict: [String: Any]
@@ -207,9 +228,10 @@ struct AnthropicContentBlock: Decodable, Sendable {
     let id: String?
     let name: String?
     let input: [String: JSONValue]?
+    let signature: String?
 
     enum CodingKeys: String, CodingKey {
-        case type, text, id, name, input
+        case type, text, id, name, input, signature
     }
 
     init(from decoder: Decoder) throws {
@@ -219,6 +241,7 @@ struct AnthropicContentBlock: Decodable, Sendable {
         id = try container.decodeIfPresent(String.self, forKey: .id)
         name = try container.decodeIfPresent(String.self, forKey: .name)
         input = try container.decodeIfPresent([String: JSONValue].self, forKey: .input)
+        signature = try container.decodeIfPresent(String.self, forKey: .signature)
     }
 }
 

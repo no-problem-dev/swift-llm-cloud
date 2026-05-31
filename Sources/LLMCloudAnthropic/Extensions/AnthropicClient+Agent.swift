@@ -28,47 +28,59 @@ extension AnthropicClient: AgentCapableClient {
         reasoningEffort: ReasoningEffort?,
         maxTokens: Int?
     ) async throws -> LLMResponse {
-        _ = reasoningEffort // Anthropic は OpenAI の reasoning_effort 概念を持たず、Extended Thinking で表現する
-        // HTTPリクエストを構築
-        var urlRequest = URLRequest(url: endpoint)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-        urlRequest.setValue(Self.apiVersion, forHTTPHeaderField: "anthropic-version")
+        _ = reasoningEffort
+        _ = thinkingMode
 
-        // 構造化出力を使用する場合はベータヘッダーを追加
-        if responseSchema != nil {
-            urlRequest.setValue(Self.structuredOutputsBeta, forHTTPHeaderField: "anthropic-beta")
+        let anthropicMessages = try messages.map { try AnthropicMessageConverter.convert($0, includeThinking: true) }
+        let anthropicTools = tools.isEmpty ? nil : try tools.toAnthropicFormat().map { try AnthropicToolDef(dict: $0) }
+        let anthropicToolChoice: AnthropicToolChoiceValue? = tools.isEmpty
+            ? nil
+            : (toolChoice.map { AnthropicToolChoiceValue($0) } ?? .auto)
+        let outputConfig = responseSchema.map {
+            AnthropicOutputConfig(format: AnthropicOutputFormat(type: "json_schema", schema: $0))
         }
 
-        // リクエストボディを構築
-        let body = try buildAgentRequestBody(
-            model: model,
-            messages: messages,
-            systemPrompt: systemPrompt,
-            tools: tools,
-            toolChoice: toolChoice,
-            responseSchema: responseSchema,
-            thinkingMode: thinkingMode,
-            maxTokens: maxTokens
+        let body = AnthropicRequestBody(
+            model: model.id,
+            messages: anthropicMessages,
+            system: systemPrompt?.render(),
+            maxTokens: maxTokens ?? Self.defaultMaxTokens,
+            temperature: nil,
+            outputConfig: outputConfig,
+            tools: anthropicTools,
+            toolChoice: anthropicToolChoice
         )
-        urlRequest.httpBody = try JSONEncoder().encode(body)
 
-        // リトライヘルパーを使用してリクエストを実行
-        let retryHelper = AgentRetryHelper<AnthropicRateLimitExtractor>(
-            configuration: retryConfiguration,
+        let beta = responseSchema != nil ? Self.structuredOutputsBeta : nil
+        let response = try await RetryRunner.run(
+            policy: retryConfiguration.policy,
             eventHandler: retryEventHandler
-        )
+        ) {
+            try await self.baseProvider.sendBody(body, beta: beta).0
+        }
+        return Self.agentResponseToLLM(response)
+    }
 
-        return try await retryHelper.execute(
-            session: session,
-            request: urlRequest,
-            parseError: { data, statusCode in
-                try parseAgentError(data: data, statusCode: statusCode)
-            },
-            parseResponse: { data, _ in
-                try parseAgentSuccessResponse(data: data)
+    private static func agentResponseToLLM(_ response: AnthropicResponseBody) -> LLMResponse {
+        let contentBlocks: [LLMResponse.ContentBlock] = response.content.compactMap { block in
+            switch block.type {
+            case "text":
+                return block.text.map { .text($0) }
+            case "tool_use":
+                guard let id = block.id, let name = block.name, let input = block.input,
+                      let inputData = try? JSONEncoder().encode(input) else { return nil }
+                return .toolUse(id: id, name: name, input: inputData)
+            case "thinking":
+                return block.text.map { .thinking(text: $0, signature: block.signature) }
+            default:
+                return nil
             }
+        }
+        return LLMResponse(
+            content: contentBlocks,
+            model: response.model,
+            usage: AnthropicUsageNormalizer.normalize(response.usage),
+            stopReason: response.stopReason.flatMap { LLMResponse.StopReason(rawValue: $0) }
         )
     }
 
@@ -93,47 +105,6 @@ extension AnthropicClient: AgentCapableClient {
     private static let defaultThinkingBudgetTokens = 10240
 
     // MARK: - Private Helpers
-
-    /// エージェントリクエストボディを構築
-    ///
-    /// - Throws: `LLMError.mediaNotSupported` メディアコンテンツが含まれている場合
-    private func buildAgentRequestBody(
-        model: ClaudeModel,
-        messages: [LLMMessage],
-        systemPrompt: SystemPrompt?,
-        tools: ToolSet,
-        toolChoice: ToolChoice?,
-        responseSchema: JSONSchema?,
-        thinkingMode: ThinkingMode,
-        maxTokens: Int?
-    ) throws -> AnthropicAgentRequestBody {
-        _ = thinkingMode // Anthropic API は thinkingMode を使う場合は別途 thinking パラメータが必要
-        let anthropicMessages = try messages.map { try convertToAnthropicMessage($0) }
-
-        // ツール設定（空の場合は nil）
-        let anthropicTools: [[String: Any]]? = tools.isEmpty ? nil : tools.toAnthropicFormat()
-        let anthropicToolChoice: AnthropicAgentToolChoice? = tools.isEmpty ? nil : (toolChoice.map { mapToolChoice($0) } ?? .auto)
-
-        // 構造化出力の設定
-        var outputFormat: AnthropicAgentOutputFormat?
-        if let schema = responseSchema {
-            outputFormat = AnthropicAgentOutputFormat(
-                type: "json_schema",
-                schema: schema
-            )
-        }
-
-        return AnthropicAgentRequestBody(
-            model: model.id,
-            messages: anthropicMessages,
-            system: systemPrompt?.render(),
-            maxTokens: maxTokens ?? Self.defaultMaxTokens,
-            temperature: nil,
-            tools: anthropicTools,
-            toolChoice: anthropicToolChoice,
-            outputConfig: outputFormat.map { AnthropicAgentOutputConfig(format: $0) }
-        )
-    }
 
     /// LLMMessage を Anthropic メッセージ形式に変換
     ///
@@ -201,54 +172,6 @@ extension AnthropicClient: AgentCapableClient {
         }
     }
 
-    /// 成功レスポンスから LLMResponse を生成
-    private func parseAgentSuccessResponse(data: Data) throws -> LLMResponse {
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-
-        let anthropicResponse: AnthropicAgentResponseBody
-        do {
-            anthropicResponse = try decoder.decode(AnthropicAgentResponseBody.self, from: data)
-        } catch {
-            throw LLMError.decodingFailed(error)
-        }
-
-        return convertToLLMResponse(anthropicResponse)
-    }
-
-    /// Anthropic レスポンスから LLMResponse を生成
-    private func convertToLLMResponse(_ response: AnthropicAgentResponseBody) -> LLMResponse {
-        let contentBlocks: [LLMResponse.ContentBlock] = response.content.compactMap { block in
-            switch block.type {
-            case "text":
-                return block.text.map { .text($0) }
-            case "tool_use":
-                guard let id = block.id, let name = block.name, let input = block.input else {
-                    return nil
-                }
-                if let inputData = try? JSONSerialization.data(withJSONObject: input) {
-                    return .toolUse(id: id, name: name, input: inputData)
-                }
-                return nil
-            case "thinking":
-                if let text = block.text {
-                    return .thinking(text: text, signature: block.signature)
-                }
-                return nil
-            default:
-                return nil
-            }
-        }
-
-        let stopReason: LLMResponse.StopReason? = response.stopReason.flatMap { LLMResponse.StopReason(rawValue: $0) }
-
-        return LLMResponse(
-            content: contentBlocks,
-            model: response.model,
-            usage: AnthropicUsageNormalizer.normalize(response.usage),
-            stopReason: stopReason
-        )
-    }
     // MARK: - Streaming Agent Step
 
     /// エージェントステップをストリーミング実行
@@ -717,52 +640,7 @@ private struct AnthropicThinkingConfig: Encodable {
     }
 }
 
-// MARK: - Anthropic Agent Request/Response Types
-
-/// Anthropic エージェントリクエストボディ
-private struct AnthropicAgentRequestBody: Encodable {
-    let model: String
-    let messages: [AnthropicAgentMessage]
-    let system: String?
-    let maxTokens: Int
-    let temperature: Double?
-    let tools: [[String: Any]]?
-    let toolChoice: AnthropicAgentToolChoice?
-    let outputConfig: AnthropicAgentOutputConfig?
-
-    enum CodingKeys: String, CodingKey {
-        case model, messages, system, temperature, tools
-        case maxTokens = "max_tokens"
-        case toolChoice = "tool_choice"
-        case outputConfig = "output_config"
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(model, forKey: .model)
-        try container.encode(messages, forKey: .messages)
-        if let system = system {
-            try container.encode(system, forKey: .system)
-        }
-        try container.encode(maxTokens, forKey: .maxTokens)
-        if let temperature = temperature {
-            try container.encode(temperature, forKey: .temperature)
-        }
-
-        if let tools = tools {
-            let toolDefs = tools.map { AnthropicAgentToolDef(dict: $0) }
-            try container.encode(toolDefs, forKey: .tools)
-        }
-
-        if let toolChoice = toolChoice {
-            try container.encode(toolChoice, forKey: .toolChoice)
-        }
-
-        if let outputConfig = outputConfig {
-            try container.encode(outputConfig, forKey: .outputConfig)
-        }
-    }
-}
+// MARK: - Anthropic Agent Streaming Types
 
 /// Anthropic ツール定義
 private struct AnthropicAgentToolDef: Encodable {
@@ -900,56 +778,6 @@ private enum AnthropicAgentMessageContent: Encodable {
 
 /// JSON 値の汎用エンコード/デコード用
 private typealias AgentJSONValue = StructuredValue
-
-/// Anthropic エージェントレスポンスボディ
-private struct AnthropicAgentResponseBody: Decodable {
-    let id: String
-    let type: String
-    let role: String
-    let content: [AnthropicAgentContentBlock]
-    let model: String
-    let stopReason: String?
-    let usage: AnthropicAgentUsage
-}
-
-/// Anthropic コンテンツブロック
-private struct AnthropicAgentContentBlock: Decodable {
-    let type: String
-    let text: String?
-    let id: String?
-    let name: String?
-    let input: [String: Any]?
-    let signature: String?
-
-    enum CodingKeys: String, CodingKey {
-        case type, text, id, name, input, signature
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        type = try container.decode(String.self, forKey: .type)
-        text = try container.decodeIfPresent(String.self, forKey: .text)
-        id = try container.decodeIfPresent(String.self, forKey: .id)
-        name = try container.decodeIfPresent(String.self, forKey: .name)
-        signature = try container.decodeIfPresent(String.self, forKey: .signature)
-        if let inputData = try? container.decodeIfPresent(AgentAnyCodable.self, forKey: .input) {
-            input = inputData.anyValue as? [String: Any]
-        } else {
-            input = nil
-        }
-    }
-}
-
-/// 任意の JSON 値をデコードするためのラッパー
-private typealias AgentAnyCodable = StructuredValue
-
-/// Anthropic 使用量
-private struct AnthropicAgentUsage: Decodable, AnthropicUsageRaw {
-    let inputTokens: Int
-    let outputTokens: Int
-    let cacheCreationInputTokens: Int?
-    let cacheReadInputTokens: Int?
-}
 
 /// Anthropic エラーレスポンス
 private struct AnthropicAgentErrorResponse: Decodable {

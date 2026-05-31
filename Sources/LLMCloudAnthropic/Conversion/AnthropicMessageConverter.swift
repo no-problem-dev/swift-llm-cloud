@@ -2,7 +2,7 @@ import Foundation
 import LLMClient
 
 enum AnthropicMessageConverter {
-    static func convert(_ message: LLMMessage) throws -> AnthropicMessage {
+    static func convert(_ message: LLMMessage, includeThinking: Bool = false) throws -> AnthropicMessage {
         let role = message.role == .user ? "user" : "assistant"
         var blocks: [AnthropicMessageContent] = []
 
@@ -24,8 +24,10 @@ enum AnthropicMessageConverter {
                 throw LLMError.mediaNotSupported(mediaType: "audio", provider: "Anthropic")
             case .video:
                 throw LLMError.mediaNotSupported(mediaType: "video", provider: "Anthropic")
-            case .thinking:
-                break
+            case .thinking(let text, let signature):
+                if includeThinking {
+                    blocks.append(.thinking(text: text, signature: signature))
+                }
             }
         }
 
