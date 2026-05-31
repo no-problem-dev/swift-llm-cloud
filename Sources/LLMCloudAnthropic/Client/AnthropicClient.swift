@@ -65,13 +65,13 @@ public struct AnthropicClient: StructuredLLMClient {
     // MARK: - Package Access (for extension by other modules)
 
     /// API キー
-    public let apiKey: String
+    package let apiKey: String
 
     /// エンドポイント URL
-    public let endpoint: URL
+    package let endpoint: URL
 
     /// URLSession
-    public let session: URLSession
+    package let session: URLSession
 
     /// リトライ設定
     public let retryConfiguration: RetryConfiguration

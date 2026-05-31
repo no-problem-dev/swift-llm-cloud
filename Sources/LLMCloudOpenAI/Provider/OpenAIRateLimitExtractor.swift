@@ -9,4 +9,4 @@ import LLMCloudClient
 import LLMCloudOpenAICompatible
 
 /// Backward-compatible type alias
-public typealias OpenAIRateLimitExtractor = OpenAICompatibleRateLimitExtractor
+package typealias OpenAIRateLimitExtractor = OpenAICompatibleRateLimitExtractor

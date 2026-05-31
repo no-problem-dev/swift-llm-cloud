@@ -73,13 +73,13 @@ public struct GeminiClient: StructuredLLMClient {
     // MARK: - Package Access (for extension by other modules)
 
     /// API キー（パッケージ内の他モジュールからアクセス可能）
-    public let apiKey: String
+    package let apiKey: String
 
     /// ベース URL（パッケージ内の他モジュールからアクセス可能）
-    public let baseURL: String
+    package let baseURL: String
 
     /// URLSession（パッケージ内の他モジュールからアクセス可能）
-    public let session: URLSession
+    package let session: URLSession
 
     /// リトライ設定（パッケージ内の他モジュールからアクセス可能）
     public let retryConfiguration: RetryConfiguration

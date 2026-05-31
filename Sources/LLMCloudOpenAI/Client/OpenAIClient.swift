@@ -53,13 +53,13 @@ public struct OpenAIClient: OpenAICompatibleClientProtocol {
     package let mediaClient: APIClientImpl
 
     /// API キー
-    public var apiKey: String { engine.apiKey }
+    package var apiKey: String { engine.apiKey }
 
     /// エンドポイント
-    public var endpoint: URL { engine.endpoint }
+    package var endpoint: URL { engine.endpoint }
 
     /// URLSession
-    public var session: URLSession { engine.session }
+    package var session: URLSession { engine.session }
 
     /// 組織 ID
     public let organization: String?

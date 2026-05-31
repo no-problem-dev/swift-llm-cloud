@@ -8,11 +8,11 @@ import LLMCloudClient
 ///
 /// 2025-05 の "improvements" 告知に反し、2026-05 時点の公式仕様でも上記制約は strict mode で
 /// 非サポートのため、全除去が正しい。
-public struct OpenAISchemaAdapter: ProviderSchemaAdapter {
+package struct OpenAISchemaAdapter: ProviderSchemaAdapter {
     private let base = GenericSchemaAdapter(capabilities: .openAI)
-    public init() {}
-    public func adapt(_ schema: JSONSchema) -> JSONSchema { base.adapt(schema) }
-    public func adaptWithConstraints(_ schema: JSONSchema, fieldPath: String) -> SchemaAdaptationResult {
+    package init() {}
+    package func adapt(_ schema: JSONSchema) -> JSONSchema { base.adapt(schema) }
+    package func adaptWithConstraints(_ schema: JSONSchema, fieldPath: String) -> SchemaAdaptationResult {
         base.adaptWithConstraints(schema, fieldPath: fieldPath)
     }
 }

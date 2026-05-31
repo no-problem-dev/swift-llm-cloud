@@ -5,7 +5,7 @@ import LLMClient
 ///
 /// 各プロバイダの API 仕様（2026-05 時点）に基づく。プロバイダは差分（この設定値）
 /// だけを供給し、再帰トラバースと制約除去ロジックは ``GenericSchemaAdapter`` に集約する。
-public struct SchemaCapabilities: Sendable {
+package struct SchemaCapabilities: Sendable {
     public enum MinItemsPolicy: Sendable {
         /// 常に除去（OpenAI）。
         case remove
@@ -95,7 +95,7 @@ public struct SchemaCapabilities: Sendable {
 /// 適合後スキーマ（API へ送る内容）はプロバイダ固有実装とバイト一致し、除去された制約は
 /// 同一集合として記録される（記録順のみ正規化）。各プロバイダの `*SchemaAdapter` は
 /// `GenericSchemaAdapter(capabilities: .xxx)` への委譲に縮退する。
-public struct GenericSchemaAdapter: ProviderSchemaAdapter {
+package struct GenericSchemaAdapter: ProviderSchemaAdapter {
     public let capabilities: SchemaCapabilities
 
     public init(capabilities: SchemaCapabilities) {
