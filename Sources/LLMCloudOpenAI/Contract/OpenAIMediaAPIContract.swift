@@ -72,3 +72,55 @@ struct OpenAITTSRequestBody: Encodable, Sendable {
     let responseFormat: String
     let speed: Double
 }
+
+extension OpenAIMediaAPI {
+    /// `POST /v1/images/generations` — 画像生成(JSON)。
+    struct GenerateImage: APIContract, APIInput {
+        typealias Group = OpenAIMediaAPI
+        typealias Input = Self
+        typealias Output = OpenAIImageResponseBody
+
+        static let method: APIMethod = .post
+        static let subPath: String = "images/generations"
+
+        let customHeaders: [String: String]
+        let request: OpenAIImageRequestBody
+
+        var additionalHeaders: [String: String] { customHeaders }
+
+        func encodeBody(using encoder: any APIBodyEncoder) throws -> Data? {
+            try encoder.encode(request)
+        }
+
+        static func decode(
+            pathParameters: [String: String],
+            queryParameters: [String: String],
+            body: Data?,
+            decoder: any APIBodyDecoder
+        ) throws -> Self {
+            fatalError("Client-only contract")
+        }
+    }
+}
+
+/// キー変換は mediaClient(.snakeCase)に委ねる(明示 CodingKeys を持たない)。
+struct OpenAIImageRequestBody: Encodable, Sendable {
+    let model: String
+    let prompt: String
+    let n: Int
+    let size: String
+    let quality: String?
+    let responseFormat: String?
+    let outputFormat: String?
+}
+
+struct OpenAIImageResponseBody: Decodable, Sendable {
+    let created: Int
+    let data: [Item]
+
+    struct Item: Decodable, Sendable {
+        let b64Json: String?
+        let url: String?
+        let revisedPrompt: String?
+    }
+}
