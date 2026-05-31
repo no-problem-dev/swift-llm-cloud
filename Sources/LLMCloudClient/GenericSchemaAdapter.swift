@@ -6,7 +6,7 @@ import LLMClient
 /// 各プロバイダの API 仕様（2026-05 時点）に基づく。プロバイダは差分（この設定値）
 /// だけを供給し、再帰トラバースと制約除去ロジックは ``GenericSchemaAdapter`` に集約する。
 package struct SchemaCapabilities: Sendable {
-    public enum MinItemsPolicy: Sendable {
+    package enum MinItemsPolicy: Sendable {
         /// 常に除去（OpenAI）。
         case remove
         /// 0/1 のみ許容、それ以外は除去（Anthropic は 0/1 のみ）。
@@ -15,13 +15,13 @@ package struct SchemaCapabilities: Sendable {
         case keep
     }
 
-    public enum FormatPolicy: Sendable {
+    package enum FormatPolicy: Sendable {
         case keepAll
         case removeAll
         case whitelist(Set<String>)
     }
 
-    public enum AdditionalPropertiesPolicy: Sendable {
+    package enum AdditionalPropertiesPolicy: Sendable {
         /// 元の値をそのまま（Anthropic）。
         case passthrough
         /// 常に除去（Gemini）。
@@ -30,23 +30,23 @@ package struct SchemaCapabilities: Sendable {
         case forceFalseOnObjects
     }
 
-    public enum RequiredPolicy: Sendable {
+    package enum RequiredPolicy: Sendable {
         case passthrough
         /// object の全プロパティを required にする（OpenAI strict）。
         case allPropertiesOnObjects
     }
 
-    public var minItems: MinItemsPolicy
-    public var maxItems: Bool
-    public var numericRange: Bool
-    public var exclusiveRange: Bool
-    public var stringLength: Bool
-    public var pattern: Bool
-    public var format: FormatPolicy
-    public var additionalProperties: AdditionalPropertiesPolicy
-    public var required: RequiredPolicy
+    package var minItems: MinItemsPolicy
+    package var maxItems: Bool
+    package var numericRange: Bool
+    package var exclusiveRange: Bool
+    package var stringLength: Bool
+    package var pattern: Bool
+    package var format: FormatPolicy
+    package var additionalProperties: AdditionalPropertiesPolicy
+    package var required: RequiredPolicy
 
-    public init(
+    package init(
         minItems: MinItemsPolicy,
         maxItems: Bool,
         numericRange: Bool,
@@ -69,21 +69,21 @@ package struct SchemaCapabilities: Sendable {
     }
 
     /// Anthropic Messages API（GA, constrained decoding）。
-    public static let anthropic = SchemaCapabilities(
+    package static let anthropic = SchemaCapabilities(
         minItems: .keepIfAtMostOne, maxItems: false, numericRange: false, exclusiveRange: false,
         stringLength: false, pattern: true, format: .keepAll,
         additionalProperties: .passthrough, required: .passthrough
     )
 
     /// OpenAI Structured Outputs（strict mode）。
-    public static let openAI = SchemaCapabilities(
+    package static let openAI = SchemaCapabilities(
         minItems: .remove, maxItems: false, numericRange: false, exclusiveRange: false,
         stringLength: false, pattern: false, format: .removeAll,
         additionalProperties: .forceFalseOnObjects, required: .allPropertiesOnObjects
     )
 
     /// Google Gemini（responseSchema）。
-    public static let gemini = SchemaCapabilities(
+    package static let gemini = SchemaCapabilities(
         minItems: .keep, maxItems: true, numericRange: true, exclusiveRange: false,
         stringLength: false, pattern: false, format: .whitelist(["date-time", "date", "time"]),
         additionalProperties: .removeToNil, required: .passthrough
@@ -96,17 +96,17 @@ package struct SchemaCapabilities: Sendable {
 /// 同一集合として記録される（記録順のみ正規化）。各プロバイダの `*SchemaAdapter` は
 /// `GenericSchemaAdapter(capabilities: .xxx)` への委譲に縮退する。
 package struct GenericSchemaAdapter: ProviderSchemaAdapter {
-    public let capabilities: SchemaCapabilities
+    package let capabilities: SchemaCapabilities
 
-    public init(capabilities: SchemaCapabilities) {
+    package init(capabilities: SchemaCapabilities) {
         self.capabilities = capabilities
     }
 
-    public func adapt(_ schema: JSONSchema) -> JSONSchema {
+    package func adapt(_ schema: JSONSchema) -> JSONSchema {
         adaptWithConstraints(schema, fieldPath: "").schema
     }
 
-    public func adaptWithConstraints(_ schema: JSONSchema, fieldPath: String) -> SchemaAdaptationResult {
+    package func adaptWithConstraints(_ schema: JSONSchema, fieldPath: String) -> SchemaAdaptationResult {
         var removed: [RemovedConstraint] = []
 
         let (adaptedProperties, propertyConstraints) = adaptProperties(schema.properties, parentPath: fieldPath)

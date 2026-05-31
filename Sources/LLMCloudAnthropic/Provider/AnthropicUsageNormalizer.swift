@@ -22,11 +22,11 @@ package protocol AnthropicUsageRaw {
 ///
 /// 一方 `TokenUsage.inputTokens` の契約は **キャッシュ込みの総入力トークン数** なので、
 /// ここで合算して正規化する。
-public enum AnthropicUsageNormalizer {
+enum AnthropicUsageNormalizer {
 
     /// 生フィールドから正規化済み `TokenUsage` を構築。
     /// `cacheTier` はリクエスト時の TTL 指定に基づくため、必要なら呼び出し側で別途指定する。
-    public static func normalize(
+    static func normalize(
         rawInputTokens: Int,
         outputTokens: Int,
         cacheCreationTokens: Int?,

@@ -18,9 +18,9 @@ package protocol GeminiUsageMetadataRaw {
 /// - `promptTokenCount` は cachedContentTokenCount を**含む**（公式仕様）。`inputTokens` にそのまま入れて OK。
 /// - `candidatesTokenCount` は **Gemini API では thoughtsTokenCount を含む**（Vertex AI では含まない、API のみ）。
 ///   よって `outputTokens` にそのまま入れ、`reasoningTokens` に `thoughtsTokenCount` を入れる。
-public enum GeminiUsageNormalizer {
+enum GeminiUsageNormalizer {
 
-    public static func normalize(
+    static func normalize(
         promptTokenCount: Int?,
         candidatesTokenCount: Int?,
         thoughtsTokenCount: Int?,

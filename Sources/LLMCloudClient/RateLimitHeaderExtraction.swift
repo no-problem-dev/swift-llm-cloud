@@ -6,8 +6,8 @@ import FoundationNetworking
 /// プロバイダのレート制限ヘッダー名とリセット値形式を宣言する設定。
 ///
 /// 各プロバイダは「ヘッダー名 + リセット形式」だけを供給し、抽出ロジックは1実装に集約する。
-public struct RateLimitHeaderExtraction: Sendable {
-    public enum ResetFormat: Sendable {
+package struct RateLimitHeaderExtraction: Sendable {
+    package enum ResetFormat: Sendable {
         /// RFC3339 絶対時刻 → 現在からの残り秒（負値は 0 にクランプ）。Anthropic。
         case rfc3339
         /// `1s`/`500ms`/`6m`/`1h` のような duration suffix。OpenAI 互換。
@@ -16,14 +16,14 @@ public struct RateLimitHeaderExtraction: Sendable {
         case seconds
     }
 
-    public var retryAfter: String?
-    public var remainingRequests: String?
-    public var requestsReset: String?
-    public var remainingTokens: String?
-    public var tokensReset: String?
-    public var resetFormat: ResetFormat
+    package var retryAfter: String?
+    package var remainingRequests: String?
+    package var requestsReset: String?
+    package var remainingTokens: String?
+    package var tokensReset: String?
+    package var resetFormat: ResetFormat
 
-    public init(
+    package init(
         retryAfter: String? = "retry-after",
         remainingRequests: String? = nil,
         requestsReset: String? = nil,
@@ -39,14 +39,14 @@ public struct RateLimitHeaderExtraction: Sendable {
         self.resetFormat = resetFormat
     }
 
-    public func extract(from response: HTTPURLResponse) -> RateLimitInfo {
+    package func extract(from response: HTTPURLResponse) -> RateLimitInfo {
         func value(_ name: String?) -> String? { name.flatMap { response.value(forHTTPHeaderField: $0) } }
         return build(value)
     }
 
     /// contract の `decodeError` が受け取る `[String: String]` ヘッダー辞書からの抽出
     /// （大文字小文字を無視）。`HTTPURLResponse` 版と同一ロジックを共有する。
-    public func extract(from headers: [String: String]) -> RateLimitInfo {
+    package func extract(from headers: [String: String]) -> RateLimitInfo {
         let lowered = Dictionary(headers.map { ($0.key.lowercased(), $0.value) }, uniquingKeysWith: { _, b in b })
         func value(_ name: String?) -> String? { name.flatMap { lowered[$0.lowercased()] } }
         return build(value)
@@ -93,7 +93,7 @@ public struct RateLimitHeaderExtraction: Sendable {
     }
 
     /// Anthropic: `anthropic-ratelimit-*` + RFC3339 reset。
-    public static let anthropic = RateLimitHeaderExtraction(
+    package static let anthropic = RateLimitHeaderExtraction(
         retryAfter: "retry-after",
         remainingRequests: "anthropic-ratelimit-requests-remaining",
         requestsReset: "anthropic-ratelimit-requests-reset",
@@ -103,7 +103,7 @@ public struct RateLimitHeaderExtraction: Sendable {
     )
 
     /// OpenAI 互換: `x-ratelimit-*` + duration suffix reset。
-    public static let openAICompatible = RateLimitHeaderExtraction(
+    package static let openAICompatible = RateLimitHeaderExtraction(
         retryAfter: "retry-after",
         remainingRequests: "x-ratelimit-remaining-requests",
         requestsReset: "x-ratelimit-reset-requests",
@@ -113,5 +113,5 @@ public struct RateLimitHeaderExtraction: Sendable {
     )
 
     /// Gemini: `retry-after` のみ。
-    public static let gemini = RateLimitHeaderExtraction(retryAfter: "retry-after")
+    package static let gemini = RateLimitHeaderExtraction(retryAfter: "retry-after")
 }
