@@ -3,6 +3,7 @@ import LLMCloudClient
 import APIClient
 import APIContract
 import Foundation
+import StructuredDataCore
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -184,7 +185,7 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
                     contentBlocks.append(.text(text))
                 }
                 if let functionCall = part.functionCall {
-                    let argsDict = functionCall.args?.mapValues { $0.toAny() } ?? [:]
+                    let argsDict = functionCall.args?.mapValues { $0.anyValue } ?? [:]
                     if let argsData = try? JSONSerialization.data(withJSONObject: argsDict) {
                         contentBlocks.append(.toolUse(
                             id: UUID().uuidString,

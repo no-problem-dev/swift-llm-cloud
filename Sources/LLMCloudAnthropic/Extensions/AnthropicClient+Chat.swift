@@ -2,6 +2,7 @@ import LLMCloudClient
 import LLMClient
 import LLMChat
 import Foundation
+import StructuredDataCore
 import LLMClient
 #if canImport(FoundationNetworking)
 import FoundationNetworking

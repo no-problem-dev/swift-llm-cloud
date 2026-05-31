@@ -2,6 +2,7 @@ import LLMCloudClient
 import LLMClient
 import LLMTool
 import Foundation
+import StructuredDataCore
 import LLMClient
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -388,7 +389,7 @@ private struct AnthropicToolContentBlock: Decodable {
         id = try container.decodeIfPresent(String.self, forKey: .id)
         name = try container.decodeIfPresent(String.self, forKey: .name)
         if let inputData = try? container.decodeIfPresent(AnyCodable.self, forKey: .input) {
-            input = inputData.value as? [String: Any]
+            input = inputData.anyValue as? [String: Any]
         } else {
             input = nil
         }

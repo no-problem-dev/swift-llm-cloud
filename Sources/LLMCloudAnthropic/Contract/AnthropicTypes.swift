@@ -1,4 +1,5 @@
 import Foundation
+import StructuredDataCore
 import LLMClient
 
 // MARK: - Request Types
@@ -119,7 +120,7 @@ enum AnthropicMessageContent: Encodable, Sendable {
 
             let dict: [String: JSONValue] = [
                 "type": .string("image"),
-                "source": .object(source)
+                "source": .object(OrderedObject(source))
             ]
             try container.encode(dict)
         }
@@ -184,73 +185,8 @@ struct AnthropicUsage: Decodable, Sendable, AnthropicUsageRaw {
 
 // MARK: - JSON Helper Types
 
-/// JSON 値の汎用エンコード/デコード用
-enum JSONValue: Codable, Sendable {
-    case null
-    case bool(Bool)
-    case int(Int)
-    case double(Double)
-    case string(String)
-    case array([JSONValue])
-    case object([String: JSONValue])
+/// JSON 値の汎用エンコード/デコード用。swift-structured-data の StructuredValue に統一。
+typealias JSONValue = StructuredValue
 
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if container.decodeNil() {
-            self = .null
-        } else if let bool = try? container.decode(Bool.self) {
-            self = .bool(bool)
-        } else if let int = try? container.decode(Int.self) {
-            self = .int(int)
-        } else if let double = try? container.decode(Double.self) {
-            self = .double(double)
-        } else if let string = try? container.decode(String.self) {
-            self = .string(string)
-        } else if let array = try? container.decode([JSONValue].self) {
-            self = .array(array)
-        } else if let object = try? container.decode([String: JSONValue].self) {
-            self = .object(object)
-        } else {
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode JSON value")
-        }
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        switch self {
-        case .null: try container.encodeNil()
-        case .bool(let v): try container.encode(v)
-        case .int(let v): try container.encode(v)
-        case .double(let v): try container.encode(v)
-        case .string(let v): try container.encode(v)
-        case .array(let v): try container.encode(v)
-        case .object(let v): try container.encode(v)
-        }
-    }
-}
-
-/// 任意の JSON 値をデコードするためのラッパー
-struct AnyCodable: Decodable, Sendable {
-    let value: any Sendable
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if container.decodeNil() {
-            value = NSNull()
-        } else if let bool = try? container.decode(Bool.self) {
-            value = bool
-        } else if let int = try? container.decode(Int.self) {
-            value = int
-        } else if let double = try? container.decode(Double.self) {
-            value = double
-        } else if let string = try? container.decode(String.self) {
-            value = string
-        } else if let array = try? container.decode([AnyCodable].self) {
-            value = array.map { $0.value }
-        } else if let dict = try? container.decode([String: AnyCodable].self) {
-            value = dict.mapValues { $0.value }
-        } else {
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode value")
-        }
-    }
-}
+/// 任意の JSON 値をデコードするためのラッパー。`.anyValue` で Foundation の Any を得る。
+typealias AnyCodable = StructuredValue

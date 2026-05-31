@@ -2,6 +2,7 @@ import LLMCloudClient
 import LLMClient
 import LLMTool
 import Foundation
+import StructuredDataCore
 import LLMClient
 import LLMTool
 #if canImport(FoundationNetworking)
@@ -898,56 +899,7 @@ private enum AnthropicAgentMessageContent: Encodable {
 }
 
 /// JSON 値の汎用エンコード/デコード用
-private enum AgentJSONValue: Codable {
-    case null
-    case bool(Bool)
-    case int(Int)
-    case double(Double)
-    case string(String)
-    case array([AgentJSONValue])
-    case object([String: AgentJSONValue])
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if container.decodeNil() {
-            self = .null
-        } else if let bool = try? container.decode(Bool.self) {
-            self = .bool(bool)
-        } else if let int = try? container.decode(Int.self) {
-            self = .int(int)
-        } else if let double = try? container.decode(Double.self) {
-            self = .double(double)
-        } else if let string = try? container.decode(String.self) {
-            self = .string(string)
-        } else if let array = try? container.decode([AgentJSONValue].self) {
-            self = .array(array)
-        } else if let object = try? container.decode([String: AgentJSONValue].self) {
-            self = .object(object)
-        } else {
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode JSON value")
-        }
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        switch self {
-        case .null:
-            try container.encodeNil()
-        case .bool(let value):
-            try container.encode(value)
-        case .int(let value):
-            try container.encode(value)
-        case .double(let value):
-            try container.encode(value)
-        case .string(let value):
-            try container.encode(value)
-        case .array(let value):
-            try container.encode(value)
-        case .object(let value):
-            try container.encode(value)
-        }
-    }
-}
+private typealias AgentJSONValue = StructuredValue
 
 /// Anthropic エージェントレスポンスボディ
 private struct AnthropicAgentResponseBody: Decodable {
@@ -981,7 +933,7 @@ private struct AnthropicAgentContentBlock: Decodable {
         name = try container.decodeIfPresent(String.self, forKey: .name)
         signature = try container.decodeIfPresent(String.self, forKey: .signature)
         if let inputData = try? container.decodeIfPresent(AgentAnyCodable.self, forKey: .input) {
-            input = inputData.value as? [String: Any]
+            input = inputData.anyValue as? [String: Any]
         } else {
             input = nil
         }
@@ -989,30 +941,7 @@ private struct AnthropicAgentContentBlock: Decodable {
 }
 
 /// 任意の JSON 値をデコードするためのラッパー
-private struct AgentAnyCodable: Decodable {
-    let value: Any
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if container.decodeNil() {
-            value = NSNull()
-        } else if let bool = try? container.decode(Bool.self) {
-            value = bool
-        } else if let int = try? container.decode(Int.self) {
-            value = int
-        } else if let double = try? container.decode(Double.self) {
-            value = double
-        } else if let string = try? container.decode(String.self) {
-            value = string
-        } else if let array = try? container.decode([AgentAnyCodable].self) {
-            value = array.map { $0.value }
-        } else if let dict = try? container.decode([String: AgentAnyCodable].self) {
-            value = dict.mapValues { $0.value }
-        } else {
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode value")
-        }
-    }
-}
+private typealias AgentAnyCodable = StructuredValue
 
 /// Anthropic 使用量
 private struct AnthropicAgentUsage: Decodable, AnthropicUsageRaw {

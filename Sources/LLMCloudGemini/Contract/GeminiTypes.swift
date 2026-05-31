@@ -1,4 +1,5 @@
 import Foundation
+import StructuredDataCore
 import LLMClient
 
 // MARK: - Request Types
@@ -251,59 +252,4 @@ struct GeminiErrorDetail: Decodable, Sendable {
 // MARK: - JSON Helper Types
 
 /// JSON 値の汎用エンコード/デコード用
-enum GeminiJSONValue: Codable, Sendable {
-    case null
-    case bool(Bool)
-    case int(Int)
-    case double(Double)
-    case string(String)
-    case array([GeminiJSONValue])
-    case object([String: GeminiJSONValue])
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if container.decodeNil() {
-            self = .null
-        } else if let bool = try? container.decode(Bool.self) {
-            self = .bool(bool)
-        } else if let int = try? container.decode(Int.self) {
-            self = .int(int)
-        } else if let double = try? container.decode(Double.self) {
-            self = .double(double)
-        } else if let string = try? container.decode(String.self) {
-            self = .string(string)
-        } else if let array = try? container.decode([GeminiJSONValue].self) {
-            self = .array(array)
-        } else if let object = try? container.decode([String: GeminiJSONValue].self) {
-            self = .object(object)
-        } else {
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode JSON value")
-        }
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        switch self {
-        case .null: try container.encodeNil()
-        case .bool(let v): try container.encode(v)
-        case .int(let v): try container.encode(v)
-        case .double(let v): try container.encode(v)
-        case .string(let v): try container.encode(v)
-        case .array(let v): try container.encode(v)
-        case .object(let v): try container.encode(v)
-        }
-    }
-
-    /// JSONValue を [String: Any] に変換（JSONSerialization 互換用）
-    func toAny() -> Any {
-        switch self {
-        case .null: return NSNull()
-        case .bool(let v): return v
-        case .int(let v): return v
-        case .double(let v): return v
-        case .string(let v): return v
-        case .array(let v): return v.map { $0.toAny() }
-        case .object(let v): return v.mapValues { $0.toAny() }
-        }
-    }
-}
+typealias GeminiJSONValue = StructuredValue

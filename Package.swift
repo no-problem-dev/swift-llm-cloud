@@ -19,7 +19,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/no-problem-dev/swift-llm-client.git", from: "2.0.0"),
-        .package(url: "https://github.com/no-problem-dev/swift-structured-data.git", from: "1.0.0"),
+        .package(url: "https://github.com/no-problem-dev/swift-structured-data.git", from: "1.1.0"),
         .package(url: "https://github.com/no-problem-dev/swift-api-contract.git", from: "1.1.1"),
         .package(url: "https://github.com/no-problem-dev/swift-api-client.git", from: "1.1.1"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.4.0"),
@@ -48,6 +48,7 @@ let package = Package(
             .product(name: "LLMChat", package: "swift-llm-client"),
             .product(name: "APIContract", package: "swift-api-contract"),
             .product(name: "APIClient", package: "swift-api-client"),
+            .product(name: "StructuredDataCore", package: "swift-structured-data"),
         ], exclude: [
             "Extensions/AnthropicClient+Dynamic.swift",
         ]),
@@ -67,6 +68,7 @@ let package = Package(
             .product(name: "LLMChat", package: "swift-llm-client"),
             .product(name: "APIContract", package: "swift-api-contract"),
             .product(name: "APIClient", package: "swift-api-client"),
+            .product(name: "StructuredDataCore", package: "swift-structured-data"),
         ], exclude: [
             "Extensions/GeminiClient+Dynamic.swift",
         ]),
