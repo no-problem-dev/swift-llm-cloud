@@ -50,6 +50,11 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
         )
     }
 
+    /// ストリーミング生成の生 SSEEvent を流す。テキスト抽出は呼び出し側で行う。
+    func streamContentEvents(_ body: GeminiRequestBody, modelId: String) -> AsyncThrowingStream<SSEEvent, Error> {
+        apiClient.executeEventStream(GeminiAPI.StreamGenerateContent(modelId: modelId, request: body))
+    }
+
     /// 構築済みボディを contract 経由で送信する。
     func sendBody(_ body: GeminiRequestBody, modelId: String) async throws -> (GeminiResponseBody, Int, [String: String]) {
         let endpoint = GeminiAPI.GenerateContent(modelId: modelId, request: body)

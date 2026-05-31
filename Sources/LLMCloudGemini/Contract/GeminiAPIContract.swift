@@ -102,4 +102,35 @@ extension GeminiAPI {
             fatalError("Client-only contract")
         }
     }
+
+    /// ストリーミング生成エンドポイント。
+    ///
+    /// URL: `{baseURL}/{modelId}:streamGenerateContent?key={apiKey}&alt=sse`
+    struct StreamGenerateContent: APIContract, APIInput {
+        typealias Group = GeminiAPI
+        typealias Input = Self
+        typealias Output = GeminiResponseBody
+
+        static let method: APIMethod = .post
+        static let subPath: String = "/:modelId:streamGenerateContent"
+
+        let modelId: String
+        let request: GeminiRequestBody
+
+        var pathParameters: [String: String] { ["modelId": modelId] }
+        var queryParameters: [String: String]? { ["alt": "sse"] }
+
+        func encodeBody(using encoder: any APIBodyEncoder) throws -> Data? {
+            try encoder.encode(request)
+        }
+
+        static func decode(
+            pathParameters: [String: String],
+            queryParameters: [String: String],
+            body: Data?,
+            decoder: any APIBodyDecoder
+        ) throws -> Self {
+            fatalError("Client-only contract")
+        }
+    }
 }
