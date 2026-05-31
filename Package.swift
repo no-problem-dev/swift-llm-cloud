@@ -52,8 +52,6 @@ let package = Package(
             .product(name: "APIClient", package: "swift-api-client"),
             .product(name: "StructuredDataCore", package: "swift-structured-data"),
             .product(name: "JSONParsing", package: "swift-structured-data"),
-        ], exclude: [
-            "Extensions/AnthropicClient+Dynamic.swift",
         ]),
         // OpenAI provider (depends on OpenAICompatible)
         .target(name: "LLMCloudOpenAI", dependencies: [
@@ -77,8 +75,6 @@ let package = Package(
             .product(name: "APIClient", package: "swift-api-client"),
             .product(name: "StructuredDataCore", package: "swift-structured-data"),
             .product(name: "JSONParsing", package: "swift-structured-data"),
-        ], exclude: [
-            "Extensions/GeminiClient+Dynamic.swift",
         ]),
         // DeepSeek provider
         .target(name: "LLMCloudDeepSeek", dependencies: [
