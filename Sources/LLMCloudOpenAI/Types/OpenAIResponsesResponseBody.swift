@@ -1,4 +1,5 @@
 import Foundation
+import StructuredDataCore
 
 /// `/v1/responses` のレスポンスボディ。
 package struct OpenAIResponsesResponseBody: Decodable {
@@ -147,53 +148,8 @@ package struct OpenAIResponsesUsage: Decodable {
 
 // MARK: - Generic JSON Value
 
-/// 任意の JSON 値を再エンコード可能な形で保持する。
-package enum OpenAIResponsesJSONValue: Codable {
-    case null
-    case bool(Bool)
-    case int(Int)
-    case double(Double)
-    case string(String)
-    case array([OpenAIResponsesJSONValue])
-    case object([String: OpenAIResponsesJSONValue])
-
-    package init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if container.decodeNil() {
-            self = .null
-        } else if let value = try? container.decode(Bool.self) {
-            self = .bool(value)
-        } else if let value = try? container.decode(Int.self) {
-            self = .int(value)
-        } else if let value = try? container.decode(Double.self) {
-            self = .double(value)
-        } else if let value = try? container.decode(String.self) {
-            self = .string(value)
-        } else if let value = try? container.decode([OpenAIResponsesJSONValue].self) {
-            self = .array(value)
-        } else if let value = try? container.decode([String: OpenAIResponsesJSONValue].self) {
-            self = .object(value)
-        } else {
-            throw DecodingError.dataCorruptedError(
-                in: container,
-                debugDescription: "Cannot decode JSON value"
-            )
-        }
-    }
-
-    package func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        switch self {
-        case .null: try container.encodeNil()
-        case .bool(let v): try container.encode(v)
-        case .int(let v): try container.encode(v)
-        case .double(let v): try container.encode(v)
-        case .string(let v): try container.encode(v)
-        case .array(let v): try container.encode(v)
-        case .object(let v): try container.encode(v)
-        }
-    }
-}
+/// 任意の JSON 値。swift-structured-data の StructuredValue に統一。
+package typealias OpenAIResponsesJSONValue = StructuredValue
 
 // MARK: - Error response
 

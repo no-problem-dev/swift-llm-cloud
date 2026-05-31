@@ -59,6 +59,7 @@ let package = Package(
             .product(name: "LLMClient", package: "swift-llm-client"),
             .product(name: "LLMTool", package: "swift-llm-client"),
             .product(name: "LLMChat", package: "swift-llm-client"),
+            .product(name: "StructuredDataCore", package: "swift-structured-data"),
         ]),
         // Gemini provider
         .target(name: "LLMCloudGemini", dependencies: [
