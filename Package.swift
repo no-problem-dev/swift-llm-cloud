@@ -21,7 +21,7 @@ let package = Package(
         .package(url: "https://github.com/no-problem-dev/swift-llm-client.git", from: "3.0.0"),
         .package(url: "https://github.com/no-problem-dev/swift-structured-data.git", from: "1.1.0"),
         .package(url: "https://github.com/no-problem-dev/swift-api-contract.git", from: "2.0.0"),
-        .package(url: "https://github.com/no-problem-dev/swift-api-client.git", from: "2.0.0"),
+        .package(url: "https://github.com/no-problem-dev/swift-api-client.git", from: "2.1.0"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.4.0"),
     ],
     targets: [

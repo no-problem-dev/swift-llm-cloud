@@ -53,6 +53,12 @@ internal struct AnthropicProvider: LLMProvider, RetryableProviderProtocol {
         )
     }
 
+    /// ストリーミング(stream: true)ボディを contract 経由で送信し、生の SSEEvent を流す。
+    /// イベント解釈はプロバイダ側の accumulator が行う。
+    func streamMessageEvents(_ body: AnthropicRequestBody, beta: String?) -> AsyncThrowingStream<SSEEvent, Error> {
+        apiClient.executeEventStream(AnthropicAPI.CreateMessage(beta: beta, request: body))
+    }
+
     /// 構築済みボディを contract 経由で送信する（tools/structured output 等、send で
     /// 表現できないリクエストはこちらを使う）。
     func sendBody(_ body: AnthropicRequestBody, beta: String?) async throws -> (AnthropicResponseBody, Int, [String: String]) {

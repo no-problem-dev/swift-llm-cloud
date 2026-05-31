@@ -16,6 +16,7 @@ struct AnthropicRequestBody: Encodable, Sendable {
     let tools: [AnthropicToolDef]?
     let toolChoice: AnthropicToolChoiceValue?
     let stream: Bool?
+    let thinking: AnthropicThinkingConfig?
 
     init(
         model: String,
@@ -26,7 +27,8 @@ struct AnthropicRequestBody: Encodable, Sendable {
         outputConfig: AnthropicOutputConfig? = nil,
         tools: [AnthropicToolDef]? = nil,
         toolChoice: AnthropicToolChoiceValue? = nil,
-        stream: Bool? = nil
+        stream: Bool? = nil,
+        thinking: AnthropicThinkingConfig? = nil
     ) {
         self.model = model
         self.messages = messages
@@ -37,10 +39,11 @@ struct AnthropicRequestBody: Encodable, Sendable {
         self.tools = tools
         self.toolChoice = toolChoice
         self.stream = stream
+        self.thinking = thinking
     }
 
     enum CodingKeys: String, CodingKey {
-        case model, messages, system, temperature, tools, stream
+        case model, messages, system, temperature, tools, stream, thinking
         case maxTokens = "max_tokens"
         case outputConfig = "output_config"
         case toolChoice = "tool_choice"
@@ -57,6 +60,17 @@ struct AnthropicRequestBody: Encodable, Sendable {
         try container.encodeIfPresent(tools, forKey: .tools)
         try container.encodeIfPresent(toolChoice, forKey: .toolChoice)
         try container.encodeIfPresent(stream, forKey: .stream)
+        try container.encodeIfPresent(thinking, forKey: .thinking)
+    }
+}
+
+struct AnthropicThinkingConfig: Encodable, Sendable {
+    let type: String
+    let budgetTokens: Int
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case budgetTokens = "budget_tokens"
     }
 }
 
