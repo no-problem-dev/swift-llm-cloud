@@ -12,6 +12,8 @@ struct AnthropicRequestBody: Encodable, Sendable {
     let maxTokens: Int
     let temperature: Double?
     let outputConfig: AnthropicOutputConfig?
+    let tools: [AnthropicToolDef]?
+    let toolChoice: AnthropicToolChoiceValue?
     let stream: Bool?
 
     init(
@@ -21,6 +23,8 @@ struct AnthropicRequestBody: Encodable, Sendable {
         maxTokens: Int,
         temperature: Double? = nil,
         outputConfig: AnthropicOutputConfig? = nil,
+        tools: [AnthropicToolDef]? = nil,
+        toolChoice: AnthropicToolChoiceValue? = nil,
         stream: Bool? = nil
     ) {
         self.model = model
@@ -29,13 +33,16 @@ struct AnthropicRequestBody: Encodable, Sendable {
         self.maxTokens = maxTokens
         self.temperature = temperature
         self.outputConfig = outputConfig
+        self.tools = tools
+        self.toolChoice = toolChoice
         self.stream = stream
     }
 
     enum CodingKeys: String, CodingKey {
-        case model, messages, system, temperature, stream
+        case model, messages, system, temperature, tools, stream
         case maxTokens = "max_tokens"
         case outputConfig = "output_config"
+        case toolChoice = "tool_choice"
     }
 
     func encode(to encoder: Encoder) throws {
@@ -46,7 +53,47 @@ struct AnthropicRequestBody: Encodable, Sendable {
         try container.encode(maxTokens, forKey: .maxTokens)
         try container.encodeIfPresent(temperature, forKey: .temperature)
         try container.encodeIfPresent(outputConfig, forKey: .outputConfig)
+        try container.encodeIfPresent(tools, forKey: .tools)
+        try container.encodeIfPresent(toolChoice, forKey: .toolChoice)
         try container.encodeIfPresent(stream, forKey: .stream)
+    }
+}
+
+struct AnthropicToolDef: Encodable, Sendable {
+    let name: String
+    let description: String
+    let inputSchema: JSONValue
+
+    init(dict: [String: Any]) throws {
+        self.name = dict["name"] as? String ?? ""
+        self.description = dict["description"] as? String ?? ""
+        let schemaDict = dict["input_schema"] as? [String: Any] ?? [:]
+        let data = try JSONSerialization.data(withJSONObject: schemaDict)
+        self.inputSchema = try JSONDecoder().decode(JSONValue.self, from: data)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name, description
+        case inputSchema = "input_schema"
+    }
+}
+
+enum AnthropicToolChoiceValue: Encodable, Sendable {
+    case auto
+    case any
+    case none
+    case tool(String)
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .auto, .none:
+            try container.encode(["type": "auto"])
+        case .any:
+            try container.encode(["type": "any"])
+        case .tool(let name):
+            try container.encode(["type": "tool", "name": name])
+        }
     }
 }
 
