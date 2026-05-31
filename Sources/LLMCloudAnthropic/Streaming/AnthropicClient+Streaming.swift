@@ -1,6 +1,7 @@
 import LLMCloudClient
 import LLMClient
 import APIClient
+import JSONParsing
 import Foundation
 
 extension AnthropicClient {
@@ -54,11 +55,9 @@ extension AnthropicClient {
     }
 
     private static func extractTextDelta(from event: SSEEvent) -> String? {
-        guard let data = event.data.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              json["type"] as? String == "content_block_delta",
-              let delta = json["delta"] as? [String: Any],
-              let text = delta["text"] as? String else {
+        guard let v = try? JSONParser().parse(event.data),
+              v.string("type") == "content_block_delta",
+              let text = v["delta"].string("text") else {
             return nil
         }
         return text

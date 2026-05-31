@@ -1,5 +1,6 @@
 import Foundation
 import StructuredDataCore
+import JSONParsing
 import LLMClient
 import LLMTool
 
@@ -77,14 +78,12 @@ struct AnthropicThinkingConfig: Encodable, Sendable {
 struct AnthropicToolDef: Encodable, Sendable {
     let name: String
     let description: String
-    let inputSchema: JSONValue
+    let inputSchema: JSONSchema
 
-    init(dict: [String: Any]) throws {
-        self.name = dict["name"] as? String ?? ""
-        self.description = dict["description"] as? String ?? ""
-        let schemaDict = dict["input_schema"] as? [String: Any] ?? [:]
-        let data = try JSONSerialization.data(withJSONObject: schemaDict)
-        self.inputSchema = try JSONDecoder().decode(JSONValue.self, from: data)
+    init(name: String, description: String, inputSchema: JSONSchema) {
+        self.name = name
+        self.description = description
+        self.inputSchema = inputSchema
     }
 
     enum CodingKeys: String, CodingKey {
@@ -155,15 +154,7 @@ enum AnthropicMessageContent: Encodable, Sendable {
             try container.encode(dict)
 
         case .toolUse(let id, let name, let input):
-            let inputDict: [String: Any]
-            if let dict = try? JSONSerialization.jsonObject(with: input) as? [String: Any] {
-                inputDict = dict
-            } else {
-                inputDict = [:]
-            }
-            let inputData = try JSONSerialization.data(withJSONObject: inputDict)
-            let inputJSON = try JSONDecoder().decode(JSONValue.self, from: inputData)
-
+            let inputJSON = (try? JSONParser().parse(input)) ?? .object(OrderedObject([]))
             let dict: [String: JSONValue] = [
                 "type": .string("tool_use"),
                 "id": .string(id),
@@ -272,5 +263,3 @@ struct AnthropicUsage: Decodable, Sendable, AnthropicUsageRaw {
 /// JSON 値の汎用エンコード/デコード用。swift-structured-data の StructuredValue に統一。
 typealias JSONValue = StructuredValue
 
-/// 任意の JSON 値をデコードするためのラッパー。`.anyValue` で Foundation の Any を得る。
-typealias AnyCodable = StructuredValue

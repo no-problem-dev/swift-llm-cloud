@@ -2,49 +2,12 @@ import Foundation
 import LLMClient
 import LLMTool
 
-// MARK: - ToolSet OpenAI Format Conversion
-
 extension ToolSet {
-    /// OpenAI API 形式に変換
-    public func toOpenAIFormat() -> [[String: Any]] {
+    /// OpenAI 互換のツール定義配列に変換。スキーマは JSONSchema のまま保持し、
+    /// 直列化は contract codec に委ねる（[String: Any] を介さない）。
+    func toOpenAIToolDefs() -> [OpenAICompatibleToolDef] {
         toProviderFormat(adapter: OpenAISchemaAdapter()) { tool, adaptedSchema in
-            var functionDict: [String: Any] = [
-                "name": tool.toolName,
-                "description": tool.toolDescription,
-                "strict": true
-            ]
-            if let schemaData = try? adaptedSchema.toJSONData(),
-               let schemaDict = try? JSONSerialization.jsonObject(with: schemaData) as? [String: Any] {
-                functionDict["parameters"] = schemaDict
-            }
-            return [
-                "type": "function",
-                "function": functionDict
-            ]
+            OpenAICompatibleToolDef(name: tool.toolName, description: tool.toolDescription, parameters: adaptedSchema)
         }
-    }
-}
-
-// MARK: - Tool OpenAI Format Extension
-
-extension Tool {
-    /// OpenAI API 形式に変換
-    func toOpenAIFormat() -> [String: Any] {
-        var functionDict: [String: Any] = [
-            "name": toolName,
-            "description": toolDescription,
-            "strict": true
-        ]
-
-        let adapter = OpenAISchemaAdapter()
-        if let schemaData = try? adapter.adapt(inputSchema).toJSONData(),
-           let schemaDict = try? JSONSerialization.jsonObject(with: schemaData) as? [String: Any] {
-            functionDict["parameters"] = schemaDict
-        }
-
-        return [
-            "type": "function",
-            "function": functionDict
-        ]
     }
 }

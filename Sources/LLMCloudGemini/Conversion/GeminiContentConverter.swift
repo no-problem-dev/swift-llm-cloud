@@ -1,5 +1,7 @@
 import Foundation
 import LLMClient
+import StructuredDataCore
+import JSONParsing
 
 enum GeminiContentConverter {
     static func convert(_ message: LLMMessage) -> [GeminiContent] {
@@ -12,11 +14,11 @@ enum GeminiContentConverter {
             case .text(let text):
                 parts.append(GeminiPart(text: text))
             case .toolUse(let id, let name, let input):
-                let args = (try? JSONSerialization.jsonObject(with: input)) as? [String: Any]
+                let args = try? JSONParser().parse(input)
                 let signature = GeminiThoughtSignatureEncoding.decodeThoughtSignature(from: id)
                 parts.append(GeminiPart(functionCall: GeminiFunctionCall(name: name, args: args), thoughtSignature: signature))
             case .toolResult(_, let name, let resultContent):
-                let response: [String: Any] = ["result": resultContent.contentValue]
+                let response: GeminiJSONValue = .object(["result": .string(resultContent.contentValue)])
                 toolResultParts.append(GeminiPart(functionResponse: GeminiFunctionResponse(name: name, response: response)))
             case .image(let imageContent):
                 if let part = mediaPart(source: imageContent.source, mimeType: imageContent.mediaType) { parts.append(part) }

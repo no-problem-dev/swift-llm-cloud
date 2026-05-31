@@ -202,14 +202,12 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
                     contentBlocks.append(.text(text))
                 }
                 if let functionCall = part.functionCall {
-                    let argsDict = functionCall.args?.mapValues { $0.anyValue } ?? [:]
-                    if let argsData = try? JSONSerialization.data(withJSONObject: argsDict) {
-                        contentBlocks.append(.toolUse(
-                            id: UUID().uuidString,
-                            name: functionCall.name,
-                            input: argsData
-                        ))
-                    }
+                    let argsData = (functionCall.args.flatMap { try? JSONEncoder().encode($0) }) ?? Data("{}".utf8)
+                    contentBlocks.append(.toolUse(
+                        id: UUID().uuidString,
+                        name: functionCall.name,
+                        input: argsData
+                    ))
                 }
             }
         }

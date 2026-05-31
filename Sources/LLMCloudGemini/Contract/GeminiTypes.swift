@@ -22,24 +22,12 @@ struct GeminiTool: Encodable, Sendable {
 struct GeminiFunctionDeclaration: Encodable, Sendable {
     let name: String
     let description: String
-    let inputSchema: [String: GeminiJSONValue]
+    let parameters: JSONSchema
 
-    init(dict: [String: Any]) {
-        self.name = dict["name"] as? String ?? ""
-        self.description = dict["description"] as? String ?? ""
-
-        if let params = dict["parameters"] as? [String: Any],
-           let paramsData = try? JSONSerialization.data(withJSONObject: params),
-           let decoded = try? JSONDecoder().decode([String: GeminiJSONValue].self, from: paramsData) {
-            self.inputSchema = decoded
-        } else {
-            self.inputSchema = [:]
-        }
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case name, description
-        case inputSchema = "parameters"
+    init(name: String, description: String, parameters: JSONSchema) {
+        self.name = name
+        self.description = description
+        self.parameters = parameters
     }
 }
 
@@ -178,33 +166,22 @@ struct GeminiFileData: Codable, Sendable {
 /// Gemini 関数呼び出し
 struct GeminiFunctionCall: Codable, Sendable {
     let name: String
-    let args: [String: GeminiJSONValue]?
+    let args: GeminiJSONValue?
 
-    init(name: String, args: [String: Any]?) {
+    init(name: String, args: GeminiJSONValue?) {
         self.name = name
-        if let args = args,
-           let data = try? JSONSerialization.data(withJSONObject: args),
-           let decoded = try? JSONDecoder().decode([String: GeminiJSONValue].self, from: data) {
-            self.args = decoded
-        } else {
-            self.args = nil
-        }
+        self.args = args
     }
 }
 
 /// Gemini 関数レスポンス（ツール実行結果）
 struct GeminiFunctionResponse: Codable, Sendable {
     let name: String
-    let response: [String: GeminiJSONValue]
+    let response: GeminiJSONValue
 
-    init(name: String, response: [String: Any]) {
+    init(name: String, response: GeminiJSONValue) {
         self.name = name
-        if let data = try? JSONSerialization.data(withJSONObject: response),
-           let decoded = try? JSONDecoder().decode([String: GeminiJSONValue].self, from: data) {
-            self.response = decoded
-        } else {
-            self.response = [:]
-        }
+        self.response = response
     }
 }
 

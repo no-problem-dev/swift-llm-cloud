@@ -199,7 +199,7 @@ package struct OpenAICompatibleEngine: Sendable {
             maxCompletionTokens: maxTokens ?? Self.defaultMaxTokens,
             temperature: temperature,
             responseFormat: nil,
-            tools: tools.toOpenAIFormat().map { OpenAICompatibleToolDef(dict: $0) },
+            tools: tools.toOpenAIToolDefs(),
             toolChoice: toolChoice.map { mapToolChoice($0) }
         )
         // 生 URLSession を撤廃し contract 経由に統一（ボディは既に max_completion_tokens）。
@@ -233,7 +233,7 @@ package struct OpenAICompatibleEngine: Sendable {
             ))
         }
 
-        let openAITools: [OpenAICompatibleToolDef]? = tools.isEmpty ? nil : tools.toOpenAIFormat().map { OpenAICompatibleToolDef(dict: $0) }
+        let openAITools: [OpenAICompatibleToolDef]? = tools.isEmpty ? nil : tools.toOpenAIToolDefs()
         let openAIToolChoice: OpenAICompatibleToolChoice? = tools.isEmpty ? nil : (toolChoice.map { mapToolChoice($0) } ?? .auto)
 
         var responseFormat: OpenAICompatibleResponseFormat?

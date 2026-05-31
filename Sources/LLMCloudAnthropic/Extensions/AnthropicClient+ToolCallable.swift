@@ -14,7 +14,7 @@ extension AnthropicClient: ToolCallableClient {
         maxTokens: Int?
     ) async throws -> ToolCallResponse {
         let anthropicMessages = try messages.map { try AnthropicMessageConverter.convert($0) }
-        let anthropicTools = try tools.toAnthropicFormat().map { try AnthropicToolDef(dict: $0) }
+        let anthropicTools = tools.toAnthropicToolDefs()
 
         let body = AnthropicRequestBody(
             model: model.id,

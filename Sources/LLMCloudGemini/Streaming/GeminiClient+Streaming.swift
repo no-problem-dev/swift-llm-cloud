@@ -1,6 +1,8 @@
 import LLMCloudClient
 import LLMClient
 import APIClient
+import StructuredDataCore
+import JSONParsing
 import Foundation
 
 extension GeminiClient {
@@ -65,14 +67,11 @@ extension GeminiClient {
     }
 
     private static func extractTextDelta(from event: SSEEvent) -> String? {
-        guard let data = event.data.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let candidates = json["candidates"] as? [[String: Any]],
-              let content = candidates.first?["content"] as? [String: Any],
-              let parts = content["parts"] as? [[String: Any]] else {
+        guard let v = try? JSONParser().parse(event.data),
+              let parts = v["candidates"][0]["content"].array("parts") else {
             return nil
         }
-        let textPieces = parts.compactMap { $0["text"] as? String }
+        let textPieces = parts.compactMap { $0.string("text") }
         return textPieces.isEmpty ? nil : textPieces.joined()
     }
 }

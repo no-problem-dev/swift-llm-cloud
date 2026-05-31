@@ -39,7 +39,7 @@ extension GeminiClient: AgentCapableClient {
         var geminiTools: [GeminiTool]?
         var toolConfig: GeminiToolConfig?
         if !tools.isEmpty {
-            let declarations = tools.toGeminiFormat().map { GeminiFunctionDeclaration(dict: $0) }
+            let declarations = tools.toGeminiFunctionDeclarations()
             geminiTools = [GeminiTool(functionDeclarations: declarations)]
             toolConfig = toolChoice.map { Self.agentToolConfig(for: $0) }
         }

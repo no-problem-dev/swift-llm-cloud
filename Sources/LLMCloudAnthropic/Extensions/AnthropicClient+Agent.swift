@@ -2,6 +2,8 @@ import LLMCloudClient
 import LLMClient
 import LLMTool
 import APIClient
+import StructuredDataCore
+import JSONParsing
 import Foundation
 
 // MARK: - AnthropicClient + AgentCapableClient
@@ -27,7 +29,7 @@ extension AnthropicClient: AgentCapableClient {
         _ = thinkingMode
 
         let anthropicMessages = try messages.map { try AnthropicMessageConverter.convert($0, includeThinking: true) }
-        let anthropicTools = tools.isEmpty ? nil : try tools.toAnthropicFormat().map { try AnthropicToolDef(dict: $0) }
+        let anthropicTools = tools.isEmpty ? nil : tools.toAnthropicToolDefs()
         let anthropicToolChoice: AnthropicToolChoiceValue? = tools.isEmpty
             ? nil
             : (toolChoice.map { AnthropicToolChoiceValue($0) } ?? .auto)
@@ -182,7 +184,7 @@ extension AnthropicClient: AgentCapableClient {
         continuation: AsyncThrowingStream<StreamingAgentEvent, Error>.Continuation
     ) async throws {
         let anthropicMessages = try messages.map { try AnthropicMessageConverter.convert($0, includeThinking: true) }
-        let anthropicTools = tools.isEmpty ? nil : try tools.toAnthropicFormat().map { try AnthropicToolDef(dict: $0) }
+        let anthropicTools = tools.isEmpty ? nil : tools.toAnthropicToolDefs()
         let anthropicToolChoice: AnthropicToolChoiceValue? = tools.isEmpty
             ? nil
             : (toolChoice.map { AnthropicToolChoiceValue($0) } ?? .auto)
@@ -286,25 +288,23 @@ private struct AnthropicStreamAccumulator {
     // MARK: - Private Event Handlers
 
     private mutating func processMessageStart(_ data: String) -> [Action] {
-        guard let jsonData = data.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-              let message = json["message"] as? [String: Any] else { return [] }
-
-        model = message["model"] as? String ?? ""
-        if let usage = message["usage"] as? [String: Any] {
-            inputTokens = usage["input_tokens"] as? Int ?? 0
-            outputTokens = usage["output_tokens"] as? Int ?? 0
-            cacheCreationTokens = usage["cache_creation_input_tokens"] as? Int
-            cacheReadTokens = usage["cache_read_input_tokens"] as? Int
+        guard let v = try? JSONParser().parse(data) else { return [] }
+        let message = v["message"]
+        model = message.string("model") ?? ""
+        let usage = message["usage"]
+        if usage.exists {
+            inputTokens = usage.int("input_tokens") ?? 0
+            outputTokens = usage.int("output_tokens") ?? 0
+            cacheCreationTokens = usage.int("cache_creation_input_tokens")
+            cacheReadTokens = usage.int("cache_read_input_tokens")
         }
         return []
     }
 
     private mutating func processContentBlockStart(_ data: String) -> [Action] {
-        guard let jsonData = data.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-              let contentBlock = json["content_block"] as? [String: Any],
-              let type = contentBlock["type"] as? String else { return [] }
+        guard let v = try? JSONParser().parse(data) else { return [] }
+        let contentBlock = v["content_block"]
+        guard let type = contentBlock.string("type") else { return [] }
 
         switch type {
         case "thinking":
@@ -313,8 +313,8 @@ private struct AnthropicStreamAccumulator {
         case "text":
             break
         case "tool_use":
-            currentToolId = contentBlock["id"] as? String
-            currentToolName = contentBlock["name"] as? String
+            currentToolId = contentBlock.string("id")
+            currentToolName = contentBlock.string("name")
             currentToolInput = ""
         default:
             break
@@ -323,28 +323,27 @@ private struct AnthropicStreamAccumulator {
     }
 
     private mutating func processContentBlockDelta(_ data: String) -> [Action] {
-        guard let jsonData = data.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-              let delta = json["delta"] as? [String: Any],
-              let type = delta["type"] as? String else { return [] }
+        guard let v = try? JSONParser().parse(data) else { return [] }
+        let delta = v["delta"]
+        guard let type = delta.string("type") else { return [] }
 
         switch type {
         case "thinking_delta":
-            if let thinking = delta["thinking"] as? String {
+            if let thinking = delta.string("thinking") {
                 currentThinkingText += thinking
                 return [.yieldDelta(.thinkingDelta(thinking))]
             }
         case "signature_delta":
-            if let signature = delta["signature"] as? String {
+            if let signature = delta.string("signature") {
                 currentThinkingSignature = (currentThinkingSignature ?? "") + signature
             }
         case "text_delta":
-            if let text = delta["text"] as? String {
+            if let text = delta.string("text") {
                 textContent += text
                 return [.yieldDelta(.textDelta(text))]
             }
         case "input_json_delta":
-            if let partialJson = delta["partial_json"] as? String {
+            if let partialJson = delta.string("partial_json") {
                 currentToolInput += partialJson
             }
         default:
@@ -373,15 +372,9 @@ private struct AnthropicStreamAccumulator {
     }
 
     private mutating func processMessageDelta(_ data: String) -> [Action] {
-        guard let jsonData = data.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-              let delta = json["delta"] as? [String: Any] else { return [] }
-
-        stopReason = delta["stop_reason"] as? String
-
-        if let usage = json["usage"] as? [String: Any] {
-            outputTokens = usage["output_tokens"] as? Int ?? outputTokens
-        }
+        guard let v = try? JSONParser().parse(data) else { return [] }
+        stopReason = v["delta"].string("stop_reason")
+        outputTokens = v["usage"].int("output_tokens") ?? outputTokens
         return []
     }
 
@@ -394,13 +387,10 @@ private struct AnthropicStreamAccumulator {
     }
 
     private mutating func processError(_ data: String) -> [Action] {
-        guard let jsonData = data.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-              let error = json["error"] as? [String: Any] else {
+        guard let v = try? JSONParser().parse(data) else {
             return [.error(.serverError(0, "Unknown streaming error"))]
         }
-
-        let message = error["message"] as? String ?? "Unknown error"
+        let message = v["error"].string("message") ?? "Unknown error"
         return [.error(.serverError(0, message))]
     }
 

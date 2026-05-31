@@ -18,7 +18,7 @@ let package = Package(
         .library(name: "LLMCloud", targets: ["LLMCloud"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/no-problem-dev/swift-llm-client.git", from: "3.0.0"),
+        .package(url: "https://github.com/no-problem-dev/swift-llm-client.git", from: "3.1.0"),
         .package(url: "https://github.com/no-problem-dev/swift-structured-data.git", from: "1.1.0"),
         .package(url: "https://github.com/no-problem-dev/swift-api-contract.git", from: "2.0.0"),
         .package(url: "https://github.com/no-problem-dev/swift-api-client.git", from: "2.2.0"),
@@ -40,6 +40,7 @@ let package = Package(
             .product(name: "APIContract", package: "swift-api-contract"),
             .product(name: "APIClient", package: "swift-api-client"),
             .product(name: "StructuredDataCore", package: "swift-structured-data"),
+            .product(name: "JSONParsing", package: "swift-structured-data"),
         ]),
         // Anthropic provider
         .target(name: "LLMCloudAnthropic", dependencies: [
@@ -50,6 +51,7 @@ let package = Package(
             .product(name: "APIContract", package: "swift-api-contract"),
             .product(name: "APIClient", package: "swift-api-client"),
             .product(name: "StructuredDataCore", package: "swift-structured-data"),
+            .product(name: "JSONParsing", package: "swift-structured-data"),
         ], exclude: [
             "Extensions/AnthropicClient+Dynamic.swift",
         ]),
@@ -61,6 +63,7 @@ let package = Package(
             .product(name: "LLMTool", package: "swift-llm-client"),
             .product(name: "LLMChat", package: "swift-llm-client"),
             .product(name: "StructuredDataCore", package: "swift-structured-data"),
+            .product(name: "JSONParsing", package: "swift-structured-data"),
             .product(name: "APIClient", package: "swift-api-client"),
             .product(name: "APIContract", package: "swift-api-contract"),
         ]),
@@ -73,6 +76,7 @@ let package = Package(
             .product(name: "APIContract", package: "swift-api-contract"),
             .product(name: "APIClient", package: "swift-api-client"),
             .product(name: "StructuredDataCore", package: "swift-structured-data"),
+            .product(name: "JSONParsing", package: "swift-structured-data"),
         ], exclude: [
             "Extensions/GeminiClient+Dynamic.swift",
         ]),
