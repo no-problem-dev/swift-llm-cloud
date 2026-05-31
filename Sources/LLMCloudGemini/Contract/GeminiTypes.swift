@@ -234,6 +234,20 @@ struct GeminiErrorDetail: Decodable, Sendable {
     let status: String
 }
 
+enum GeminiFinishReason: String {
+    case stop = "STOP"
+    case maxTokens = "MAX_TOKENS"
+    case safety = "SAFETY"
+
+    static func stopReason(_ raw: String?) -> LLMResponse.StopReason? {
+        switch raw.flatMap(Self.init) {
+        case .stop: return .endTurn
+        case .maxTokens: return .maxTokens
+        case .safety, nil: return nil
+        }
+    }
+}
+
 // MARK: - JSON Helper Types
 
 /// JSON 値の汎用エンコード/デコード用

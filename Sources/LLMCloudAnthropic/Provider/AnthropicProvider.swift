@@ -172,16 +172,16 @@ internal struct AnthropicProvider: LLMProvider, RetryableProviderProtocol {
         let stopReason = response.stopReason.flatMap { LLMResponse.StopReason(rawValue: $0) }
 
         let contentBlocks = try response.content.compactMap { block -> LLMResponse.ContentBlock? in
-            switch block.type {
-            case "text":
+            switch AnthropicBlockType(rawValue: block.type) {
+            case .text:
                 return block.text.map { .text($0) }
-            case "tool_use":
+            case .toolUse:
                 guard let id = block.id, let name = block.name, let input = block.input else {
                     return nil
                 }
                 let inputData = try JSONEncoder().encode(input)
                 return .toolUse(id: id, name: name, input: inputData)
-            default:
+            case .thinking, nil:
                 return nil
             }
         }

@@ -93,10 +93,6 @@ extension GeminiClient: ToolCallableClient {
     }
 
     private static func mapStopReason(_ reason: String?) -> LLMResponse.StopReason? {
-        switch reason {
-        case "STOP": return .endTurn
-        case "MAX_TOKENS": return .maxTokens
-        default: return nil
-        }
+        GeminiFinishReason.stopReason(reason)
     }
 }

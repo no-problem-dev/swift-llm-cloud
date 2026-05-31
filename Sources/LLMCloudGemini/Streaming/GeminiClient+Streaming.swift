@@ -67,11 +67,11 @@ extension GeminiClient {
     }
 
     private static func extractTextDelta(from event: SSEEvent) -> String? {
-        guard let v = try? JSONParser().parse(event.data),
-              let parts = v["candidates"][0]["content"].array("parts") else {
+        guard let chunk = try? JSONParser().parse(event.data).decode(GeminiResponseBody.self),
+              let parts = chunk.candidates?.first?.content?.parts else {
             return nil
         }
-        let textPieces = parts.compactMap { $0.string("text") }
+        let textPieces = parts.compactMap(\.text)
         return textPieces.isEmpty ? nil : textPieces.joined()
     }
 }

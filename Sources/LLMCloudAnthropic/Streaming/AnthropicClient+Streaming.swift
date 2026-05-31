@@ -55,11 +55,10 @@ extension AnthropicClient {
     }
 
     private static func extractTextDelta(from event: SSEEvent) -> String? {
-        guard let v = try? JSONParser().parse(event.data),
-              v.string("type") == "content_block_delta",
-              let text = v["delta"].string("text") else {
+        guard let e = AnthropicSSE.decode(AnthropicSSE.TextDelta.self, from: event.data),
+              e.type == "content_block_delta" else {
             return nil
         }
-        return text
+        return e.delta?.text
     }
 }

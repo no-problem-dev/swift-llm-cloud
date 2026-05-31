@@ -125,13 +125,7 @@ extension GeminiClient: AgentCapableClient {
             }
         }
 
-        let stopReason: LLMResponse.StopReason? = {
-            switch candidate.finishReason {
-            case "STOP": return .endTurn
-            case "MAX_TOKENS": return .maxTokens
-            default: return nil
-            }
-        }()
+        let stopReason = GeminiFinishReason.stopReason(candidate.finishReason)
 
         return LLMResponse(content: blocks, model: model, usage: usage, stopReason: stopReason)
     }

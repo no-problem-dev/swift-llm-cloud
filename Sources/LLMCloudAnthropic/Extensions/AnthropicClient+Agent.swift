@@ -2,8 +2,6 @@ import LLMCloudClient
 import LLMClient
 import LLMTool
 import APIClient
-import StructuredDataCore
-import JSONParsing
 import Foundation
 
 // MARK: - AnthropicClient + AgentCapableClient
@@ -60,16 +58,16 @@ extension AnthropicClient: AgentCapableClient {
 
     private static func agentResponseToLLM(_ response: AnthropicResponseBody) -> LLMResponse {
         let contentBlocks: [LLMResponse.ContentBlock] = response.content.compactMap { block in
-            switch block.type {
-            case "text":
+            switch AnthropicBlockType(rawValue: block.type) {
+            case .text:
                 return block.text.map { .text($0) }
-            case "tool_use":
+            case .toolUse:
                 guard let id = block.id, let name = block.name, let input = block.input,
                       let inputData = try? JSONEncoder().encode(input) else { return nil }
                 return .toolUse(id: id, name: name, input: inputData)
-            case "thinking":
+            case .thinking:
                 return block.text.map { .thinking(text: $0, signature: block.signature) }
-            default:
+            case nil:
                 return nil
             }
         }
@@ -257,24 +255,22 @@ private struct AnthropicStreamAccumulator {
     private var completed = false
 
     mutating func processEvent(_ event: SSEEvent) -> [Action] {
-        guard let eventType = event.event else { return [] }
-
-        switch eventType {
-        case "message_start":
+        switch event.event.flatMap(AnthropicSSE.EventName.init) {
+        case .messageStart:
             return processMessageStart(event.data)
-        case "content_block_start":
+        case .contentBlockStart:
             return processContentBlockStart(event.data)
-        case "content_block_delta":
+        case .contentBlockDelta:
             return processContentBlockDelta(event.data)
-        case "content_block_stop":
+        case .contentBlockStop:
             return processContentBlockStop()
-        case "message_delta":
+        case .messageDelta:
             return processMessageDelta(event.data)
-        case "message_stop":
+        case .messageStop:
             return processMessageStop()
-        case "error":
+        case .error:
             return processError(event.data)
-        default:
+        case nil:
             return []
         }
     }
@@ -288,65 +284,59 @@ private struct AnthropicStreamAccumulator {
     // MARK: - Private Event Handlers
 
     private mutating func processMessageStart(_ data: String) -> [Action] {
-        guard let v = try? JSONParser().parse(data) else { return [] }
-        let message = v["message"]
-        model = message.string("model") ?? ""
-        let usage = message["usage"]
-        if usage.exists {
-            inputTokens = usage.int("input_tokens") ?? 0
-            outputTokens = usage.int("output_tokens") ?? 0
-            cacheCreationTokens = usage.int("cache_creation_input_tokens")
-            cacheReadTokens = usage.int("cache_read_input_tokens")
+        guard let event = AnthropicSSE.decode(AnthropicSSE.MessageStart.self, from: data) else { return [] }
+        model = event.message.model ?? ""
+        if let usage = event.message.usage {
+            inputTokens = usage.inputTokens ?? 0
+            outputTokens = usage.outputTokens ?? 0
+            cacheCreationTokens = usage.cacheCreationInputTokens
+            cacheReadTokens = usage.cacheReadInputTokens
         }
         return []
     }
 
     private mutating func processContentBlockStart(_ data: String) -> [Action] {
-        guard let v = try? JSONParser().parse(data) else { return [] }
-        let contentBlock = v["content_block"]
-        guard let type = contentBlock.string("type") else { return [] }
+        guard let block = AnthropicSSE.decode(AnthropicSSE.ContentBlockStart.self, from: data)?.contentBlock else { return [] }
 
-        switch type {
-        case "thinking":
+        switch AnthropicBlockType(rawValue: block.type) {
+        case .thinking:
             currentThinkingText = ""
             currentThinkingSignature = nil
-        case "text":
+        case .text:
             break
-        case "tool_use":
-            currentToolId = contentBlock.string("id")
-            currentToolName = contentBlock.string("name")
+        case .toolUse:
+            currentToolId = block.id
+            currentToolName = block.name
             currentToolInput = ""
-        default:
+        case nil:
             break
         }
         return []
     }
 
     private mutating func processContentBlockDelta(_ data: String) -> [Action] {
-        guard let v = try? JSONParser().parse(data) else { return [] }
-        let delta = v["delta"]
-        guard let type = delta.string("type") else { return [] }
+        guard let delta = AnthropicSSE.decode(AnthropicSSE.ContentBlockDelta.self, from: data)?.delta else { return [] }
 
-        switch type {
-        case "thinking_delta":
-            if let thinking = delta.string("thinking") {
+        switch delta.type.flatMap(AnthropicSSE.DeltaType.init) {
+        case .thinkingDelta:
+            if let thinking = delta.thinking {
                 currentThinkingText += thinking
                 return [.yieldDelta(.thinkingDelta(thinking))]
             }
-        case "signature_delta":
-            if let signature = delta.string("signature") {
+        case .signatureDelta:
+            if let signature = delta.signature {
                 currentThinkingSignature = (currentThinkingSignature ?? "") + signature
             }
-        case "text_delta":
-            if let text = delta.string("text") {
+        case .textDelta:
+            if let text = delta.text {
                 textContent += text
                 return [.yieldDelta(.textDelta(text))]
             }
-        case "input_json_delta":
-            if let partialJson = delta.string("partial_json") {
+        case .inputJsonDelta:
+            if let partialJson = delta.partialJson {
                 currentToolInput += partialJson
             }
-        default:
+        case nil:
             break
         }
         return []
@@ -372,9 +362,9 @@ private struct AnthropicStreamAccumulator {
     }
 
     private mutating func processMessageDelta(_ data: String) -> [Action] {
-        guard let v = try? JSONParser().parse(data) else { return [] }
-        stopReason = v["delta"].string("stop_reason")
-        outputTokens = v["usage"].int("output_tokens") ?? outputTokens
+        guard let event = AnthropicSSE.decode(AnthropicSSE.MessageDelta.self, from: data) else { return [] }
+        stopReason = event.delta?.stopReason
+        outputTokens = event.usage?.outputTokens ?? outputTokens
         return []
     }
 
@@ -387,11 +377,8 @@ private struct AnthropicStreamAccumulator {
     }
 
     private mutating func processError(_ data: String) -> [Action] {
-        guard let v = try? JSONParser().parse(data) else {
-            return [.error(.serverError(0, "Unknown streaming error"))]
-        }
-        let message = v["error"].string("message") ?? "Unknown error"
-        return [.error(.serverError(0, message))]
+        let message = AnthropicSSE.decode(AnthropicSSE.ErrorEvent.self, from: data)?.error.message
+        return [.error(.serverError(0, message ?? "Unknown streaming error"))]
     }
 
     // MARK: - Response Building

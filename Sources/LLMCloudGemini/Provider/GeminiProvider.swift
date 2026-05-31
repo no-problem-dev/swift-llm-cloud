@@ -234,17 +234,7 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
 
     /// 停止理由をマッピング
     private func mapStopReason(_ reason: String?) -> LLMResponse.StopReason? {
-        guard let reason = reason else { return nil }
-        switch reason {
-        case "STOP":
-            return .endTurn
-        case "MAX_TOKENS":
-            return .maxTokens
-        case "SAFETY":
-            return nil
-        default:
-            return nil
-        }
+        GeminiFinishReason.stopReason(reason)
     }
 
     // MARK: - Error Mapping

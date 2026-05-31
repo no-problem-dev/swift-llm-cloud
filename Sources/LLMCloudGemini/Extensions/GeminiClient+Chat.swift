@@ -52,13 +52,7 @@ extension GeminiClient: ChatCapableClient {
             throw LLMError.decodingFailed(error)
         }
 
-        let stopReason: LLMResponse.StopReason? = {
-            switch candidate.finishReason {
-            case "STOP": return .endTurn
-            case "MAX_TOKENS": return .maxTokens
-            default: return nil
-            }
-        }()
+        let stopReason = GeminiFinishReason.stopReason(candidate.finishReason)
 
         return ChatResponse(
             result: result,
