@@ -26,7 +26,7 @@ extension AnthropicClient: ChatCapableClient {
 
         let (response, _, _) = try await baseProvider.sendBody(body, beta: Self.structuredOutputsBeta)
 
-        guard let rawText = response.content.first(where: { $0.type == "text" })?.text else {
+        guard let rawText = response.content.first(where: { AnthropicBlockType(rawValue: $0.type) == .text })?.text else {
             throw LLMError.emptyResponse
         }
         guard let jsonData = rawText.data(using: .utf8) else {

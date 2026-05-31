@@ -56,7 +56,7 @@ extension AnthropicClient {
 
     private static func extractTextDelta(from event: SSEEvent) -> String? {
         guard let e = AnthropicSSE.decode(AnthropicSSE.TextDelta.self, from: event.data),
-              e.type == "content_block_delta" else {
+              e.type.flatMap(AnthropicSSE.EventName.init(rawValue:)) == .contentBlockDelta else {
             return nil
         }
         return e.delta?.text

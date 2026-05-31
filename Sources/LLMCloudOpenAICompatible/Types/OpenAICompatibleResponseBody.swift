@@ -24,6 +24,12 @@ package struct OpenAICompatibleResponseMessage: Decodable, Sendable {
     package let toolCalls: [OpenAICompatibleResponseToolCall]?
 }
 
+/// OpenAI 互換レスポンス内ツール呼び出しの種別。
+/// 未知の値は `nil` として扱い、前方互換性を保つ。
+package enum OpenAICompatibleToolCallType: String {
+    case function
+}
+
 /// OpenAI 互換レスポンス内ツール呼び出し
 package struct OpenAICompatibleResponseToolCall: Decodable, Sendable {
     package let id: String

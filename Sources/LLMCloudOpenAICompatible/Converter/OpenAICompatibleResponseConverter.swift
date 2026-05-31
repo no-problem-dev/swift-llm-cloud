@@ -25,7 +25,7 @@ package enum OpenAICompatibleResponseConverter {
 
         if let toolCalls = choice.message.toolCalls {
             for toolCall in toolCalls {
-                if toolCall.type == "function",
+                if OpenAICompatibleToolCallType(rawValue: toolCall.type) == .function,
                    let argumentsData = toolCall.function.arguments.data(using: .utf8) {
                     contentBlocks.append(.toolUse(
                         id: toolCall.id,
@@ -60,7 +60,7 @@ package enum OpenAICompatibleResponseConverter {
 
         if let responseToolCalls = choice.message.toolCalls {
             for toolCall in responseToolCalls {
-                if toolCall.type == "function",
+                if OpenAICompatibleToolCallType(rawValue: toolCall.type) == .function,
                    let argumentsData = toolCall.function.arguments.data(using: .utf8) {
                     toolCalls.append(ToolCall(
                         id: toolCall.id,
