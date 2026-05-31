@@ -91,7 +91,7 @@ package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol 
         } catch let error as RateLimitAwareError {
             throw error
         } catch let error as APIError {
-            throw mapAPIError(error)
+            throw mapAPIErrorToLLMError(error)
         } catch {
             throw LLMError.networkError(error)
         }
@@ -121,7 +121,7 @@ package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol 
             constraintPrompt = adaptationResult.toConstraintSystemPrompt()
         }
 
-        let effectiveSystemPrompt = buildEffectiveSystemPrompt(
+        let effectiveSystemPrompt = composeSystemPrompt(
             base: request.systemPrompt,
             constraints: constraintPrompt
         )
@@ -152,45 +152,12 @@ package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol 
         )
     }
 
-    private func buildEffectiveSystemPrompt(base: String?, constraints: SystemPrompt?) -> String? {
-        switch (base, constraints) {
-        case (let base?, let constraints?):
-            return "\(base)\n\n\(constraints.render())"
-        case (let base?, nil):
-            return base
-        case (nil, let constraints?):
-            return constraints.render()
-        case (nil, nil):
-            return nil
-        }
-    }
 
     // MARK: - Error Mapping
 
     /// APIError を LLMError にマッピング
-    private func mapAPIError(_ error: APIError) -> LLMError {
-        switch error {
-        case .unauthorized:
-            return .unauthorized
-        case .networkError(let underlying):
-            return .networkError(underlying)
-        case .decodingError(let underlying):
-            return .decodingFailed(underlying)
-        case .invalidURL, .invalidResponse:
-            return .invalidRequest("Invalid URL or response")
-        case .httpError(let statusCode, _):
-            return .serverError(statusCode, "HTTP error")
-        }
-    }
 }
 
 // MARK: - Static Token Provider
 
 /// 固定トークンを提供する AuthTokenProvider
-private struct StaticTokenProvider: AuthTokenProvider {
-    let token: String
-
-    func getToken() async throws -> String? {
-        token
-    }
-}

@@ -29,6 +29,7 @@ let package = Package(
         .target(name: "LLMCloudClient", dependencies: [
             .product(name: "LLMClient", package: "swift-llm-client"),
             .product(name: "LLMTool", package: "swift-llm-client"),
+            .product(name: "APIClient", package: "swift-api-client"),
         ]),
         // OpenAI-compatible shared infrastructure
         .target(name: "LLMCloudOpenAICompatible", dependencies: [
