@@ -56,16 +56,14 @@ extension OpenAIClient: VideoGenerationCapable {
             throw VideoGenerationError.unsupportedResolution(actualResolution, model: model.displayName)
         }
 
-        // サイズ文字列を生成（アスペクト比に応じて）
         let sizeString = soraSize(for: actualAspectRatio, resolution: actualResolution)
 
-        // API 呼び出し
-        let response = try await sendVideoCreationRequest(
-            prompt: prompt,
-            model: model,
-            seconds: actualDuration,
-            size: sizeString
+        let body = SoraVideoRequestBody(
+            model: model.id, prompt: prompt, seconds: String(actualDuration), size: sizeString
         )
+        let response = try await mediaClient.executeWithResponse(
+            OpenAIMediaAPI.CreateVideo(request: body)
+        ).output
 
         // 設定を作成
         let configuration = VideoGenerationConfiguration(
@@ -87,24 +85,9 @@ extension OpenAIClient: VideoGenerationCapable {
 
     /// 動画生成ジョブのステータスを確認
     public func checkVideoStatus(_ job: VideoGenerationJob) async throws -> VideoGenerationJob {
-        let endpoint = videoStatusEndpoint(videoId: job.id)
-
-        var urlRequest = URLRequest(url: endpoint)
-        urlRequest.httpMethod = "GET"
-        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let (data, response) = try await session.data(for: urlRequest)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw LLMError.networkError(URLError(.badServerResponse))
-        }
-
-        if httpResponse.statusCode != 200 {
-            throw try parseVideoError(from: data, statusCode: httpResponse.statusCode)
-        }
-
-        let decoder = JSONDecoder()
-        let statusResponse = try decoder.decode(SoraVideoResponse.self, from: data)
+        let statusResponse = try await mediaClient.executeWithResponse(
+            OpenAIMediaAPI.GetVideoStatus(videoId: job.id)
+        ).output
 
         let status = mapStatus(statusResponse.status)
         var videoURL: URL?
@@ -131,27 +114,14 @@ extension OpenAIClient: VideoGenerationCapable {
             throw VideoGenerationError.jobNotCompleted(status: job.status)
         }
 
-        // 動画をダウンロード
-        let endpoint = videoDownloadEndpoint(videoId: job.id)
-
-        var urlRequest = URLRequest(url: endpoint)
-        urlRequest.httpMethod = "GET"
-        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let (data, response) = try await session.data(for: urlRequest)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw LLMError.networkError(URLError(.badServerResponse))
-        }
-
-        if httpResponse.statusCode != 200 {
-            throw try parseVideoError(from: data, statusCode: httpResponse.statusCode)
-        }
+        let data = try await mediaClient.executeRaw(
+            OpenAIMediaAPI.DownloadVideo(videoId: job.id)
+        ).output
 
         return GeneratedVideo(
             data: data,
             format: .mp4,
-            remoteURL: endpoint,
+            remoteURL: videoDownloadEndpoint(videoId: job.id),
             duration: job.configuration?.duration.map { TimeInterval($0) },
             resolution: job.configuration?.resolution,
             jobId: job.id,
@@ -160,51 +130,6 @@ extension OpenAIClient: VideoGenerationCapable {
     }
 
     // MARK: - Private Helpers
-
-    private func sendVideoCreationRequest(
-        prompt: String,
-        model: OpenAIVideoModel,
-        seconds: Int,
-        size: String
-    ) async throws -> SoraVideoResponse {
-        let endpoint = videoCreationEndpoint()
-
-        var urlRequest = URLRequest(url: endpoint)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        // JSON リクエストボディを構築
-        let requestBody: [String: Any] = [
-            "model": model.id,
-            "prompt": prompt,
-            "seconds": String(seconds),
-            "size": size
-        ]
-
-        urlRequest.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-
-        let (data, response) = try await session.data(for: urlRequest)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw LLMError.networkError(URLError(.badServerResponse))
-        }
-
-        if httpResponse.statusCode != 200 && httpResponse.statusCode != 201 {
-            throw try parseVideoError(from: data, statusCode: httpResponse.statusCode)
-        }
-
-        let decoder = JSONDecoder()
-        return try decoder.decode(SoraVideoResponse.self, from: data)
-    }
-
-    private func videoCreationEndpoint() -> URL {
-        URL(string: "https://api.openai.com/v1/videos")!
-    }
-
-    private func videoStatusEndpoint(videoId: String) -> URL {
-        URL(string: "https://api.openai.com/v1/videos/\(videoId)")!
-    }
 
     private func videoDownloadEndpoint(videoId: String) -> URL {
         URL(string: "https://api.openai.com/v1/videos/\(videoId)/content")!
@@ -256,76 +181,4 @@ extension OpenAIClient: VideoGenerationCapable {
         }
     }
 
-    private func parseVideoError(from data: Data, statusCode: Int) throws -> LLMError {
-        struct ErrorResponse: Decodable {
-            struct Error: Decodable {
-                let message: String
-                let type: String?
-                let code: String?
-            }
-            let error: Error
-        }
-
-        if let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
-            let message = errorResponse.error.message
-
-            switch statusCode {
-            case 401:
-                return .unauthorized
-            case 429:
-                return .rateLimitExceeded
-            case 400:
-                if message.contains("safety") || message.contains("policy") || message.contains("copyright") {
-                    throw VideoGenerationError.contentPolicyViolation(message)
-                }
-                return .invalidRequest(message)
-            default:
-                return .serverError(statusCode, message)
-            }
-        }
-
-        return .serverError(statusCode, String(data: data, encoding: .utf8) ?? "Unknown error")
-    }
-}
-
-// MARK: - Multipart Form Data Helper
-
-private extension Data {
-    mutating func appendMultipartField(name: String, value: String, boundary: String) {
-        append("--\(boundary)\r\n".data(using: .utf8)!)
-        append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
-        append("\(value)\r\n".data(using: .utf8)!)
-    }
-}
-
-// MARK: - Response Types
-
-private struct SoraVideoResponse: Decodable {
-    let id: String
-    let object: String
-    let createdAt: Int
-    let status: String
-    let model: String
-    let progress: Int?
-    let seconds: String?
-    let size: String?
-    let prompt: String?
-    let error: SoraError?
-    let completedAt: Int?
-    let expiresAt: Int?
-    let remixedFromVideoId: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id, object, status, model, progress, seconds, size, prompt, error
-        case createdAt = "created_at"
-        case completedAt = "completed_at"
-        case expiresAt = "expires_at"
-        case remixedFromVideoId = "remixed_from_video_id"
-    }
-}
-
-private struct SoraError: Decodable {
-    let message: String
-    let type: String?
-    let code: String?
 }

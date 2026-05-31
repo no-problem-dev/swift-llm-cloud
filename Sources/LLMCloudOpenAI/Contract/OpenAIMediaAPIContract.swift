@@ -124,3 +124,63 @@ struct OpenAIImageResponseBody: Decodable, Sendable {
         let revisedPrompt: String?
     }
 }
+
+extension OpenAIMediaAPI {
+    /// `POST /v1/videos` — 動画生成ジョブを作成。
+    struct CreateVideo: APIContract, APIInput {
+        typealias Group = OpenAIMediaAPI
+        typealias Input = Self
+        typealias Output = SoraVideoResponseBody
+        static let method: APIMethod = .post
+        static let subPath: String = "videos"
+        let request: SoraVideoRequestBody
+        func encodeBody(using encoder: any APIBodyEncoder) throws -> Data? { try encoder.encode(request) }
+        static func decode(pathParameters: [String: String], queryParameters: [String: String], body: Data?, decoder: any APIBodyDecoder) throws -> Self { fatalError("Client-only contract") }
+    }
+
+    /// `GET /v1/videos/{id}` — ジョブのステータスを取得。
+    struct GetVideoStatus: APIContract, APIInput {
+        typealias Group = OpenAIMediaAPI
+        typealias Input = Self
+        typealias Output = SoraVideoResponseBody
+        static let method: APIMethod = .get
+        static let subPath: String = "videos/:videoId"
+        let videoId: String
+        var pathParameters: [String: String] { ["videoId": videoId] }
+        func encodeBody(using encoder: any APIBodyEncoder) throws -> Data? { nil }
+        static func decode(pathParameters: [String: String], queryParameters: [String: String], body: Data?, decoder: any APIBodyDecoder) throws -> Self { fatalError("Client-only contract") }
+    }
+
+    /// `GET /v1/videos/{id}/content` — 生成された動画(バイナリ)を取得。executeRaw 用。
+    struct DownloadVideo: APIContract, APIInput {
+        typealias Group = OpenAIMediaAPI
+        typealias Input = Self
+        typealias Output = Data
+        static let method: APIMethod = .get
+        static let subPath: String = "videos/:videoId/content"
+        let videoId: String
+        var pathParameters: [String: String] { ["videoId": videoId] }
+        func encodeBody(using encoder: any APIBodyEncoder) throws -> Data? { nil }
+        static func decode(pathParameters: [String: String], queryParameters: [String: String], body: Data?, decoder: any APIBodyDecoder) throws -> Self { fatalError("Client-only contract") }
+    }
+}
+
+struct SoraVideoRequestBody: Encodable, Sendable {
+    let model: String
+    let prompt: String
+    let seconds: String
+    let size: String
+}
+
+/// キー変換は mediaClient(.snakeCase)に委ねる。
+struct SoraVideoResponseBody: Decodable, Sendable {
+    let id: String
+    let status: String
+    let createdAt: Int
+    let progress: Int?
+    let error: Detail?
+
+    struct Detail: Decodable, Sendable {
+        let message: String
+    }
+}
