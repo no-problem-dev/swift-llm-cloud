@@ -2,6 +2,7 @@ import LLMClient
 import LLMCloudClient
 import LLMTool
 import LLMChat
+import APIClient
 import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -15,7 +16,8 @@ package struct OpenAICompatibleEngine: Sendable {
     /// 内部プロバイダー（RetryableProvider でラップ済み）
     package let provider: any LLMProvider
 
-    /// リトライ非対象の直接送信用（chat/planToolCalls は現状リトライしない）
+    /// contract 経由の直接送信用。chat/planToolCalls は単発送信、
+    /// executeAgentStep は RetryRunner でラップしてリトライする。
     let baseProvider: OpenAICompatibleProvider
 
     /// API キー
@@ -50,6 +52,25 @@ package struct OpenAICompatibleEngine: Sendable {
         retryConfiguration: RetryConfiguration = .default,
         retryEventHandler: RetryEventHandler? = nil
     ) {
+        self.init(
+            transport: URLSessionTransport(session: session),
+            apiKey: apiKey, endpoint: endpoint, providerName: providerName,
+            session: session, customHeaders: customHeaders,
+            retryConfiguration: retryConfiguration, retryEventHandler: retryEventHandler
+        )
+    }
+
+    /// Transport を注入する指定イニシャライザ（テストで MockTransport を差し込む）。
+    package init(
+        transport: any HTTPTransport & HTTPStreamingTransport,
+        apiKey: String,
+        endpoint: URL,
+        providerName: String,
+        session: URLSession = .shared,
+        customHeaders: [String: String] = [:],
+        retryConfiguration: RetryConfiguration = .default,
+        retryEventHandler: RetryEventHandler? = nil
+    ) {
         self.apiKey = apiKey
         self.endpoint = endpoint
         self.providerName = providerName
@@ -59,10 +80,10 @@ package struct OpenAICompatibleEngine: Sendable {
         self.retryEventHandler = retryEventHandler
 
         let baseProvider = OpenAICompatibleProvider(
+            transport: transport,
             apiKey: apiKey,
             endpoint: endpoint,
             providerName: providerName,
-            session: session,
             customHeaders: customHeaders
         )
         self.baseProvider = baseProvider
@@ -198,8 +219,6 @@ package struct OpenAICompatibleEngine: Sendable {
         reasoningEffort: ReasoningEffort?,
         maxTokens: Int?
     ) async throws -> LLMResponse {
-        var urlRequest = makeURLRequest()
-
         var openAIMessages: [OpenAICompatibleMessage] = []
 
         if let prompt = systemPrompt {
@@ -240,39 +259,19 @@ package struct OpenAICompatibleEngine: Sendable {
             toolChoice: openAIToolChoice,
             reasoningEffort: reasoningEffort?.rawValue
         )
-        urlRequest.httpBody = try JSONEncoder().encode(body)
 
-        let retryHelper = AgentRetryHelper<OpenAICompatibleRateLimitExtractor>(
-            configuration: retryConfiguration,
+        // 生 URLSession + AgentRetryHelper を撤廃し contract 経由に統一。
+        // リトライはドメイン認識の RetryRunner に集約（RetryableProvider と同一実装）。
+        let output = try await RetryRunner.run(
+            policy: retryConfiguration.policy,
             eventHandler: retryEventHandler
-        )
-
-        return try await retryHelper.execute(
-            session: session,
-            request: urlRequest,
-            parseError: { data, statusCode in
-                try parseAgentError(data: data, statusCode: statusCode)
-            },
-            parseResponse: { data, _ in
-                try parseAgentSuccessResponse(data: data)
-            }
-        )
+        ) {
+            try await baseProvider.sendBody(body).0
+        }
+        return OpenAICompatibleResponseConverter.toLLMResponse(output)
     }
 
     // MARK: - Private Helpers
-
-    private func makeURLRequest() -> URLRequest {
-        var urlRequest = URLRequest(url: endpoint)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        for (key, value) in customHeaders {
-            urlRequest.setValue(value, forHTTPHeaderField: key)
-        }
-
-        return urlRequest
-    }
 
     private func buildSystemPrompt(base: String?, schema: JSONSchema) -> String {
         var parts: [String] = []
@@ -299,122 +298,5 @@ package struct OpenAICompatibleEngine: Sendable {
         case .tool(let name):
             return .function(name)
         }
-    }
-
-    private func handleErrorStatus(data: Data, httpResponse: HTTPURLResponse) throws {
-        switch httpResponse.statusCode {
-        case 200:
-            return
-        case 401:
-            throw LLMError.unauthorized
-        case 429:
-            throw LLMError.rateLimitExceeded
-        case 400:
-            let errorResponse = try? JSONDecoder().decode(OpenAICompatibleErrorResponse.self, from: data)
-            throw LLMError.invalidRequest(errorResponse?.error.message ?? "Bad request")
-        case 404:
-            let errorResponse = try? JSONDecoder().decode(OpenAICompatibleErrorResponse.self, from: data)
-            throw LLMError.modelNotFound(errorResponse?.error.message ?? "Model not found")
-        case 500...599:
-            let errorResponse = try? JSONDecoder().decode(OpenAICompatibleErrorResponse.self, from: data)
-            throw LLMError.serverError(httpResponse.statusCode, errorResponse?.error.message ?? "Server error")
-        default:
-            throw LLMError.serverError(httpResponse.statusCode, "Unexpected status code")
-        }
-    }
-
-    private func parseAgentError(data: Data, statusCode: Int) throws -> LLMError {
-        switch statusCode {
-        case 401:
-            return .unauthorized
-        case 429:
-            return .rateLimitExceeded
-        case 400:
-            let errorResponse = try? JSONDecoder().decode(OpenAICompatibleErrorResponse.self, from: data)
-            return .invalidRequest(errorResponse?.error.message ?? "Bad request")
-        case 404:
-            let errorResponse = try? JSONDecoder().decode(OpenAICompatibleErrorResponse.self, from: data)
-            return .modelNotFound(errorResponse?.error.message ?? "Model not found")
-        case 500...599:
-            let errorResponse = try? JSONDecoder().decode(OpenAICompatibleErrorResponse.self, from: data)
-            return .serverError(statusCode, errorResponse?.error.message ?? "Server error")
-        default:
-            return .serverError(statusCode, "Unexpected status code")
-        }
-    }
-
-    private func parseAgentSuccessResponse(data: Data) throws -> LLMResponse {
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-
-        let openAIResponse: OpenAICompatibleResponseBody
-        do {
-            openAIResponse = try decoder.decode(OpenAICompatibleResponseBody.self, from: data)
-        } catch {
-            throw LLMError.decodingFailed(error)
-        }
-
-        return OpenAICompatibleResponseConverter.toLLMResponse(openAIResponse)
-    }
-}
-
-// MARK: - Chat-specific Request Types
-
-/// チャット専用リクエストボディ（簡易版: max_tokens を使用）
-package struct OpenAICompatibleChatRequestBody: Encodable, Sendable {
-    package let model: String
-    package let messages: [OpenAICompatibleMessage]
-    package let temperature: Double?
-    package let maxTokens: Int?
-    package let responseFormat: OpenAICompatibleChatResponseFormat
-
-    enum CodingKeys: String, CodingKey {
-        case model, messages, temperature
-        case maxTokens = "max_tokens"
-        case responseFormat = "response_format"
-    }
-
-    package func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(model, forKey: .model)
-        try container.encode(messages, forKey: .messages)
-        if let temperature = temperature {
-            try container.encode(temperature, forKey: .temperature)
-        }
-        if let maxTokens = maxTokens {
-            try container.encode(maxTokens, forKey: .maxTokens)
-        }
-        try container.encode(responseFormat, forKey: .responseFormat)
-    }
-}
-
-/// チャット用レスポンスフォーマット
-package struct OpenAICompatibleChatResponseFormat: Encodable, Sendable {
-    package let type: String
-    package let jsonSchema: OpenAICompatibleChatJSONSchema
-
-    enum CodingKeys: String, CodingKey {
-        case type
-        case jsonSchema = "json_schema"
-    }
-}
-
-/// チャット用 JSON スキーマ
-package struct OpenAICompatibleChatJSONSchema: Encodable, @unchecked Sendable {
-    package let name: String
-    package let strict: Bool
-    package let schema: [String: Any]
-
-    enum CodingKeys: String, CodingKey {
-        case name, strict, schema
-    }
-
-    package func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(name, forKey: .name)
-        try container.encode(strict, forKey: .strict)
-        let schemaData = try JSONSerialization.data(withJSONObject: schema)
-        let schemaJSON = try JSONDecoder().decode(OpenAICompatibleJSONValue.self, from: schemaData)
-        try container.encode(schemaJSON, forKey: .schema)
     }
 }
