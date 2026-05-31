@@ -1,6 +1,7 @@
 import LLMCloudClient
 import LLMCloudOpenAICompatible
 import LLMClient
+import APIClient
 import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -48,6 +49,9 @@ public struct OpenAIClient: OpenAICompatibleClientProtocol {
     /// `executeAgentStep` 内で必要に応じてこちらに routing する。
     package let responsesEngine: OpenAIResponsesEngine
 
+    /// メディア系エンドポイント(`/v1/audio`, `/v1/images`, `/v1/videos`)用の APIClient。
+    package let mediaClient: APIClientImpl
+
     /// API キー
     public var apiKey: String { engine.apiKey }
 
@@ -93,6 +97,24 @@ public struct OpenAIClient: OpenAICompatibleClientProtocol {
         retryConfiguration: RetryConfiguration = .default,
         retryEventHandler: RetryEventHandler? = nil
     ) {
+        self.init(
+            transport: URLSessionTransport(session: session),
+            apiKey: apiKey, organization: organization, endpoint: endpoint,
+            responsesEndpoint: responsesEndpoint, session: session,
+            retryConfiguration: retryConfiguration, retryEventHandler: retryEventHandler
+        )
+    }
+
+    init(
+        transport: any HTTPTransport & HTTPStreamingTransport,
+        apiKey: String,
+        organization: String? = nil,
+        endpoint: URL? = nil,
+        responsesEndpoint: URL? = nil,
+        session: URLSession = .shared,
+        retryConfiguration: RetryConfiguration = .default,
+        retryEventHandler: RetryEventHandler? = nil
+    ) {
         self.organization = organization
 
         var customHeaders: [String: String] = [:]
@@ -100,9 +122,11 @@ public struct OpenAIClient: OpenAICompatibleClientProtocol {
             customHeaders["OpenAI-Organization"] = org
         }
 
+        let chatEndpoint = endpoint ?? Self.defaultEndpoint
         self.engine = OpenAICompatibleEngine(
+            transport: transport,
             apiKey: apiKey,
-            endpoint: endpoint ?? Self.defaultEndpoint,
+            endpoint: chatEndpoint,
             providerName: "OpenAI",
             session: session,
             customHeaders: customHeaders,
@@ -111,12 +135,21 @@ public struct OpenAIClient: OpenAICompatibleClientProtocol {
         )
 
         self.responsesEngine = OpenAIResponsesEngine(
+            transport: transport,
             apiKey: apiKey,
             endpoint: responsesEndpoint ?? Self.defaultResponsesEndpoint,
-            session: session,
             customHeaders: customHeaders,
             retryConfiguration: retryConfiguration,
             retryEventHandler: retryEventHandler
+        )
+
+        // `/v1/chat/completions` → `/v1` をメディアの baseURL とする。
+        self.mediaClient = APIClientImpl(
+            baseURL: chatEndpoint.deletingLastPathComponent().deletingLastPathComponent(),
+            transport: transport,
+            authTokenProvider: StaticTokenProvider(token: apiKey),
+            defaultHeaders: customHeaders,
+            keyStyle: .snakeCase
         )
     }
 }
