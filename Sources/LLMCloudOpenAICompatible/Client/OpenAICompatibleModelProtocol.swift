@@ -1,4 +1,5 @@
 import LLMCloudClient
+import LLMClient
 
 /// OpenAI 互換プロバイダーのモデルプロトコル
 public protocol OpenAICompatibleModelProtocol: Sendable, Equatable {

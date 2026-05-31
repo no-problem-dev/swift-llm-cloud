@@ -1,4 +1,5 @@
 import Testing
+import LLMClient
 @testable import LLMCloudClient
 
 @Test func testClaudeModelId() {
