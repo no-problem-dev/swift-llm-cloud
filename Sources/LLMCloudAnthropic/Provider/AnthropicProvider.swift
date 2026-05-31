@@ -36,14 +36,39 @@ internal struct AnthropicProvider: LLMProvider, RetryableProviderProtocol {
         baseURL: URL? = nil,
         session: URLSession = .shared
     ) {
-        let effectiveBaseURL = baseURL ?? URL(string: "https://api.anthropic.com")!
+        self.init(transport: URLSessionTransport(session: session), apiKey: apiKey, baseURL: baseURL)
+    }
 
+    init(
+        transport: any HTTPTransport & HTTPStreamingTransport,
+        apiKey: String,
+        baseURL: URL? = nil
+    ) {
+        let effectiveBaseURL = baseURL ?? URL(string: "https://api.anthropic.com")!
         self.apiClient = APIClientImpl(
             baseURL: effectiveBaseURL,
-            transport: URLSessionTransport(session: session),
+            transport: transport,
             authTokenProvider: StaticTokenProvider(token: apiKey),
             keyStyle: .snakeCase
         )
+    }
+
+    /// 構築済みボディを contract 経由で送信する（tools/structured output 等、send で
+    /// 表現できないリクエストはこちらを使う）。
+    func sendBody(_ body: AnthropicRequestBody, beta: String?) async throws -> (AnthropicResponseBody, Int, [String: String]) {
+        let endpoint = AnthropicAPI.CreateMessage(beta: beta, request: body)
+        do {
+            let apiResponse = try await apiClient.executeWithResponse(endpoint)
+            return (apiResponse.output, apiResponse.statusCode, apiResponse.headers)
+        } catch let error as LLMError {
+            throw error
+        } catch let error as RateLimitAwareError {
+            throw error
+        } catch let error as APIError {
+            throw mapAPIErrorToLLMError(error)
+        } catch {
+            throw LLMError.networkError(error)
+        }
     }
 
     // MARK: - LLMProvider
@@ -101,7 +126,7 @@ internal struct AnthropicProvider: LLMProvider, RetryableProviderProtocol {
     /// LLMRequest を AnthropicRequestBody に変換
     private func buildRequestBody(from request: LLMRequest) throws -> AnthropicRequestBody {
         let messages = try request.messages.map { message in
-            try convertToAnthropicMessage(message)
+            try AnthropicMessageConverter.convert(message)
         }
 
         var outputFormat: AnthropicOutputFormat?
@@ -132,35 +157,6 @@ internal struct AnthropicProvider: LLMProvider, RetryableProviderProtocol {
             temperature: request.temperature,
             outputConfig: outputFormat.map { AnthropicOutputConfig(format: $0) }
         )
-    }
-
-    /// システムプロンプトと制約プロンプトを統合
-
-    /// LLMMessage を Anthropic メッセージ形式に変換
-    private func convertToAnthropicMessage(_ message: LLMMessage) throws -> AnthropicMessage {
-        let role = message.role == .user ? "user" : "assistant"
-        var contentBlocks: [AnthropicMessageContent] = []
-
-        for content in message.contents {
-            switch content {
-            case .text(let text):
-                contentBlocks.append(.text(text))
-            case .toolUse(let id, let name, let input):
-                contentBlocks.append(.toolUse(id: id, name: name, input: input))
-            case .toolResult(let toolCallId, _, let resultContent):
-                contentBlocks.append(.toolResult(toolUseId: toolCallId, content: resultContent.contentValue, isError: resultContent.isError))
-            case .image(let imageContent):
-                contentBlocks.append(.image(imageContent))
-            case .audio:
-                throw LLMError.mediaNotSupported(mediaType: "audio", provider: "Anthropic")
-            case .video:
-                throw LLMError.mediaNotSupported(mediaType: "video", provider: "Anthropic")
-            case .thinking:
-                break
-            }
-        }
-
-        return AnthropicMessage(role: role, content: contentBlocks)
     }
 
     // MARK: - Response Conversion
