@@ -52,17 +52,18 @@ extension GeminiClient: VideoGenerationCapable {
             throw VideoGenerationError.unsupportedResolution(actualResolution, model: "\(model.displayName) (1080p requires 8 seconds)")
         }
 
-        // リクエスト作成
-        let request = VeoVideoRequest(
-            prompt: prompt,
-            aspectRatio: veoAspectRatioString(for: actualAspectRatio),
-            resolution: veoResolutionString(for: actualResolution),
-            durationSeconds: actualDuration,
-            negativePrompt: nil
+        let body = VeoRequestBody(
+            instances: [.init(prompt: prompt)],
+            parameters: .init(
+                aspectRatio: veoAspectRatioString(for: actualAspectRatio),
+                negativePrompt: nil,
+                resolution: veoResolutionString(for: actualResolution),
+                durationSeconds: actualDuration
+            )
         )
-
-        // API 呼び出し
-        let response = try await sendVideoRequest(request, model: model)
+        let response = try await veoClient.executeWithResponse(
+            GeminiMediaAPI.VeoGenerate(modelId: model.id, request: body)
+        ).output
 
         // 設定を作成
         let configuration = VideoGenerationConfiguration(
@@ -84,32 +85,9 @@ extension GeminiClient: VideoGenerationCapable {
 
     /// 動画生成ジョブのステータスを確認
     public func checkVideoStatus(_ job: VideoGenerationJob) async throws -> VideoGenerationJob {
-        let endpoint = operationStatusEndpoint(operationName: job.id)
-
-        var urlRequest = URLRequest(url: endpoint)
-        urlRequest.httpMethod = "GET"
-        // Veo API は x-goog-api-key ヘッダーで認証
-        urlRequest.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
-
-        let (data, response) = try await session.data(for: urlRequest)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw LLMError.networkError(URLError(.badServerResponse))
-        }
-
-        if httpResponse.statusCode != 200 {
-            throw try parseError(from: data, statusCode: httpResponse.statusCode)
-        }
-
-        let decoder = JSONDecoder()
-        let operationResponse: VeoOperationResponse
-        do {
-            operationResponse = try decoder.decode(VeoOperationResponse.self, from: data)
-        } catch {
-            // デコード失敗時は生のJSONを確認
-            let rawJSON = String(data: data, encoding: .utf8) ?? "Unable to decode"
-            throw LLMError.invalidRequest("Failed to decode response: \(error.localizedDescription). Raw: \(rawJSON.prefix(500))")
-        }
+        let operationResponse = try await veoClient.executeWithResponse(
+            GeminiMediaAPI.VeoOperationStatus(operationName: job.id)
+        ).output
 
         let status: VideoGenerationStatus
         var videoURL: URL?
@@ -128,9 +106,7 @@ extension GeminiClient: VideoGenerationCapable {
                 videoURL = URL(string: "data:video/mp4;base64,\(base64)")
             } else {
                 status = .failed
-                // デバッグ用にレスポンス情報を含める
-                let rawJSON = String(data: data, encoding: .utf8) ?? "Unable to decode"
-                errorMessage = "No video generated. Response: \(rawJSON.prefix(1000))"
+                errorMessage = "No video generated."
             }
         } else {
             status = .processing
@@ -290,57 +266,6 @@ extension GeminiClient: VideoGenerationCapable {
 
     // MARK: - Private Helpers
 
-    private func sendVideoRequest(
-        _ request: VeoVideoRequest,
-        model: GeminiVideoModel
-    ) async throws -> VeoOperationResponse {
-        let endpoint = videoGenerationEndpoint(for: model)
-
-        var urlRequest = URLRequest(url: endpoint)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        // Veo API は x-goog-api-key ヘッダーで認証
-        urlRequest.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
-
-        let requestBody = VeoVideoRequestBody(
-            instances: [VeoVideoInstance(prompt: request.prompt)],
-            parameters: VeoVideoParameters(
-                aspectRatio: request.aspectRatio,
-                negativePrompt: request.negativePrompt,
-                resolution: request.resolution,
-                durationSeconds: request.durationSeconds
-            )
-        )
-
-        let encoder = JSONEncoder()
-        urlRequest.httpBody = try encoder.encode(requestBody)
-
-        let (data, response) = try await session.data(for: urlRequest)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw LLMError.networkError(URLError(.badServerResponse))
-        }
-
-        if httpResponse.statusCode != 200 {
-            throw try parseError(from: data, statusCode: httpResponse.statusCode)
-        }
-
-        let decoder = JSONDecoder()
-        return try decoder.decode(VeoOperationResponse.self, from: data)
-    }
-
-    private func videoGenerationEndpoint(for model: GeminiVideoModel) -> URL {
-        // Veo uses predictLongRunning endpoint
-        let baseURLString = "https://generativelanguage.googleapis.com/v1beta/models/\(model.id):predictLongRunning"
-        return URL(string: baseURLString)!
-    }
-
-    private func operationStatusEndpoint(operationName: String) -> URL {
-        // Operations endpoint to check status
-        let baseURLString = "https://generativelanguage.googleapis.com/v1beta/\(operationName)"
-        return URL(string: baseURLString)!
-    }
-
     private func veoAspectRatioString(for aspectRatio: VideoAspectRatio) -> String {
         switch aspectRatio {
         case .landscape16x9: return "16:9"
@@ -360,149 +285,4 @@ extension GeminiClient: VideoGenerationCapable {
         }
     }
 
-    private func parseError(from data: Data, statusCode: Int) throws -> LLMError {
-        struct ErrorResponse: Decodable {
-            struct Error: Decodable {
-                let message: String
-                let status: String?
-            }
-            let error: Error
-        }
-
-        if let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
-            let message = errorResponse.error.message
-
-            switch statusCode {
-            case 401, 403:
-                return .unauthorized
-            case 429:
-                return .rateLimitExceeded
-            case 400:
-                if message.contains("safety") || message.contains("blocked") {
-                    throw VideoGenerationError.contentPolicyViolation(message)
-                }
-                return .invalidRequest(message)
-            default:
-                return .serverError(statusCode, message)
-            }
-        }
-
-        return .serverError(statusCode, String(data: data, encoding: .utf8) ?? "Unknown error")
-    }
-}
-
-// MARK: - Request/Response Types
-
-private struct VeoVideoRequest {
-    let prompt: String
-    let aspectRatio: String
-    let resolution: String
-    let durationSeconds: Int
-    let negativePrompt: String?
-}
-
-private struct VeoVideoRequestBody: Encodable {
-    let instances: [VeoVideoInstance]
-    let parameters: VeoVideoParameters
-}
-
-private struct VeoVideoInstance: Encodable {
-    let prompt: String
-}
-
-private struct VeoVideoParameters: Encodable {
-    let aspectRatio: String
-    let negativePrompt: String?
-    let resolution: String
-    let durationSeconds: Int
-}
-
-private struct VeoOperationResponse: Decodable {
-    let name: String
-    let done: Bool?
-    let error: VeoError?
-    let response: VeoResult?
-
-    /// 動画 URL を取得（複数のレスポンス形式に対応）
-    func getVideoURL() -> String? {
-        guard let response = response else { return nil }
-
-        // Format 1: Gemini API format - generateVideoResponse.generatedSamples[].video.uri
-        if let sample = response.generateVideoResponse?.generatedSamples?.first,
-           let uri = sample.video?.uri {
-            return uri
-        }
-
-        // Format 2: Vertex AI format - videos[].gcsUri or bytesBase64Encoded
-        if let video = response.videos?.first {
-            if let gcsUri = video.gcsUri {
-                return gcsUri
-            }
-        }
-
-        // Format 3: Legacy format - generatedVideos[].uri
-        if let video = response.generatedVideos?.first,
-           let uri = video.uri {
-            return uri
-        }
-
-        return nil
-    }
-
-    /// Base64 エンコードされた動画データを取得
-    func getVideoBase64() -> String? {
-        guard let response = response else { return nil }
-
-        // Vertex AI format - videos[].bytesBase64Encoded
-        if let video = response.videos?.first,
-           let bytes = video.bytesBase64Encoded {
-            return bytes
-        }
-
-        return nil
-    }
-}
-
-private struct VeoError: Decodable {
-    let code: Int
-    let message: String
-    let status: String?
-}
-
-private struct VeoResult: Decodable {
-    // Gemini API format
-    let generateVideoResponse: VeoGenerateVideoResponse?
-
-    // Vertex AI format
-    let videos: [VeoVideo]?
-
-    // Legacy format
-    let generatedVideos: [VeoGeneratedVideo]?
-}
-
-// Gemini API format structures
-private struct VeoGenerateVideoResponse: Decodable {
-    let generatedSamples: [VeoGeneratedSample]?
-}
-
-private struct VeoGeneratedSample: Decodable {
-    let video: VeoVideoInfo?
-}
-
-private struct VeoVideoInfo: Decodable {
-    let uri: String?
-    let mimeType: String?
-}
-
-// Vertex AI format structures
-private struct VeoVideo: Decodable {
-    let gcsUri: String?
-    let bytesBase64Encoded: String?
-    let mimeType: String?
-}
-
-// Legacy format structures
-private struct VeoGeneratedVideo: Decodable {
-    let uri: String?
-    let encoding: String?
 }
