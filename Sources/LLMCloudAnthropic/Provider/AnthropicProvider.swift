@@ -40,9 +40,9 @@ internal struct AnthropicProvider: LLMProvider, RetryableProviderProtocol {
 
         self.apiClient = APIClientImpl(
             baseURL: effectiveBaseURL,
-            session: session,
+            transport: URLSessionTransport(session: session),
             authTokenProvider: StaticTokenProvider(token: apiKey),
-            keyDecodingStrategy: .convertFromSnakeCase
+            keyStyle: .snakeCase
         )
     }
 

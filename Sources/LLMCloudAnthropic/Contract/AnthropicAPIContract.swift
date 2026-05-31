@@ -41,8 +41,7 @@ enum AnthropicAPI: APIContractGroup {
         statusCode: Int,
         data: Data,
         headers: [String: String],
-        decoder: JSONDecoder
-    ) -> (any Error)? {
+        decoder: any APIBodyDecoder    ) -> (any Error)? {
         let rateLimitInfo = extractRateLimitInfo(from: headers)
         let errorResponse = try? JSONDecoder().decode(AnthropicErrorResponse.self, from: data)
 
@@ -140,7 +139,7 @@ extension AnthropicAPI {
             return headers
         }
 
-        func encodeBody(using encoder: JSONEncoder) throws -> Data? {
+        func encodeBody(using encoder: any APIBodyEncoder) throws -> Data? {
             try encoder.encode(request)
         }
 
@@ -148,8 +147,7 @@ extension AnthropicAPI {
             pathParameters: [String: String],
             queryParameters: [String: String],
             body: Data?,
-            decoder: JSONDecoder
-        ) throws -> Self {
+            decoder: any APIBodyDecoder        ) throws -> Self {
             fatalError("Client-only contract")
         }
     }

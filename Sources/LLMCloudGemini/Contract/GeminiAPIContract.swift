@@ -26,8 +26,7 @@ enum GeminiAPI: APIContractGroup {
         statusCode: Int,
         data: Data,
         headers: [String: String],
-        decoder: JSONDecoder
-    ) -> (any Error)? {
+        decoder: any APIBodyDecoder    ) -> (any Error)? {
         let retryAfter = (headers["Retry-After"] ?? headers["retry-after"])
             .flatMap { Double($0) }
 
@@ -91,7 +90,7 @@ extension GeminiAPI {
 
         var queryParameters: [String: String]? { nil }
 
-        func encodeBody(using encoder: JSONEncoder) throws -> Data? {
+        func encodeBody(using encoder: any APIBodyEncoder) throws -> Data? {
             try encoder.encode(request)
         }
 
@@ -99,8 +98,7 @@ extension GeminiAPI {
             pathParameters: [String: String],
             queryParameters: [String: String],
             body: Data?,
-            decoder: JSONDecoder
-        ) throws -> Self {
+            decoder: any APIBodyDecoder        ) throws -> Self {
             fatalError("Client-only contract")
         }
     }

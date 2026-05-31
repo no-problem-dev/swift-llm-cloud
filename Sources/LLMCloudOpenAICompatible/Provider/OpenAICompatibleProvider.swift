@@ -46,9 +46,9 @@ package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol 
 
         self.apiClient = APIClientImpl(
             baseURL: endpoint,
-            session: session,
+            transport: URLSessionTransport(session: session),
             authTokenProvider: StaticTokenProvider(token: apiKey),
-            keyDecodingStrategy: .convertFromSnakeCase
+            keyStyle: .snakeCase
         )
     }
 

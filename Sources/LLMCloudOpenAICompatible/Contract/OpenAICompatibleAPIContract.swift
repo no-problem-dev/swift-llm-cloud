@@ -29,8 +29,7 @@ enum OpenAICompatibleAPI: APIContractGroup {
         statusCode: Int,
         data: Data,
         headers: [String: String],
-        decoder: JSONDecoder
-    ) -> (any Error)? {
+        decoder: any APIBodyDecoder    ) -> (any Error)? {
         let rateLimitInfo = extractRateLimitInfo(from: headers)
         let errorResponse = try? JSONDecoder().decode(OpenAICompatibleErrorResponse.self, from: data)
 
@@ -129,7 +128,7 @@ extension OpenAICompatibleAPI {
             customHeaders
         }
 
-        func encodeBody(using encoder: JSONEncoder) throws -> Data? {
+        func encodeBody(using encoder: any APIBodyEncoder) throws -> Data? {
             try encoder.encode(request)
         }
 
@@ -137,8 +136,7 @@ extension OpenAICompatibleAPI {
             pathParameters: [String: String],
             queryParameters: [String: String],
             body: Data?,
-            decoder: JSONDecoder
-        ) throws -> Self {
+            decoder: any APIBodyDecoder        ) throws -> Self {
             fatalError("Client-only contract")
         }
     }

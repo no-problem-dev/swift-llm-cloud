@@ -38,7 +38,7 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
 
         self.apiClient = APIClientImpl(
             baseURL: effectiveBaseURL,
-            session: session,
+            transport: URLSessionTransport(session: session),
             authTokenProvider: StaticTokenProvider(token: apiKey)
         )
     }
