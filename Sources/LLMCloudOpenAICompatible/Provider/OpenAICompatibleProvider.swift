@@ -92,7 +92,12 @@ package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol 
     /// 全ての非ストリーミング呼び出し(send / chat / planToolCalls)が通る単一の HTTP 経路。
     /// エラーは contract の decodeError(リッチ)と APIError マッピングで統一される。
     package func sendRaw(_ request: LLMRequest) async throws -> (OpenAICompatibleResponseBody, Int, [String: String]) {
-        let body = try buildRequestBody(from: request)
+        try await sendBody(buildRequestBody(from: request))
+    }
+
+    /// 構築済みのリクエストボディを contract 経由で送信する（tools 付き等、buildRequestBody で
+    /// 表現できないリクエストはこちらを使う）。
+    package func sendBody(_ body: OpenAICompatibleRequestBody) async throws -> (OpenAICompatibleResponseBody, Int, [String: String]) {
         let contract = OpenAICompatibleAPI.CreateChatCompletion(customHeaders: customHeaders, request: body)
         do {
             let apiResponse = try await apiClient.executeWithResponse(contract)

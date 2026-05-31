@@ -158,8 +158,6 @@ package struct OpenAICompatibleEngine: Sendable {
         temperature: Double?,
         maxTokens: Int?
     ) async throws -> ToolCallResponse {
-        var urlRequest = makeURLRequest()
-
         var openAIMessages: [OpenAICompatibleMessage] = []
 
         if let systemPrompt = systemPrompt {
@@ -174,39 +172,18 @@ package struct OpenAICompatibleEngine: Sendable {
             ))
         }
 
-        let openAITools = tools.toOpenAIFormat().map { OpenAICompatibleToolDef(dict: $0) }
-        let openAIToolChoice = toolChoice.map { mapToolChoice($0) }
-
         let body = OpenAICompatibleRequestBody(
             model: modelId,
             messages: openAIMessages,
             maxCompletionTokens: maxTokens ?? Self.defaultMaxTokens,
             temperature: temperature,
             responseFormat: nil,
-            tools: openAITools,
-            toolChoice: openAIToolChoice
+            tools: tools.toOpenAIFormat().map { OpenAICompatibleToolDef(dict: $0) },
+            toolChoice: toolChoice.map { mapToolChoice($0) }
         )
-        urlRequest.httpBody = try JSONEncoder().encode(body)
-
-        let (data, response) = try await session.data(for: urlRequest)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw LLMError.invalidRequest("Invalid response type")
-        }
-
-        try handleErrorStatus(data: data, httpResponse: httpResponse)
-
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-
-        let openAIResponse: OpenAICompatibleResponseBody
-        do {
-            openAIResponse = try decoder.decode(OpenAICompatibleResponseBody.self, from: data)
-        } catch {
-            throw LLMError.decodingFailed(error)
-        }
-
-        return OpenAICompatibleResponseConverter.toToolCallResponse(openAIResponse)
+        // 生 URLSession を撤廃し contract 経由に統一（ボディは既に max_completion_tokens）。
+        let (output, _, _) = try await baseProvider.sendBody(body)
+        return OpenAICompatibleResponseConverter.toToolCallResponse(output)
     }
 
     // MARK: - AgentCapableClient
