@@ -11,9 +11,10 @@ enum GeminiContentConverter {
             switch content {
             case .text(let text):
                 parts.append(GeminiPart(text: text))
-            case .toolUse(_, let name, let input):
+            case .toolUse(let id, let name, let input):
                 let args = (try? JSONSerialization.jsonObject(with: input)) as? [String: Any]
-                parts.append(GeminiPart(functionCall: GeminiFunctionCall(name: name, args: args)))
+                let signature = GeminiThoughtSignatureEncoding.decodeThoughtSignature(from: id)
+                parts.append(GeminiPart(functionCall: GeminiFunctionCall(name: name, args: args), thoughtSignature: signature))
             case .toolResult(_, let name, let resultContent):
                 let response: [String: Any] = ["result": resultContent.contentValue]
                 toolResultParts.append(GeminiPart(functionResponse: GeminiFunctionResponse(name: name, response: response)))

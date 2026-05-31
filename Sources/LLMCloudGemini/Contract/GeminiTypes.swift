@@ -60,6 +60,14 @@ struct GeminiGenerationConfig: Encodable, Sendable {
     var temperature: Double?
     var responseMimeType: String?
     var responseSchema: JSONSchema?
+    var thinkingConfig: GeminiThinkingConfig?
+}
+
+/// Gemini thinking 設定。3 系は thinkingLevel、2.5 系は thinkingBudget。
+/// 非対応モデルに送るとエラーになるため呼び出し側で gate する。
+struct GeminiThinkingConfig: Encodable, Sendable {
+    var thinkingLevel: String?
+    var thinkingBudget: Int?
 }
 
 // MARK: - Content Types
