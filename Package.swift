@@ -135,6 +135,10 @@ let package = Package(
             .product(name: "APIClient", package: "swift-api-client"),
             .product(name: "LLMTool", package: "swift-llm-client"),
         ]),
-        .testTarget(name: "LLMCloudGeminiTests", dependencies: ["LLMCloudGemini", "LLMCloudClient"]),
+        .testTarget(name: "LLMCloudGeminiTests", dependencies: [
+            "LLMCloudGemini", "LLMCloudClient",
+            .product(name: "APIClient", package: "swift-api-client"),
+            .product(name: "LLMTool", package: "swift-llm-client"),
+        ]),
     ]
 )

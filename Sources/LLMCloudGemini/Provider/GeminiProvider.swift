@@ -34,13 +34,37 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
         baseURL: String? = nil,
         session: URLSession = .shared
     ) {
-        let effectiveBaseURL = URL(string: baseURL ?? "https://generativelanguage.googleapis.com/v1beta/models")!
+        self.init(transport: URLSessionTransport(session: session), apiKey: apiKey, baseURL: baseURL)
+    }
 
+    init(
+        transport: any HTTPTransport & HTTPStreamingTransport,
+        apiKey: String,
+        baseURL: String? = nil
+    ) {
+        let effectiveBaseURL = URL(string: baseURL ?? "https://generativelanguage.googleapis.com/v1beta/models")!
         self.apiClient = APIClientImpl(
             baseURL: effectiveBaseURL,
-            transport: URLSessionTransport(session: session),
+            transport: transport,
             authTokenProvider: StaticTokenProvider(token: apiKey)
         )
+    }
+
+    /// 構築済みボディを contract 経由で送信する。
+    func sendBody(_ body: GeminiRequestBody, modelId: String) async throws -> (GeminiResponseBody, Int, [String: String]) {
+        let endpoint = GeminiAPI.GenerateContent(modelId: modelId, request: body)
+        do {
+            let apiResponse = try await apiClient.executeWithResponse(endpoint)
+            return (apiResponse.output, apiResponse.statusCode, apiResponse.headers)
+        } catch let error as LLMError {
+            throw error
+        } catch let error as RateLimitAwareError {
+            throw error
+        } catch let error as APIError {
+            throw mapAPIErrorToLLMError(error)
+        } catch {
+            throw LLMError.networkError(error)
+        }
     }
 
     // MARK: - LLMProvider
@@ -101,7 +125,7 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
         var contents: [GeminiContent] = []
 
         for message in request.messages {
-            contents.append(contentsOf: convertToGeminiContents(message))
+            contents.append(contentsOf: GeminiContentConverter.convert(message))
         }
 
         // 生成設定
@@ -217,83 +241,6 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
             return nil
         default:
             return nil
-        }
-    }
-
-    /// LLMMessage を Gemini コンテンツ形式に変換
-    private func convertToGeminiContents(_ message: LLMMessage) -> [GeminiContent] {
-        let role = message.role == .user ? "user" : "model"
-        var parts: [GeminiPart] = []
-        var toolResultParts: [GeminiPart] = []
-
-        for content in message.contents {
-            switch content {
-            case .text(let text):
-                parts.append(GeminiPart(text: text))
-
-            case .toolUse(_, let name, let input):
-                let args: [String: Any]?
-                if let argsDict = try? JSONSerialization.jsonObject(with: input) as? [String: Any] {
-                    args = argsDict
-                } else {
-                    args = nil
-                }
-                let functionCall = GeminiFunctionCall(name: name, args: args)
-                parts.append(GeminiPart(functionCall: functionCall))
-
-            case .toolResult(_, let name, let content):
-                let responseDict: [String: Any] = ["result": content.contentValue]
-                let functionResponse = GeminiFunctionResponse(name: name, response: responseDict)
-                toolResultParts.append(GeminiPart(functionResponse: functionResponse))
-
-            case .image(let imageContent):
-                if let geminiPart = convertMediaToGeminiPart(source: imageContent.source, mimeType: imageContent.mediaType) {
-                    parts.append(geminiPart)
-                }
-
-            case .audio(let audioContent):
-                if let geminiPart = convertMediaToGeminiPart(source: audioContent.source, mimeType: audioContent.mediaType) {
-                    parts.append(geminiPart)
-                }
-
-            case .video(let videoContent):
-                if let geminiPart = convertMediaToGeminiPart(source: videoContent.source, mimeType: videoContent.mediaType) {
-                    parts.append(geminiPart)
-                }
-
-            case .thinking:
-                break
-            }
-        }
-
-        var contents: [GeminiContent] = []
-
-        if !parts.isEmpty {
-            contents.append(GeminiContent(role: role, parts: parts))
-        }
-
-        if !toolResultParts.isEmpty {
-            contents.append(GeminiContent(role: "user", parts: toolResultParts))
-        }
-
-        return contents
-    }
-
-    /// メディアソースをGeminiパーツに変換
-    private func convertMediaToGeminiPart<T: MediaType>(source: MediaSource, mimeType: T) -> GeminiPart? {
-        switch source {
-        case .base64(let data):
-            let base64String = data.base64EncodedString()
-            let inlineData = GeminiInlineData(mimeType: mimeType.mimeType, data: base64String)
-            return GeminiPart(inlineData: inlineData)
-
-        case .url(let url):
-            let fileData = GeminiFileData(mimeType: mimeType.mimeType, fileUri: url.absoluteString)
-            return GeminiPart(fileData: fileData)
-
-        case .fileReference(let id):
-            let fileData = GeminiFileData(mimeType: mimeType.mimeType, fileUri: id)
-            return GeminiPart(fileData: fileData)
         }
     }
 

@@ -1,5 +1,6 @@
 import LLMCloudClient
 import LLMClient
+import APIClient
 import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -60,6 +61,8 @@ public struct GeminiClient: StructuredLLMClient {
 
     public let provider: any LLMProvider
 
+    let baseProvider: GeminiProvider
+
     // MARK: - Package Access (for extension by other modules)
 
     /// API キー（パッケージ内の他モジュールからアクセス可能）
@@ -97,17 +100,29 @@ public struct GeminiClient: StructuredLLMClient {
         retryConfiguration: RetryConfiguration = .default,
         retryEventHandler: RetryEventHandler? = nil
     ) {
+        self.init(
+            transport: URLSessionTransport(session: session),
+            apiKey: apiKey, baseURL: baseURL, session: session,
+            retryConfiguration: retryConfiguration, retryEventHandler: retryEventHandler
+        )
+    }
+
+    init(
+        transport: any HTTPTransport & HTTPStreamingTransport,
+        apiKey: String,
+        baseURL: String? = nil,
+        session: URLSession = .shared,
+        retryConfiguration: RetryConfiguration = .default,
+        retryEventHandler: RetryEventHandler? = nil
+    ) {
         self.apiKey = apiKey
         self.baseURL = baseURL ?? Self.defaultBaseURL
         self.session = session
         self.retryConfiguration = retryConfiguration
         self.retryEventHandler = retryEventHandler
 
-        let baseProvider = GeminiProvider(
-            apiKey: apiKey,
-            baseURL: baseURL,
-            session: session
-        )
+        let baseProvider = GeminiProvider(transport: transport, apiKey: apiKey, baseURL: baseURL)
+        self.baseProvider = baseProvider
 
         if retryConfiguration.isEnabled {
             self.provider = RetryableProvider(
