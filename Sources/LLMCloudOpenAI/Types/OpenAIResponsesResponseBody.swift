@@ -53,12 +53,18 @@ package enum OpenAIResponsesOutputItem: Decodable {
         case content
     }
 
+    private enum ItemType: String {
+        case reasoning
+        case functionCall = "function_call"
+        case message
+    }
+
     package init(from decoder: Decoder) throws {
         let typeContainer = try decoder.container(keyedBy: TypeKey.self)
         let type = try typeContainer.decode(String.self, forKey: .type)
 
-        switch type {
-        case "reasoning":
+        switch ItemType(rawValue: type) {
+        case .reasoning:
             let container = try decoder.container(keyedBy: ReasoningKeys.self)
             // summary は配列 [{type:"summary_text", text:"..."}] になり得る。
             // content も似た形だが、空配列もよくある。
@@ -72,7 +78,7 @@ package enum OpenAIResponsesOutputItem: Decodable {
             let joined = collected.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
             self = .reasoning(text: joined.isEmpty ? nil : joined)
 
-        case "function_call":
+        case .functionCall:
             let container = try decoder.container(keyedBy: FunctionCallKeys.self)
             let id = try container.decodeIfPresent(String.self, forKey: .id)
             let callId = try container.decode(String.self, forKey: .callId)
@@ -89,13 +95,13 @@ package enum OpenAIResponsesOutputItem: Decodable {
             }
             self = .functionCall(id: id, callId: callId, name: name, arguments: arguments)
 
-        case "message":
+        case .message:
             let container = try decoder.container(keyedBy: MessageKeys.self)
             let blocks = (try? container.decodeIfPresent([MessageContentBlock].self, forKey: .content)) ?? []
             let text = blocks.compactMap(\.text).joined()
             self = .message(text: text)
 
-        default:
+        case nil:
             self = .unknown(type: type)
         }
     }

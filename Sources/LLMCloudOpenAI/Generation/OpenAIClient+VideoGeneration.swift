@@ -164,21 +164,25 @@ extension OpenAIClient: VideoGenerationCapable {
         }
     }
 
-    private func mapStatus(_ status: String) -> VideoGenerationStatus {
-        switch status.lowercased() {
-        case "queued":
-            return .queued
-        case "in_progress", "processing":
-            return .processing
-        case "completed", "succeeded":
-            return .completed
-        case "failed":
-            return .failed
-        case "cancelled", "canceled":
-            return .cancelled
-        default:
-            return .processing
+    private enum SoraStatus: String {
+        case queued, processing, completed, failed, cancelled
+        case inProgress = "in_progress"
+        case succeeded
+        case canceled
+
+        var generationStatus: VideoGenerationStatus {
+            switch self {
+            case .queued: return .queued
+            case .inProgress, .processing: return .processing
+            case .completed, .succeeded: return .completed
+            case .failed: return .failed
+            case .cancelled, .canceled: return .cancelled
+            }
         }
+    }
+
+    private func mapStatus(_ status: String) -> VideoGenerationStatus {
+        SoraStatus(rawValue: status.lowercased())?.generationStatus ?? .processing
     }
 
 }

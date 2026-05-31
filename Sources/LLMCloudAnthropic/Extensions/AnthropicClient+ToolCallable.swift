@@ -37,15 +37,15 @@ extension AnthropicClient: ToolCallableClient {
         var textContent: String?
 
         for block in response.content {
-            switch block.type {
-            case "text":
+            switch AnthropicBlockType(rawValue: block.type) {
+            case .text:
                 textContent = block.text
-            case "tool_use":
+            case .toolUse:
                 if let id = block.id, let name = block.name, let input = block.input,
                    let inputData = try? JSONEncoder().encode(input) {
                     toolCalls.append(ToolCall(id: id, name: name, arguments: inputData))
                 }
-            default:
+            case .thinking, nil:
                 break
             }
         }

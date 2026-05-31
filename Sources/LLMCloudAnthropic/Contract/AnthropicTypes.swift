@@ -107,15 +107,24 @@ enum AnthropicToolChoiceValue: Encodable, Sendable {
         }
     }
 
+    private enum Kind: String, Encodable {
+        case auto, any, tool
+    }
+
+    private struct Choice: Encodable {
+        let type: Kind
+        var name: String?
+    }
+
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {
         case .auto, .none:
-            try container.encode(["type": "auto"])
+            try container.encode(Choice(type: .auto))
         case .any:
-            try container.encode(["type": "any"])
+            try container.encode(Choice(type: .any))
         case .tool(let name):
-            try container.encode(["type": "tool", "name": name])
+            try container.encode(Choice(type: .tool, name: name))
         }
     }
 }
@@ -141,61 +150,74 @@ enum AnthropicMessageContent: Encodable, Sendable {
 
         switch self {
         case .text(let text):
-            try container.encode(["type": "text", "text": text])
-
+            try container.encode(TextBlock(text: text))
         case .thinking(let text, let signature):
-            var dict: [String: JSONValue] = [
-                "type": .string("thinking"),
-                "thinking": .string(text)
-            ]
-            if let signature {
-                dict["signature"] = .string(signature)
-            }
-            try container.encode(dict)
-
+            try container.encode(ThinkingBlock(thinking: text, signature: signature))
         case .toolUse(let id, let name, let input):
             let inputJSON = (try? JSONParser().parse(input)) ?? .object(OrderedObject([]))
-            let dict: [String: JSONValue] = [
-                "type": .string("tool_use"),
-                "id": .string(id),
-                "name": .string(name),
-                "input": inputJSON
-            ]
-            try container.encode(dict)
-
+            try container.encode(ToolUseBlock(id: id, name: name, input: inputJSON))
         case .toolResult(let toolUseId, let resultContent, let isError):
-            var dict: [String: JSONValue] = [
-                "type": .string("tool_result"),
-                "tool_use_id": .string(toolUseId),
-                "content": .string(resultContent)
-            ]
-            if isError {
-                dict["is_error"] = .bool(true)
-            }
-            try container.encode(dict)
-
+            try container.encode(ToolResultBlock(toolUseId: toolUseId, content: resultContent, isError: isError ? true : nil))
         case .image(let imageContent):
-            var source: [String: JSONValue] = [:]
+            try container.encode(ImageBlock(source: ImageBlock.Source(imageContent)))
+        }
+    }
 
-            switch imageContent.source {
-            case .base64(let data):
-                source["type"] = .string("base64")
-                source["media_type"] = .string(imageContent.mediaType.rawValue)
-                source["data"] = .string(data.base64EncodedString())
-            case .url(let url):
-                source["type"] = .string("url")
-                source["url"] = .string(url.absoluteString)
-            case .fileReference:
-                source["type"] = .string("base64")
-                source["media_type"] = .string(imageContent.mediaType.rawValue)
-                source["data"] = .string("")
+    private struct TextBlock: Encodable {
+        let type = "text"
+        let text: String
+    }
+
+    private struct ThinkingBlock: Encodable {
+        let type = "thinking"
+        let thinking: String
+        let signature: String?
+    }
+
+    private struct ToolUseBlock: Encodable {
+        let type = "tool_use"
+        let id: String
+        let name: String
+        let input: JSONValue
+    }
+
+    private struct ToolResultBlock: Encodable {
+        let type = "tool_result"
+        let toolUseId: String
+        let content: String
+        let isError: Bool?
+        enum CodingKeys: String, CodingKey {
+            case type, content
+            case toolUseId = "tool_use_id"
+            case isError = "is_error"
+        }
+    }
+
+    private struct ImageBlock: Encodable {
+        let type = "image"
+        let source: Source
+
+        struct Source: Encodable {
+            let type: String
+            let mediaType: String?
+            let data: String?
+            let url: String?
+
+            enum CodingKeys: String, CodingKey {
+                case type, data, url
+                case mediaType = "media_type"
             }
 
-            let dict: [String: JSONValue] = [
-                "type": .string("image"),
-                "source": .object(OrderedObject(source))
-            ]
-            try container.encode(dict)
+            init(_ image: ImageContent) {
+                switch image.source {
+                case .base64(let data):
+                    type = "base64"; mediaType = image.mediaType.rawValue; self.data = data.base64EncodedString(); url = nil
+                case .url(let imageURL):
+                    type = "url"; mediaType = nil; data = nil; url = imageURL.absoluteString
+                case .fileReference:
+                    type = "base64"; mediaType = image.mediaType.rawValue; data = ""; url = nil
+                }
+            }
         }
     }
 }
