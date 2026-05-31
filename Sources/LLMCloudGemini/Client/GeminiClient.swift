@@ -63,6 +63,10 @@ public struct GeminiClient: StructuredLLMClient {
 
     let baseProvider: GeminiProvider
 
+    /// メディア系(Imagen `:predict`, 画像 `:generateContent`, Veo)用の APIClient。
+    /// 認証は `x-goog-api-key` ヘッダー。
+    package let mediaClient: APIClientImpl
+
     // MARK: - Package Access (for extension by other modules)
 
     /// API キー（パッケージ内の他モジュールからアクセス可能）
@@ -123,6 +127,13 @@ public struct GeminiClient: StructuredLLMClient {
 
         let baseProvider = GeminiProvider(transport: transport, apiKey: apiKey, baseURL: baseURL)
         self.baseProvider = baseProvider
+
+        self.mediaClient = APIClientImpl(
+            baseURL: URL(string: baseURL ?? Self.defaultBaseURL)!,
+            transport: transport,
+            authTokenProvider: StaticTokenProvider(token: apiKey),
+            keyStyle: .default
+        )
 
         if retryConfiguration.isEnabled {
             self.provider = RetryableProvider(

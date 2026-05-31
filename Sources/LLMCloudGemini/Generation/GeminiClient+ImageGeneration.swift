@@ -111,56 +111,25 @@ extension GeminiClient: ImageGenerationCapable {
         n: Int,
         format: ImageOutputFormat
     ) async throws -> [GeneratedImage] {
-        let endpoint = imagenEndpoint(for: model)
-
-        var urlRequest = URLRequest(url: endpoint)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
-
-        let requestBody = ImagenRequestBody(
-            instances: [ImagenInstance(prompt: prompt)],
-            parameters: ImagenParameters(
+        let body = ImagenRequestBody(
+            instances: [.init(prompt: prompt)],
+            parameters: .init(
                 sampleCount: n,
                 aspectRatio: aspectRatioString(for: size),
                 personGeneration: "allow_adult"
             )
         )
+        let response = try await mediaClient.executeWithResponse(
+            GeminiMediaAPI.ImagenPredict(modelId: model.id, request: body)
+        ).output
 
-        let encoder = JSONEncoder()
-        urlRequest.httpBody = try encoder.encode(requestBody)
-
-        let (data, response) = try await session.data(for: urlRequest)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw LLMError.networkError(URLError(.badServerResponse))
-        }
-
-        if httpResponse.statusCode != 200 {
-            throw try parseError(from: data, statusCode: httpResponse.statusCode)
-        }
-
-        let decoder = JSONDecoder()
-        let imagenResponse = try decoder.decode(ImagenResponse.self, from: data)
-
-        return try imagenResponse.predictions.compactMap { prediction -> GeneratedImage? in
-            guard let base64 = prediction.bytesBase64Encoded else {
-                return nil
-            }
+        return try response.predictions.compactMap { prediction -> GeneratedImage? in
+            guard let base64 = prediction.bytesBase64Encoded else { return nil }
             guard let imageData = Data(base64Encoded: base64) else {
                 throw GeneratedMediaError.invalidBase64Data
             }
-            return GeneratedImage(
-                data: imageData,
-                format: format,
-                revisedPrompt: nil
-            )
+            return GeneratedImage(data: imageData, format: format, revisedPrompt: nil)
         }
-    }
-
-    private func imagenEndpoint(for model: GeminiImageModel) -> URL {
-        let baseURLString = "https://generativelanguage.googleapis.com/v1beta/models/\(model.id):predict"
-        return URL(string: baseURLString)!
     }
 
     // MARK: - Gemini Image API (generateContent)
@@ -170,64 +139,24 @@ extension GeminiClient: ImageGenerationCapable {
         model: GeminiImageModel,
         format: ImageOutputFormat
     ) async throws -> [GeneratedImage] {
-        let endpoint = geminiImageEndpoint(for: model)
-
-        var urlRequest = URLRequest(url: endpoint)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
-
-        let requestBody = GeminiImageRequestBody(
-            contents: [
-                GeminiImageContent(parts: [GeminiImagePart(text: prompt)])
-            ],
-            generationConfig: GeminiImageGenerationConfig(
-                responseModalities: ["TEXT", "IMAGE"]
-            )
+        let body = GeminiImageRequestBody(
+            contents: [.init(parts: [.init(text: prompt)])],
+            generationConfig: .init(responseModalities: ["TEXT", "IMAGE"])
         )
-
-        let encoder = JSONEncoder()
-        urlRequest.httpBody = try encoder.encode(requestBody)
-
-        let (data, response) = try await session.data(for: urlRequest)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw LLMError.networkError(URLError(.badServerResponse))
-        }
-
-        if httpResponse.statusCode != 200 {
-            throw try parseError(from: data, statusCode: httpResponse.statusCode)
-        }
-
-        let decoder = JSONDecoder()
-        let geminiResponse = try decoder.decode(GeminiImageResponse.self, from: data)
+        let response = try await mediaClient.executeWithResponse(
+            GeminiMediaAPI.GenerateImageContent(modelId: model.id, request: body)
+        ).output
 
         var images: [GeneratedImage] = []
-
-        for candidate in geminiResponse.candidates ?? [] {
+        for candidate in response.candidates ?? [] {
             for part in candidate.content?.parts ?? [] {
-                if let inlineData = part.inlineData,
-                   let base64 = inlineData.data,
-                   let imageData = Data(base64Encoded: base64) {
-                    images.append(GeneratedImage(
-                        data: imageData,
-                        format: format,
-                        revisedPrompt: nil
-                    ))
+                if let base64 = part.inlineData?.data, let imageData = Data(base64Encoded: base64) {
+                    images.append(GeneratedImage(data: imageData, format: format, revisedPrompt: nil))
                 }
             }
         }
-
-        if images.isEmpty {
-            throw LLMError.emptyResponse
-        }
-
+        if images.isEmpty { throw LLMError.emptyResponse }
         return images
-    }
-
-    private func geminiImageEndpoint(for model: GeminiImageModel) -> URL {
-        let baseURLString = "https://generativelanguage.googleapis.com/v1beta/models/\(model.id):generateContent"
-        return URL(string: baseURLString)!
     }
 
     // MARK: - Private Helpers
@@ -243,106 +172,4 @@ extension GeminiClient: ImageGenerationCapable {
         }
     }
 
-    private func parseError(from data: Data, statusCode: Int) throws -> LLMError {
-        struct ErrorResponse: Decodable {
-            struct Error: Decodable {
-                let message: String
-                let status: String?
-            }
-            let error: Error
-        }
-
-        if let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
-            let message = errorResponse.error.message
-
-            switch statusCode {
-            case 401, 403:
-                return .unauthorized
-            case 429:
-                return .rateLimitExceeded
-            case 400:
-                if message.contains("safety") || message.contains("blocked") {
-                    throw ImageGenerationError.contentPolicyViolation(message)
-                }
-                return .invalidRequest(message)
-            default:
-                return .serverError(statusCode, message)
-            }
-        }
-
-        return .serverError(statusCode, String(data: data, encoding: .utf8) ?? "Unknown error")
-    }
-}
-
-// MARK: - Imagen Request/Response Types
-
-private struct ImagenRequestBody: Encodable {
-    let instances: [ImagenInstance]
-    let parameters: ImagenParameters
-}
-
-private struct ImagenInstance: Encodable {
-    let prompt: String
-}
-
-private struct ImagenParameters: Encodable {
-    let sampleCount: Int
-    let aspectRatio: String
-    let personGeneration: String
-}
-
-private struct ImagenResponse: Decodable {
-    let predictions: [ImagenPrediction]
-
-    struct ImagenPrediction: Decodable {
-        let bytesBase64Encoded: String?
-        let mimeType: String?
-    }
-}
-
-// MARK: - Gemini Image Request/Response Types
-
-private struct GeminiImageRequestBody: Encodable {
-    let contents: [GeminiImageContent]
-    let generationConfig: GeminiImageGenerationConfig
-}
-
-private struct GeminiImageContent: Encodable {
-    let parts: [GeminiImagePart]
-}
-
-private struct GeminiImagePart: Encodable {
-    let text: String?
-    let inlineData: GeminiImageInlineData?
-
-    init(text: String) {
-        self.text = text
-        self.inlineData = nil
-    }
-}
-
-private struct GeminiImageInlineData: Codable {
-    let mimeType: String?
-    let data: String?
-}
-
-private struct GeminiImageGenerationConfig: Encodable {
-    let responseModalities: [String]
-}
-
-private struct GeminiImageResponse: Decodable {
-    let candidates: [GeminiCandidate]?
-
-    struct GeminiCandidate: Decodable {
-        let content: GeminiCandidateContent?
-    }
-
-    struct GeminiCandidateContent: Decodable {
-        let parts: [GeminiResponsePart]?
-    }
-
-    struct GeminiResponsePart: Decodable {
-        let text: String?
-        let inlineData: GeminiImageInlineData?
-    }
 }
