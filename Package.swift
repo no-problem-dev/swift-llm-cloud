@@ -124,7 +124,10 @@ let package = Package(
         // Tests
         .testTarget(name: "LLMCloudClientTests", dependencies: ["LLMCloudClient"]),
         .testTarget(name: "LLMCloudAnthropicTests", dependencies: ["LLMCloudAnthropic", "LLMCloudClient"]),
-        .testTarget(name: "LLMCloudOpenAITests", dependencies: ["LLMCloudOpenAI", "LLMCloudOpenAICompatible", "LLMCloudClient"]),
+        .testTarget(name: "LLMCloudOpenAITests", dependencies: [
+            "LLMCloudOpenAI", "LLMCloudOpenAICompatible", "LLMCloudClient",
+            .product(name: "APIClient", package: "swift-api-client"),
+        ]),
         .testTarget(name: "LLMCloudGeminiTests", dependencies: ["LLMCloudGemini", "LLMCloudClient"]),
     ]
 )

@@ -21,6 +21,9 @@ package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol 
     /// プロバイダー固有のカスタムヘッダー
     private let customHeaders: [String: String]
 
+    /// エンドポイント URL（レスポンスメタデータ構成用）
+    private let endpoint: URL
+
     /// デフォルトの最大トークン数
     private static let defaultMaxTokens = 4096
 
@@ -41,12 +44,26 @@ package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol 
         session: URLSession = .shared,
         customHeaders: [String: String] = [:]
     ) {
+        self.init(
+            transport: URLSessionTransport(session: session),
+            apiKey: apiKey, endpoint: endpoint, providerName: providerName, customHeaders: customHeaders
+        )
+    }
+
+    /// Transport を注入する指定イニシャライザ（テストで MockTransport を差し込む）。
+    package init(
+        transport: any HTTPTransport & HTTPStreamingTransport,
+        apiKey: String,
+        endpoint: URL,
+        providerName: String,
+        customHeaders: [String: String] = [:]
+    ) {
         self.providerName = providerName
         self.customHeaders = customHeaders
-
+        self.endpoint = endpoint
         self.apiClient = APIClientImpl(
             baseURL: endpoint,
-            transport: URLSessionTransport(session: session),
+            transport: transport,
             authTokenProvider: StaticTokenProvider(token: apiKey),
             keyStyle: .snakeCase
         )
@@ -62,30 +79,24 @@ package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol 
     // MARK: - RetryableProviderProtocol
 
     package func sendWithResponse(_ request: LLMRequest) async throws -> (LLMResponse, HTTPURLResponse) {
-        // リクエストボディを構築
+        let (output, statusCode, headers) = try await sendRaw(request)
+        let llmResponse = OpenAICompatibleResponseConverter.toLLMResponse(output)
+        // HTTPURLResponse を構成（RetryableProvider 互換）
+        let httpResponse = HTTPURLResponse(
+            url: endpoint, statusCode: statusCode, httpVersion: nil, headerFields: headers
+        )!
+        return (llmResponse, httpResponse)
+    }
+
+    /// LLMRequest を contract(CreateChatCompletion)経由で送信し、生レスポンスボディを返す。
+    /// 全ての非ストリーミング呼び出し(send / chat / planToolCalls)が通る単一の HTTP 経路。
+    /// エラーは contract の decodeError(リッチ)と APIError マッピングで統一される。
+    package func sendRaw(_ request: LLMRequest) async throws -> (OpenAICompatibleResponseBody, Int, [String: String]) {
         let body = try buildRequestBody(from: request)
-
-        // APIContract エンドポイント経由で実行
-        let endpoint = OpenAICompatibleAPI.CreateChatCompletion(
-            customHeaders: customHeaders,
-            request: body
-        )
-
+        let contract = OpenAICompatibleAPI.CreateChatCompletion(customHeaders: customHeaders, request: body)
         do {
-            let apiResponse = try await apiClient.executeWithResponse(endpoint)
-
-            // LLMResponse に変換
-            let llmResponse = OpenAICompatibleResponseConverter.toLLMResponse(apiResponse.output)
-
-            // HTTPURLResponse を構成（RetryableProvider 互換）
-            let httpResponse = HTTPURLResponse(
-                url: URL(string: "https://api.openai.com/v1/chat/completions")!,
-                statusCode: apiResponse.statusCode,
-                httpVersion: nil,
-                headerFields: apiResponse.headers
-            )!
-
-            return (llmResponse, httpResponse)
+            let apiResponse = try await apiClient.executeWithResponse(contract)
+            return (apiResponse.output, apiResponse.statusCode, apiResponse.headers)
         } catch let error as LLMError {
             throw error
         } catch let error as RateLimitAwareError {

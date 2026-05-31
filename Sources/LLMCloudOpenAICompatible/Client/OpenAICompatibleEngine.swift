@@ -15,6 +15,9 @@ package struct OpenAICompatibleEngine: Sendable {
     /// 内部プロバイダー（RetryableProvider でラップ済み）
     package let provider: any LLMProvider
 
+    /// リトライ非対象の直接送信用（chat/planToolCalls は現状リトライしない）
+    let baseProvider: OpenAICompatibleProvider
+
     /// API キー
     package let apiKey: String
 
@@ -62,6 +65,7 @@ package struct OpenAICompatibleEngine: Sendable {
             session: session,
             customHeaders: customHeaders
         )
+        self.baseProvider = baseProvider
 
         if retryConfiguration.isEnabled {
             self.provider = RetryableProvider(
@@ -128,62 +132,19 @@ package struct OpenAICompatibleEngine: Sendable {
         temperature: Double?,
         maxTokens: Int?
     ) async throws -> ChatResponse<T> {
-        var urlRequest = makeURLRequest()
-
-        var openAIMessages: [OpenAICompatibleMessage] = []
-
-        if let systemPrompt = systemPrompt, !systemPrompt.isEmpty {
-            openAIMessages.append(OpenAICompatibleMessage(
-                role: "system", content: systemPrompt, toolCallId: nil, toolCalls: nil
-            ))
-        }
-
-        for message in messages {
-            openAIMessages.append(OpenAICompatibleMessageConverter.convertSimple(message))
-        }
-
-        let adapter = OpenAISchemaAdapter()
-        let adaptedSchema = adapter.adapt(responseSchema)
-        guard let schemaData = try? adaptedSchema.toJSONData(),
-              let schemaDict = try? JSONSerialization.jsonObject(with: schemaData) as? [String: Any] else {
-            throw LLMError.invalidRequest("Failed to convert schema to dictionary")
-        }
-
-        let body = OpenAICompatibleChatRequestBody(
-            model: modelId,
-            messages: openAIMessages,
+        // 全ての送信を api-client(contract)経由に統一（生 URLSession を撤廃）。
+        // buildRequestBody が schema 適合・制約プロンプト合成・max_completion_tokens を
+        // 一貫処理し、エラーは contract の decodeError がリッチにマッピングする。
+        let request = LLMRequest(
+            model: .custom(modelId),
+            messages: messages,
+            systemPrompt: systemPrompt,
+            responseSchema: responseSchema,
             temperature: temperature,
-            maxTokens: maxTokens,
-            responseFormat: OpenAICompatibleChatResponseFormat(
-                type: "json_schema",
-                jsonSchema: OpenAICompatibleChatJSONSchema(
-                    name: "response",
-                    strict: true,
-                    schema: schemaDict
-                )
-            )
+            maxTokens: maxTokens
         )
-        urlRequest.httpBody = try JSONEncoder().encode(body)
-
-        let (data, response) = try await session.data(for: urlRequest)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw LLMError.invalidRequest("Invalid response type")
-        }
-
-        try handleErrorStatus(data: data, httpResponse: httpResponse)
-
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-
-        let openAIResponse: OpenAICompatibleResponseBody
-        do {
-            openAIResponse = try decoder.decode(OpenAICompatibleResponseBody.self, from: data)
-        } catch {
-            throw LLMError.decodingFailed(error)
-        }
-
-        return try OpenAICompatibleResponseConverter.toChatResponse(openAIResponse)
+        let (output, _, _) = try await baseProvider.sendRaw(request)
+        return try OpenAICompatibleResponseConverter.toChatResponse(output)
     }
 
     // MARK: - ToolCallableClient
