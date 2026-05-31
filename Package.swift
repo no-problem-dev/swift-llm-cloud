@@ -124,7 +124,7 @@ let package = Package(
         // Tests
         .testTarget(name: "LLMCloudClientTests", dependencies: ["LLMCloudClient"]),
         .testTarget(name: "LLMCloudAnthropicTests", dependencies: ["LLMCloudAnthropic", "LLMCloudClient"]),
-        .testTarget(name: "LLMCloudOpenAITests", dependencies: ["LLMCloudOpenAI", "LLMCloudClient"]),
+        .testTarget(name: "LLMCloudOpenAITests", dependencies: ["LLMCloudOpenAI", "LLMCloudOpenAICompatible", "LLMCloudClient"]),
         .testTarget(name: "LLMCloudGeminiTests", dependencies: ["LLMCloudGemini", "LLMCloudClient"]),
     ]
 )
