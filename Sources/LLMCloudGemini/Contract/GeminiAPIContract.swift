@@ -40,6 +40,12 @@ enum GeminiAPI: APIContractGroup {
 
         let errorResponse = try? JSONDecoder().decode(GeminiErrorResponse.self, from: data)
 
+        // cachedContents 参照に固有のエラー（失効など）は専用型で返し、回復戦略に接続する
+        if let message = errorResponse?.error.message,
+           let cacheError = GeminiCacheErrorClassifier.classify(statusCode: statusCode, message: message) {
+            return cacheError
+        }
+
         switch statusCode {
         case 401, 403:
             return LLMError.unauthorized

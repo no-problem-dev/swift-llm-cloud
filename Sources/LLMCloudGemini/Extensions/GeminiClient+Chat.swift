@@ -27,10 +27,8 @@ extension GeminiClient: ChatCapableClient {
 
         let body = GeminiRequestBody(
             contents: contents,
-            systemInstruction: systemInstruction,
             generationConfig: generationConfig,
-            tools: nil,
-            toolConfig: nil
+            promptContext: .inline(systemInstruction: systemInstruction, tools: nil, toolConfig: nil)
         )
 
         let (response, _, _) = try await baseProvider.sendBody(body, modelId: model.id)

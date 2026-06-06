@@ -11,7 +11,8 @@ extension AnthropicClient: ToolCallableClient {
         toolChoice: ToolChoice?,
         systemPrompt: SystemPrompt?,
         temperature: Double?,
-        maxTokens: Int?
+        maxTokens: Int?,
+        cachePolicy: PromptCachePolicy
     ) async throws -> ToolCallResponse {
         let anthropicMessages = try messages.map { try AnthropicMessageConverter.convert($0) }
         let anthropicTools = tools.toAnthropicToolDefs()

@@ -18,7 +18,7 @@ let package = Package(
         .library(name: "LLMCloud", targets: ["LLMCloud"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/no-problem-dev/swift-llm-client.git", from: "3.1.0"),
+        .package(url: "https://github.com/no-problem-dev/swift-llm-client.git", from: "3.4.1"),
         .package(url: "https://github.com/no-problem-dev/swift-structured-data.git", from: "1.1.0"),
         .package(url: "https://github.com/no-problem-dev/swift-api-contract.git", from: "2.0.0"),
         .package(url: "https://github.com/no-problem-dev/swift-api-client.git", from: "2.2.0"),

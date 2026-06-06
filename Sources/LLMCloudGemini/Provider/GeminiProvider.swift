@@ -65,6 +65,8 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
             throw error
         } catch let error as RateLimitAwareError {
             throw error
+        } catch let error as GeminiCachedContentError {
+            throw error // キャッシュ失効は呼び出し側の回復ロジックが扱う
         } catch let error as APIError {
             throw mapAPIErrorToLLMError(error)
         } catch {
@@ -168,10 +170,8 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
 
         return GeminiRequestBody(
             contents: contents,
-            systemInstruction: systemInstruction,
             generationConfig: generationConfig,
-            tools: nil,
-            toolConfig: nil
+            promptContext: .inline(systemInstruction: systemInstruction, tools: nil, toolConfig: nil)
         )
     }
 

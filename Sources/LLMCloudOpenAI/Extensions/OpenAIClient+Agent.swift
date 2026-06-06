@@ -27,7 +27,8 @@ extension OpenAIClient {
         responseSchema: JSONSchema?,
         thinkingMode: ThinkingMode,
         reasoningEffort: ReasoningEffort?,
-        maxTokens: Int?
+        maxTokens: Int?,
+        cachePolicy: PromptCachePolicy
     ) async throws -> LLMResponse {
         _ = thinkingMode // OpenAI 系は Extended Thinking ではなく reasoning_effort で思考量を制御する
 

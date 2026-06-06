@@ -70,6 +70,10 @@ public struct GeminiClient: StructuredLLMClient {
     /// Veo(動画)用の APIClient(baseURL=/v1beta)。operations は models/ の外にあるため別 base。
     package let veoClient: APIClientImpl
 
+    /// 明示プロンプトキャッシュ(`cachedContents`)のライフサイクル管理。
+    /// クライアント（≒セッション）単位でリソースを所有する
+    let contextCache: GeminiContextCacheStore
+
     // MARK: - Package Access (for extension by other modules)
 
     /// API キー（パッケージ内の他モジュールからアクセス可能）
@@ -105,12 +109,14 @@ public struct GeminiClient: StructuredLLMClient {
         baseURL: String? = nil,
         session: URLSession = .shared,
         retryConfiguration: RetryConfiguration = .default,
-        retryEventHandler: RetryEventHandler? = nil
+        retryEventHandler: RetryEventHandler? = nil,
+        cacheEventHandler: GeminiCacheEventHandler? = nil
     ) {
         self.init(
             transport: URLSessionTransport(session: session),
             apiKey: apiKey, baseURL: baseURL, session: session,
-            retryConfiguration: retryConfiguration, retryEventHandler: retryEventHandler
+            retryConfiguration: retryConfiguration, retryEventHandler: retryEventHandler,
+            cacheEventHandler: cacheEventHandler
         )
     }
 
@@ -120,7 +126,8 @@ public struct GeminiClient: StructuredLLMClient {
         baseURL: String? = nil,
         session: URLSession = .shared,
         retryConfiguration: RetryConfiguration = .default,
-        retryEventHandler: RetryEventHandler? = nil
+        retryEventHandler: RetryEventHandler? = nil,
+        cacheEventHandler: GeminiCacheEventHandler? = nil
     ) {
         self.apiKey = apiKey
         self.baseURL = baseURL ?? Self.defaultBaseURL
@@ -143,6 +150,16 @@ public struct GeminiClient: StructuredLLMClient {
             transport: transport,
             authTokenProvider: StaticTokenProvider(token: apiKey),
             keyStyle: .default
+        )
+        // cachedContents は models/ の外 (/v1beta/cachedContents)。認証は key クエリパラメータ
+        self.contextCache = GeminiContextCacheStore(
+            apiClient: APIClientImpl(
+                baseURL: mediaBaseURL.deletingLastPathComponent(),
+                transport: transport,
+                authTokenProvider: StaticTokenProvider(token: apiKey),
+                keyStyle: .default
+            ),
+            eventHandler: cacheEventHandler
         )
 
         if retryConfiguration.isEnabled {

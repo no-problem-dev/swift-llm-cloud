@@ -47,8 +47,7 @@ struct AnthropicAgentPathTests {
         let response = try await client(mock).executeAgentStep(
             messages: [LLMMessage(role: .user, content: "hi"), priorThinking],
             model: .sonnet, systemPrompt: nil, tools: toolSet, toolChoice: .auto,
-            responseSchema: schema, thinkingMode: .disabled, reasoningEffort: nil, maxTokens: 300
-        )
+            responseSchema: schema, thinkingMode: .disabled, reasoningEffort: nil, maxTokens: 300, cachePolicy: .implicit)
 
         let blocks = response.content
         #expect(blocks.count == 3)
@@ -76,8 +75,7 @@ struct AnthropicAgentPathTests {
         let response = try await client(mock, retry: .custom(maxRetries: 3, baseDelay: 0.01, maxDelay: 0.02)).executeAgentStep(
             messages: [LLMMessage(role: .user, content: "hi")],
             model: .sonnet, systemPrompt: nil, tools: ToolSet(tools: []), toolChoice: nil,
-            responseSchema: nil, thinkingMode: .disabled, reasoningEffort: nil, maxTokens: nil
-        )
+            responseSchema: nil, thinkingMode: .disabled, reasoningEffort: nil, maxTokens: nil, cachePolicy: .implicit)
         #expect(response.content.count == 3)
         #expect(mock.recordedRequests.count == 2)
     }

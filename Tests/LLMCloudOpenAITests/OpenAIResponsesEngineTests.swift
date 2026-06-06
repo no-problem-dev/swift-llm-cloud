@@ -50,8 +50,7 @@ struct OpenAIResponsesEngineTests {
             toolChoice: nil,
             responseSchema: nil,
             reasoningEffort: .high,
-            maxTokens: 256
-        )
+            maxTokens: 256)
     }
 
     /// 比較しやすい正規化表現。

@@ -46,10 +46,8 @@ extension GeminiClient {
 
                     let body = GeminiRequestBody(
                         contents: contents,
-                        systemInstruction: systemInstruction,
                         generationConfig: generationConfig,
-                        tools: nil,
-                        toolConfig: nil
+                        promptContext: .inline(systemInstruction: systemInstruction, tools: nil, toolConfig: nil)
                     )
 
                     for try await event in baseProvider.streamContentEvents(body, modelId: model.id) {

@@ -44,8 +44,7 @@ struct OpenAICompatibleAgentStepTests {
             toolChoice: .auto,
             responseSchema: nil,
             reasoningEffort: .high,
-            maxTokens: 256
-        )
+            maxTokens: 256)
         #expect(response.content.contains { if case .text(let t) = $0 { return t == "done" } else { return false } })
 
         let sent = String(decoding: try #require(mock.recordedRequests.first?.body), as: UTF8.self)
@@ -80,8 +79,7 @@ struct OpenAICompatibleAgentStepTests {
             toolChoice: nil,
             responseSchema: nil,
             reasoningEffort: nil,
-            maxTokens: nil
-        )
+            maxTokens: nil)
         #expect(response.content.contains { if case .text(let t) = $0 { return t == "done" } else { return false } })
         #expect(mock.recordedRequests.count == 2)
     }
@@ -100,8 +98,7 @@ struct OpenAICompatibleAgentStepTests {
                 toolChoice: nil,
                 responseSchema: nil,
                 reasoningEffort: nil,
-                maxTokens: nil
-            )
+                maxTokens: nil)
         }
         #expect(mock.recordedRequests.count == 1)
     }

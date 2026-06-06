@@ -21,7 +21,8 @@ extension AnthropicClient: AgentCapableClient {
         responseSchema: JSONSchema?,
         thinkingMode: ThinkingMode,
         reasoningEffort: ReasoningEffort?,
-        maxTokens: Int?
+        maxTokens: Int?,
+        cachePolicy: PromptCachePolicy
     ) async throws -> LLMResponse {
         _ = reasoningEffort
         _ = thinkingMode
@@ -113,7 +114,8 @@ extension AnthropicClient: AgentCapableClient {
         responseSchema: JSONSchema?,
         thinkingMode: ThinkingMode,
         reasoningEffort: ReasoningEffort?,
-        maxTokens: Int?
+        maxTokens: Int?,
+        cachePolicy: PromptCachePolicy
     ) -> AsyncThrowingStream<StreamingAgentEvent, Error> {
         _ = reasoningEffort // Anthropic 側では Extended Thinking が思考量制御の主役
 
@@ -139,7 +141,8 @@ extension AnthropicClient: AgentCapableClient {
                             responseSchema: responseSchema,
                             thinkingMode: effectiveThinkingMode,
                             reasoningEffort: nil,
-                            maxTokens: maxTokens
+                            maxTokens: maxTokens,
+                            cachePolicy: cachePolicy
                         )
                         continuation.yield(.completed(response))
                         continuation.finish()

@@ -13,7 +13,8 @@ extension GeminiClient: AgentCapableClient {
         responseSchema: JSONSchema?,
         thinkingMode: ThinkingMode,
         reasoningEffort: ReasoningEffort?,
-        maxTokens: Int?
+        maxTokens: Int?,
+        cachePolicy: PromptCachePolicy
     ) async throws -> LLMResponse {
         _ = thinkingMode
 
@@ -44,19 +45,25 @@ extension GeminiClient: AgentCapableClient {
             toolConfig = toolChoice.map { Self.agentToolConfig(for: $0) }
         }
 
-        let body = GeminiRequestBody(
-            contents: contents,
+        let prefix = GeminiStablePrefix(
+            model: model.id,
             systemInstruction: systemInstruction,
-            generationConfig: generationConfig,
             tools: geminiTools,
             toolConfig: toolConfig
+        )
+        let promptContext = await resolvePromptContext(prefix: prefix, cachePolicy: cachePolicy)
+
+        let body = GeminiRequestBody(
+            contents: contents,
+            generationConfig: generationConfig,
+            promptContext: promptContext
         )
 
         let response = try await RetryRunner.run(
             policy: retryConfiguration.policy,
             eventHandler: retryEventHandler
         ) {
-            try await self.baseProvider.sendBody(body, modelId: model.id).0
+            try await self.sendBodyRecoveringCacheLoss(body, prefix: prefix, cachePolicy: cachePolicy, modelId: model.id).0
         }
         return Self.agentResponseToLLM(response, model: model.id)
     }

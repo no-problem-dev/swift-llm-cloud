@@ -39,8 +39,7 @@ struct AnthropicToolPathTests {
         let response = try await client(mock).planToolCalls(
             messages: [LLMMessage(role: .user, content: "hi")],
             model: .sonnet, tools: toolSet, toolChoice: .required,
-            systemPrompt: nil, temperature: nil, maxTokens: 200
-        )
+            systemPrompt: nil, temperature: nil, maxTokens: 200, cachePolicy: .implicit)
 
         #expect(response.text == "calling")
         #expect(response.stopReason == .toolUse)

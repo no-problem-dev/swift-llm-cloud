@@ -11,7 +11,8 @@ extension GeminiClient: ToolCallableClient {
         toolChoice: ToolChoice?,
         systemPrompt: SystemPrompt?,
         temperature: Double?,
-        maxTokens: Int?
+        maxTokens: Int?,
+        cachePolicy: PromptCachePolicy
     ) async throws -> ToolCallResponse {
         let contents = messages.flatMap { GeminiContentConverter.convert($0) }
 
@@ -33,15 +34,23 @@ extension GeminiClient: ToolCallableClient {
             toolConfig = toolChoice.map { Self.toolConfig(for: $0) }
         }
 
-        let body = GeminiRequestBody(
-            contents: contents,
+        let prefix = GeminiStablePrefix(
+            model: model.id,
             systemInstruction: systemInstruction,
-            generationConfig: generationConfig,
             tools: geminiTools,
             toolConfig: toolConfig
         )
+        let promptContext = await resolvePromptContext(prefix: prefix, cachePolicy: cachePolicy)
 
-        let (response, _, _) = try await baseProvider.sendBody(body, modelId: model.id)
+        let body = GeminiRequestBody(
+            contents: contents,
+            generationConfig: generationConfig,
+            promptContext: promptContext
+        )
+
+        let (response, _, _) = try await sendBodyRecoveringCacheLoss(
+            body, prefix: prefix, cachePolicy: cachePolicy, modelId: model.id
+        )
         return Self.parseToolCallResponse(response, model: model.id)
     }
 

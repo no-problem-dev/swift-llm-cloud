@@ -49,8 +49,7 @@ struct AnthropicStreamingPathTests {
         for try await event in client.streamAgentStep(
             messages: [LLMMessage(role: .user, content: "hi")],
             model: .sonnet, systemPrompt: nil, tools: ToolSet(tools: []), toolChoice: nil,
-            responseSchema: nil, thinkingMode: .adaptive, reasoningEffort: nil, maxTokens: nil
-        ) {
+            responseSchema: nil, thinkingMode: .adaptive, reasoningEffort: nil, maxTokens: nil, cachePolicy: .implicit) {
             switch event {
             case .delta(let delta):
                 switch delta {

@@ -4,13 +4,56 @@ import LLMClient
 
 // MARK: - Request Types
 
+/// generateContent リクエストの「文脈」— 安定プレフィックスの渡し方
+///
+/// API 仕様上、`cachedContent` と `systemInstruction`/`tools`/`toolConfig` の同時送信は
+/// 400 エラー（プレフィックスはキャッシュ作成時に固定済みのため）。
+/// この排他関係を enum で表現し、不正な組み合わせを構築不能にする。
+enum GeminiPromptContext: Sendable {
+    /// プレフィックスをリクエストに直接含める
+    case inline(systemInstruction: GeminiContent?, tools: [GeminiTool]?, toolConfig: GeminiToolConfig?)
+    /// 作成済み `cachedContents` リソースを参照する（`cachedContents/{id}` 形式）
+    case cached(name: String)
+}
+
 /// Gemini API リクエストボディ
 struct GeminiRequestBody: Encodable, Sendable {
     let contents: [GeminiContent]
-    let systemInstruction: GeminiContent?
     let generationConfig: GeminiGenerationConfig
-    let tools: [GeminiTool]?
-    let toolConfig: GeminiToolConfig?
+    let promptContext: GeminiPromptContext
+
+    init(
+        contents: [GeminiContent],
+        generationConfig: GeminiGenerationConfig,
+        promptContext: GeminiPromptContext
+    ) {
+        self.contents = contents
+        self.generationConfig = generationConfig
+        self.promptContext = promptContext
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case contents
+        case generationConfig
+        case systemInstruction
+        case tools
+        case toolConfig
+        case cachedContent
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(contents, forKey: .contents)
+        try container.encode(generationConfig, forKey: .generationConfig)
+        switch promptContext {
+        case .inline(let systemInstruction, let tools, let toolConfig):
+            try container.encodeIfPresent(systemInstruction, forKey: .systemInstruction)
+            try container.encodeIfPresent(tools, forKey: .tools)
+            try container.encodeIfPresent(toolConfig, forKey: .toolConfig)
+        case .cached(let name):
+            try container.encode(name, forKey: .cachedContent)
+        }
+    }
 }
 
 /// Gemini ツール
