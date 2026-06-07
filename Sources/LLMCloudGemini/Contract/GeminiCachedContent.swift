@@ -208,7 +208,12 @@ enum GeminiCacheErrorClassifier {
     static func classify(statusCode: Int, message: String) -> GeminiCachedContentError? {
         switch statusCode {
         case 400:
-            guard message.contains("minimum token count") else { return nil }
+            // 文言は時期で揺れる:
+            //   旧 "The cached content is of 151 tokens. The minimum token count to start caching is 1024."
+            //   現 "Cached content is too small. total_token_count=575, min_total_token_count=1024"
+            // どちらも「最小キャッシュトークン数未満」という同一の恒久条件として分類する。
+            let lowered = message.lowercased()
+            guard lowered.contains("minimum token count") || lowered.contains("min_total_token_count") else { return nil }
             let numbers = extractIntegers(from: message)
             return .belowMinimumTokenCount(actual: numbers.first, minimum: numbers.count > 1 ? numbers[1] : nil)
         case 403, 404:

@@ -138,6 +138,15 @@ struct GeminiCachedContentTypesTests {
         #expect(error == .belowMinimumTokenCount(actual: 151, minimum: 1024))
     }
 
+    @Test("最小トークン未満（現行文言 too small / min_total_token_count）の分類")
+    func classifyBelowMinimumCurrentWording() {
+        // 2026-06 実機観測の文言。これを invalidRequest に落とすと恒久 inline 記憶が効かず、
+        // 全 LLM 呼び出しでキャッシュ作成の再試行（無駄なラウンドトリップ）が発生する。
+        let message = "Cached content is too small. total_token_count=575, min_total_token_count=1024"
+        let error = GeminiCacheErrorClassifier.classify(statusCode: 400, message: message)
+        #expect(error == .belowMinimumTokenCount(actual: 575, minimum: 1024))
+    }
+
     @Test("CachedContent not found を 403/404 の双方で分類")
     func classifyNotFound() {
         let message = "CachedContent not found (or permission denied)."
