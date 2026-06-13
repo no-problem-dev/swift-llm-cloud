@@ -1,6 +1,7 @@
 import LLMCloudClient
 import LLMCloudOpenAICompatible
 import LLMClient
+import LLMAgentStep
 import APIClient
 import Foundation
 #if canImport(FoundationNetworking)

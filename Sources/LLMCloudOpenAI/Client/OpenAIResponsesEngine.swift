@@ -1,5 +1,6 @@
 import Foundation
 import LLMClient
+import LLMAgentStep
 import LLMCloudClient
 import LLMCloudOpenAICompatible
 import LLMTool
