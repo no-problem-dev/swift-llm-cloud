@@ -16,6 +16,9 @@ let package = Package(
         .library(name: "LLMCloudMistral", targets: ["LLMCloudMistral"]),
         .library(name: "LLMCloudOpenRouter", targets: ["LLMCloudOpenRouter"]),
         .library(name: "LLMCloud", targets: ["LLMCloud"]),
+        // プロバイダー / モデルファミリーのブランドロゴ + 表示 identity（SwiftUI）。
+        // クラウド依存の表示資産を 1 ターゲットに閉じ込めるための公開モジュール。
+        .library(name: "LLMCloudBranding", targets: ["LLMCloudBranding"]),
     ],
     dependencies: [
         .package(url: "https://github.com/no-problem-dev/swift-llm-client.git", from: "3.5.1"),
@@ -127,6 +130,13 @@ let package = Package(
             "LLMCloudOpenAI",
             "LLMCloudGemini",
         ]),
+        // プロバイダー / モデルファミリーのブランドロゴ + 表示 identity。
+        // ロゴアセット（ProviderLogos.xcassets）を同梱し SwiftUI ビューで描画する。
+        // 他ターゲットには依存しない（純粋な表示資産）。
+        .target(
+            name: "LLMCloudBranding",
+            resources: [.process("Resources/ProviderLogos.xcassets")]
+        ),
         // Tests
         .testTarget(name: "LLMCloudClientTests", dependencies: ["LLMCloudClient"]),
         .testTarget(name: "LLMCloudAnthropicTests", dependencies: [
