@@ -1,6 +1,7 @@
 import LLMCloudClient
 import LLMClient
 import LLMTool
+import LLMAgentStep
 import APIClient
 import Foundation
 

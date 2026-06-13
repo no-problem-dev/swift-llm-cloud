@@ -1,6 +1,7 @@
 import LLMCloudClient
 import LLMClient
 import LLMTool
+import LLMAgentStep
 import Foundation
 
 extension GeminiClient: AgentCapableClient {

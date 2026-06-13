@@ -3,6 +3,7 @@ import LLMClient
 import LLMCloudClient
 import LLMCloudOpenAICompatible
 import LLMTool
+import LLMAgentStep
 
 // MARK: - OpenAIClient + AgentCapableClient routing
 

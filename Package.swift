@@ -18,7 +18,7 @@ let package = Package(
         .library(name: "LLMCloud", targets: ["LLMCloud"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/no-problem-dev/swift-llm-client.git", from: "3.4.1"),
+        .package(url: "https://github.com/no-problem-dev/swift-llm-client.git", from: "3.5.1"),
         .package(url: "https://github.com/no-problem-dev/swift-structured-data.git", from: "1.1.0"),
         .package(url: "https://github.com/no-problem-dev/swift-api-contract.git", from: "2.0.0"),
         .package(url: "https://github.com/no-problem-dev/swift-api-client.git", from: "2.2.0"),
@@ -34,6 +34,7 @@ let package = Package(
         // OpenAI-compatible shared infrastructure
         .target(name: "LLMCloudOpenAICompatible", dependencies: [
             "LLMCloudClient",
+            .product(name: "LLMAgentStep", package: "swift-llm-client"),
             .product(name: "LLMClient", package: "swift-llm-client"),
             .product(name: "LLMTool", package: "swift-llm-client"),
             .product(name: "LLMChat", package: "swift-llm-client"),
@@ -45,6 +46,7 @@ let package = Package(
         // Anthropic provider
         .target(name: "LLMCloudAnthropic", dependencies: [
             "LLMCloudClient",
+            .product(name: "LLMAgentStep", package: "swift-llm-client"),
             .product(name: "LLMClient", package: "swift-llm-client"),
             .product(name: "LLMTool", package: "swift-llm-client"),
             .product(name: "LLMChat", package: "swift-llm-client"),
@@ -57,6 +59,7 @@ let package = Package(
         .target(name: "LLMCloudOpenAI", dependencies: [
             "LLMCloudOpenAICompatible",
             "LLMCloudClient",
+            .product(name: "LLMAgentStep", package: "swift-llm-client"),
             .product(name: "LLMClient", package: "swift-llm-client"),
             .product(name: "LLMTool", package: "swift-llm-client"),
             .product(name: "LLMChat", package: "swift-llm-client"),
@@ -68,6 +71,7 @@ let package = Package(
         // Gemini provider
         .target(name: "LLMCloudGemini", dependencies: [
             "LLMCloudClient",
+            .product(name: "LLMAgentStep", package: "swift-llm-client"),
             .product(name: "LLMClient", package: "swift-llm-client"),
             .product(name: "LLMTool", package: "swift-llm-client"),
             .product(name: "LLMChat", package: "swift-llm-client"),
