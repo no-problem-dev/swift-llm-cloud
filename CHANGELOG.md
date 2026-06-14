@@ -9,6 +9,23 @@
 
 なし
 
+## [3.32.0] - 2026-06-14
+
+コンテキストウィンドウ内訳のための Anthropic `count_tokens` アダプタを追加。
+swift-llm-client 3.8.0（`TokenCounting` port）に追従。
+
+### 追加
+- **`AnthropicAPI.CountTokens` エンドポイント**（`/v1/messages/count_tokens`）と
+  `AnthropicCountTokensBody`/`Response`。ボディは model/system/messages/tools のみで
+  `max_tokens`/`stream` を持たない count_tokens 専用 envelope。
+- **`AnthropicProvider.countTokens(...)`**: send パスと**同一の変換器**
+  （`AnthropicMessageConverter` / `ToolSet.toAnthropicToolDefs()`）を再利用し、
+  「数える内容 = 送る内容」を保証。
+- **`AnthropicClient.tokenCounter`**: `TokenCounting` port の Anthropic 実装を公開。
+
+### 変更
+- `swift-llm-client` 依存を `3.8.0` 以上へ。
+
 ## [3.31.0] - 2026-06-14
 
 swift-llm-client 3.7.0（マルチモーダル基盤再設計）への追従と、Anthropic アダプタの

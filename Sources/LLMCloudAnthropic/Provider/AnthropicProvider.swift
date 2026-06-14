@@ -14,8 +14,8 @@ import FoundationNetworking
 /// APIClient + APIContract を使用して Anthropic Messages API を呼び出す。
 /// このプロバイダーは `AnthropicClient` 内部で使用されます。
 internal struct AnthropicProvider: LLMProvider, RetryableProviderProtocol {
-    /// APIClient
-    private let apiClient: APIClientImpl
+    /// APIClient（同一モジュール内の拡張から count_tokens でも利用するため internal）
+    let apiClient: APIClientImpl
 
     /// デフォルトの最大トークン数
     private static let defaultMaxTokens = 4096
