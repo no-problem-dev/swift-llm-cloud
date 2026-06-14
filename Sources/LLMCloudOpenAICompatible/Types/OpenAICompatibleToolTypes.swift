@@ -24,6 +24,15 @@ package struct OpenAICompatibleFunctionDef: Encodable, Sendable {
     enum CodingKeys: String, CodingKey {
         case name, description, strict, parameters
     }
+
+    package func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encode(description, forKey: .description)
+        try container.encode(strict, forKey: .strict)
+        // JSON Schema キーワードを snake_case 化させないため StructuredValue として埋め込む。
+        try container.encode(JSONSchemaPassthrough.structuredValue(parameters), forKey: .parameters)
+    }
 }
 
 /// OpenAI 互換ツール選択

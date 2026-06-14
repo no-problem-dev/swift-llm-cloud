@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import APIClient   // HTTPTransport(MockTransport/HTTPResponse) を再公開
 import LLMClient
+import LLMTool
 @testable import LLMCloudOpenAICompatible
 
 /// 回帰ゲート: OpenAI 互換系の URL 構築とトークンフィールド名を MockTransport で固定する。
@@ -76,5 +77,30 @@ struct OpenAICompatibleURLAndTokenFieldTests {
         )
         #expect(body.contains("\"max_tokens\""))
         #expect(!body.contains("\"max_completion_tokens\""))
+    }
+
+    @Test("tool スキーマの JSON Schema キーワードは snake_case 化されない(Groq の additionalProperties 拒否再発防止)")
+    func toolSchemaKeywordsNotSnakeCased() async throws {
+        let mock = MockTransport { _ in
+            HTTPResponse(status: 200, headers: ["Content-Type": "application/json"], body: completionJSON)
+        }
+        let tool = DynamicTool("read_file", description: "read a file") {
+            JSONSchema.string(description: "path").named("path")
+        } handler: { _ in .text("ok") }
+        let engine = OpenAICompatibleEngine(
+            transport: mock, apiKey: "k",
+            endpoint: URL(string: "https://api.groq.com/openai/v1/chat/completions")!,
+            providerName: "Groq"
+        )
+        _ = try await engine.executeAgentStep(
+            messages: [LLMMessage(role: .user, content: "hi")],
+            modelId: "llama-3.3-70b-versatile",
+            systemPrompt: nil, tools: ToolSet(tools: [tool]), toolChoice: .auto,
+            responseSchema: nil, reasoningEffort: nil, maxTokens: 256
+        )
+        let body = String(decoding: try #require(mock.recordedRequests.first?.body), as: UTF8.self)
+        // JSON Schema キーワードは仕様どおり camelCase でなければならない。
+        #expect(body.contains("\"additionalProperties\""))
+        #expect(!body.contains("\"additional_properties\""))
     }
 }

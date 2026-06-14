@@ -108,4 +108,16 @@ package struct OpenAICompatibleJSONSchemaWrapper: Encodable, Sendable {
         self.strict = strict
         self.schema = schema
     }
+
+    enum CodingKeys: String, CodingKey {
+        case name, strict, schema
+    }
+
+    package func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encode(strict, forKey: .strict)
+        // JSON Schema キーワードを snake_case 化させないため StructuredValue として埋め込む。
+        try container.encode(JSONSchemaPassthrough.structuredValue(schema), forKey: .schema)
+    }
 }
