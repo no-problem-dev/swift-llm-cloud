@@ -1,5 +1,6 @@
 import Foundation
 import LLMClient
+import LLMCloudClient
 
 /// OpenAI 互換 API リクエストボディ
 package struct OpenAICompatibleRequestBody: Encodable, Sendable {
@@ -97,27 +98,15 @@ package struct OpenAICompatibleResponseFormat: Encodable, Sendable {
     }
 }
 
-/// JSON Schema ラッパー
+/// JSON Schema ラッパー（schema は `WireSchema` でキーワードを verbatim 出力）
 package struct OpenAICompatibleJSONSchemaWrapper: Encodable, Sendable {
     package let name: String
     package let strict: Bool
-    package let schema: JSONSchema
+    package let schema: WireSchema
 
     package init(name: String, strict: Bool, schema: JSONSchema) {
         self.name = name
         self.strict = strict
-        self.schema = schema
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case name, strict, schema
-    }
-
-    package func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(name, forKey: .name)
-        try container.encode(strict, forKey: .strict)
-        // JSON Schema キーワードを snake_case 化させないため StructuredValue として埋め込む。
-        try container.encode(JSONSchemaPassthrough.structuredValue(schema), forKey: .schema)
+        self.schema = WireSchema(schema)
     }
 }

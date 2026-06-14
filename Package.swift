@@ -33,6 +33,8 @@ let package = Package(
             .product(name: "LLMClient", package: "swift-llm-client"),
             .product(name: "LLMTool", package: "swift-llm-client"),
             .product(name: "APIClient", package: "swift-api-client"),
+            .product(name: "StructuredDataCore", package: "swift-structured-data"),
+            .product(name: "JSONParsing", package: "swift-structured-data"),
         ]),
         // OpenAI-compatible shared infrastructure
         .target(name: "LLMCloudOpenAICompatible", dependencies: [

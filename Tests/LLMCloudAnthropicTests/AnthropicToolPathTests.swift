@@ -57,4 +57,31 @@ struct AnthropicToolPathTests {
         #expect(sent.contains("\"any\""))
         #expect(mock.recordedRequests.first?.headers["anthropic-beta"] == nil)
     }
+
+    @Test("input_schema の JSON Schema キーワードは camelCase で出力される(snake_case 化回帰防止)")
+    func schemaKeywordsNotSnakeCased() async throws {
+        let mock = MockTransport { _ in
+            HTTPResponse(status: 200, headers: ["Content-Type": "application/json"], body: toolUseJSON)
+        }
+        // .object 工場はデフォルトで additionalProperties:false を付ける（camelCase キーワード）。
+        let tool = SchemaKeywordTool()
+        _ = try await client(mock).planToolCalls(
+            messages: [LLMMessage(role: .user, content: "hi")],
+            model: .sonnet, tools: ToolSet(tools: [tool]), toolChoice: .auto,
+            systemPrompt: nil, temperature: nil, maxTokens: 200, cachePolicy: .implicit)
+        let sent = String(decoding: try #require(mock.recordedRequests.first?.body), as: UTF8.self)
+        #expect(sent.contains("\"additionalProperties\""))
+        #expect(!sent.contains("additional_properties"))
+    }
+}
+
+/// additionalProperties を含む object スキーマを持つテスト用ツール。
+private struct SchemaKeywordTool: Tool {
+    var toolName: String { "lookup" }
+    var toolDescription: String { "look up" }
+    var inputSchema: JSONSchema {
+        .object(properties: ["q": .string(description: "query")], required: ["q"])
+    }
+    var systemInstruction: String? { nil }
+    func execute(with argumentsData: Data) async throws -> ToolResult { .text("ok") }
 }

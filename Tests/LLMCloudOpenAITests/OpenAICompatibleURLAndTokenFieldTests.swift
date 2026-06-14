@@ -3,6 +3,7 @@ import Testing
 import APIClient   // HTTPTransport(MockTransport/HTTPResponse) を再公開
 import LLMClient
 import LLMTool
+import LLMCloudClient
 @testable import LLMCloudOpenAICompatible
 
 /// 回帰ゲート: OpenAI 互換系の URL 構築とトークンフィールド名を MockTransport で固定する。
@@ -118,10 +119,66 @@ struct OpenAICompatibleURLAndTokenFieldTests {
     @Test("list_remote_agents 形(.object(properties:[:]))が serialize 時に properties を保持する")
     func emptyPropertiesObjectSerializesProperties() throws {
         let adapted = OpenAISchemaAdapter().adapt(.object(properties: [:]))
-        let value = try JSONSchemaPassthrough.structuredValue(adapted)
-        let data = try Foundation.JSONEncoder().encode(value)
+        let data = try Foundation.JSONEncoder().encode(WireSchema(adapted))
         let json = String(decoding: data, as: UTF8.self)
         #expect(json.contains("\"properties\""))
         #expect(json.contains("\"additionalProperties\""))
     }
+
+    @Test("引数なしツールを executeAgentStep で送ると tool params に properties が出る(end-to-end)")
+    func noArgToolEndToEnd() async throws {
+        let mock = MockTransport { _ in
+            HTTPResponse(status: 200, headers: ["Content-Type": "application/json"], body: completionJSON)
+        }
+        let engine = OpenAICompatibleEngine(
+            transport: mock, apiKey: "k",
+            endpoint: URL(string: "https://api.groq.com/openai/v1/chat/completions")!,
+            providerName: "Groq"
+        )
+        _ = try await engine.executeAgentStep(
+            messages: [LLMMessage(role: .user, content: "hi")],
+            modelId: "llama-3.3-70b-versatile",
+            systemPrompt: nil, tools: ToolSet(tools: [NoArgTool()]), toolChoice: .auto,
+            responseSchema: nil, reasoningEffort: nil, maxTokens: 256
+        )
+        let body = String(decoding: try #require(mock.recordedRequests.first?.body), as: UTF8.self)
+        #expect(body.contains("list_remote_agents"))
+        #expect(body.contains("\"properties\""))
+        #expect(body.contains("\"additionalProperties\""))
+    }
+
+    @Test("host 経路(planToolCalls)でも引数なしツールに properties が出る")
+    func noArgToolViaPlanToolCalls() async throws {
+        let toolCallJSON = Data(#"""
+        {"id":"1","object":"chat.completion","created":1,"model":"m",
+         "choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],
+         "usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
+        """#.utf8)
+        let mock = MockTransport { _ in
+            HTTPResponse(status: 200, headers: ["Content-Type": "application/json"], body: toolCallJSON)
+        }
+        let engine = OpenAICompatibleEngine(
+            transport: mock, apiKey: "k",
+            endpoint: URL(string: "https://api.groq.com/openai/v1/chat/completions")!,
+            providerName: "Groq"
+        )
+        _ = try await engine.planToolCalls(
+            messages: [LLMMessage(role: .user, content: "hi")],
+            modelId: "llama-3.3-70b-versatile",
+            tools: ToolSet(tools: [NoArgTool()]), toolChoice: .auto,
+            systemPrompt: nil, temperature: nil, maxTokens: 256
+        )
+        let body = String(decoding: try #require(mock.recordedRequests.first?.body), as: UTF8.self)
+        #expect(body.contains("list_remote_agents"))
+        #expect(body.contains("\"properties\""))
+    }
+}
+
+/// 引数なしツール（list_remote_agents 相当）。inputSchema は空オブジェクト。
+private struct NoArgTool: Tool {
+    var toolName: String { "list_remote_agents" }
+    var toolDescription: String { "list remote agents" }
+    var inputSchema: JSONSchema { .object(properties: [:]) }
+    var systemInstruction: String? { nil }
+    func execute(with argumentsData: Data) async throws -> ToolResult { .text("ok") }
 }

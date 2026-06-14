@@ -152,18 +152,19 @@ struct AnthropicThinkingConfig: Encodable, Sendable {
 struct AnthropicToolDef: Encodable, Sendable {
     let name: String
     let description: String
-    let inputSchema: JSONSchema
+    /// JSON Schema は `WireSchema` で埋め込み、キーワードの snake_case 化を防ぐ。
+    let inputSchema: WireSchema
     let cacheControl: AnthropicCacheControl?
 
     init(name: String, description: String, inputSchema: JSONSchema, cacheControl: AnthropicCacheControl? = nil) {
         self.name = name
         self.description = description
-        self.inputSchema = inputSchema
+        self.inputSchema = WireSchema(inputSchema)
         self.cacheControl = cacheControl
     }
 
     func withCacheControl(_ cacheControl: AnthropicCacheControl) -> AnthropicToolDef {
-        AnthropicToolDef(name: name, description: description, inputSchema: inputSchema, cacheControl: cacheControl)
+        AnthropicToolDef(name: name, description: description, inputSchema: inputSchema.schema, cacheControl: cacheControl)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -365,7 +366,13 @@ enum AnthropicMessageContent: Encodable, Sendable {
 /// Anthropic 出力フォーマット設定
 struct AnthropicOutputFormat: Encodable, Sendable {
     let type: String
-    let schema: JSONSchema
+    /// JSON Schema は `WireSchema` で埋め込み、キーワードの snake_case 化を防ぐ。
+    let schema: WireSchema
+
+    init(type: String, schema: JSONSchema) {
+        self.type = type
+        self.schema = WireSchema(schema)
+    }
 }
 
 /// Anthropic 出力設定

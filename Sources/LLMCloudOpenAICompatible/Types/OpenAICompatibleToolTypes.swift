@@ -1,7 +1,8 @@
 import Foundation
 import LLMClient
+import LLMCloudClient
 
-/// OpenAI 互換ツール定義。スキーマは JSONSchema のまま保持し直列化は contract codec に委ねる。
+/// OpenAI 互換ツール定義。schema は `WireSchema` で埋め込み、キーワードの snake_case 化を防ぐ。
 package struct OpenAICompatibleToolDef: Encodable, Sendable {
     package let type: String
     package let function: OpenAICompatibleFunctionDef
@@ -9,7 +10,7 @@ package struct OpenAICompatibleToolDef: Encodable, Sendable {
     package init(name: String, description: String, parameters: JSONSchema, strict: Bool = true) {
         self.type = "function"
         self.function = OpenAICompatibleFunctionDef(
-            name: name, description: description, strict: strict, parameters: parameters
+            name: name, description: description, strict: strict, parameters: WireSchema(parameters)
         )
     }
 }
@@ -19,20 +20,7 @@ package struct OpenAICompatibleFunctionDef: Encodable, Sendable {
     package let name: String
     package let description: String
     package let strict: Bool
-    package let parameters: JSONSchema
-
-    enum CodingKeys: String, CodingKey {
-        case name, description, strict, parameters
-    }
-
-    package func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(name, forKey: .name)
-        try container.encode(description, forKey: .description)
-        try container.encode(strict, forKey: .strict)
-        // JSON Schema キーワードを snake_case 化させないため StructuredValue として埋め込む。
-        try container.encode(JSONSchemaPassthrough.structuredValue(parameters), forKey: .parameters)
-    }
+    package let parameters: WireSchema
 }
 
 /// OpenAI 互換ツール選択
