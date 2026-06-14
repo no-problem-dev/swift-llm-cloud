@@ -114,4 +114,14 @@ struct OpenAICompatibleURLAndTokenFieldTests {
         #expect(adapted.properties != nil)
         #expect(adapted.additionalProperties == false)
     }
+
+    @Test("list_remote_agents 形(.object(properties:[:]))が serialize 時に properties を保持する")
+    func emptyPropertiesObjectSerializesProperties() throws {
+        let adapted = OpenAISchemaAdapter().adapt(.object(properties: [:]))
+        let value = try JSONSchemaPassthrough.structuredValue(adapted)
+        let data = try Foundation.JSONEncoder().encode(value)
+        let json = String(decoding: data, as: UTF8.self)
+        #expect(json.contains("\"properties\""))
+        #expect(json.contains("\"additionalProperties\""))
+    }
 }

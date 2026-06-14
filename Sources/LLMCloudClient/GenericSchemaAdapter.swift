@@ -172,11 +172,14 @@ package struct GenericSchemaAdapter: ProviderSchemaAdapter {
             adaptedRequired = adaptedProperties.map { Array($0.keys).sorted() } ?? schema.required
         }
 
-        // object スキーマが `required` を持つのに `properties` を欠くと、strict バリデータ
-        // (Groq/OpenAI) が「'required' present but 'properties' is missing」で拒否する。
-        // 引数なしツール等の空オブジェクトでも properties を必ず出す（空なら {}）。
+        // strict モード(OpenAI/Groq)の object は、空でも `properties` を必ず持たねばならない。
+        // properties を欠くと「'required' present but 'properties' is missing」や
+        // additionalProperties:false の整合性で拒否される。引数なしツール等の空オブジェクト対策。
+        // strict 判定は「全プロパティ required + additionalProperties=false 強制」設定で行う。
+        let strictObjects: Bool
+        if case .allPropertiesOnObjects = capabilities.required { strictObjects = true } else { strictObjects = false }
         var finalProperties = adaptedProperties
-        if schema.type == .object, finalProperties == nil, adaptedRequired != nil {
+        if schema.type == .object, finalProperties == nil, strictObjects || adaptedRequired != nil {
             finalProperties = [:]
         }
 
