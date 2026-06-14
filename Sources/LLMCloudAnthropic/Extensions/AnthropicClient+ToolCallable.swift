@@ -24,10 +24,11 @@ extension AnthropicClient: ToolCallableClient {
             maxTokens: maxTokens ?? Self.toolDefaultMaxTokens,
             temperature: temperature,
             tools: anthropicTools,
-            toolChoice: toolChoice.map { AnthropicToolChoiceValue($0) }
+            toolChoice: toolChoice.map { AnthropicToolChoiceValue($0) },
+            cachePolicy: cachePolicy
         )
 
-        let (response, _, _) = try await baseProvider.sendBody(body, beta: nil)
+        let (response, _, _) = try await baseProvider.sendBody(body, beta: AnthropicProvider.betaValues(for: messages) + body.cacheBetaValues)
         return Self.parseToolCallResponse(response)
     }
 

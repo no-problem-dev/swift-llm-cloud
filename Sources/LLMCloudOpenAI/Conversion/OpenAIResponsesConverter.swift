@@ -12,8 +12,9 @@ package enum OpenAIResponsesConverter {
     /// - 通常テキスト → `{role, content}`
     /// - アシスタントの `.toolUse` → `{type: "function_call", call_id, name, arguments}`
     /// - ユーザーの `.toolResult` → `{type: "function_call_output", call_id, output}`
-    /// - `.thinking` / メディア / 未対応コンテンツはスキップ（Responses API への安全なフォールバック）。
-    package static func toInputItems(_ messages: [LLMMessage]) -> [OpenAIResponsesInputItem] {
+    /// - メディア（image/audio/video/document）はこのルート未対応のため `LLMError.mediaNotSupported` を throw する。
+    /// - `.thinking` はモデル生成の推論であり、本ルートでは再注入しない。
+    package static func toInputItems(_ messages: [LLMMessage]) throws -> [OpenAIResponsesInputItem] {
         var items: [OpenAIResponsesInputItem] = []
 
         for message in messages {
@@ -44,8 +45,17 @@ package enum OpenAIResponsesConverter {
                         output: resultContent.contentValue
                     ))
 
-                case .image, .audio, .video, .thinking:
-                    // メディア入力と thinking 再注入は本ルートではサポートしない（A2UI 用途では未使用）。
+                case .image(let image):
+                    throw LLMError.mediaNotSupported(mediaType: image.mimeType, provider: "OpenAI Responses")
+                case .audio(let audio):
+                    throw LLMError.mediaNotSupported(mediaType: audio.mimeType, provider: "OpenAI Responses")
+                case .video(let video):
+                    throw LLMError.mediaNotSupported(mediaType: video.mimeType, provider: "OpenAI Responses")
+                case .document(let document):
+                    throw LLMError.mediaNotSupported(mediaType: document.mimeType, provider: "OpenAI Responses")
+
+                case .thinking:
+                    // thinking はモデル生成の推論であり、本ルートでは再注入しない。
                     continue
                 }
             }

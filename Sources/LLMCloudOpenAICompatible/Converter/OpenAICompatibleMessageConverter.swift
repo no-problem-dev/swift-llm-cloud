@@ -1,5 +1,6 @@
 import Foundation
 import LLMClient
+import LLMCloudClient
 
 /// LLMMessage ↔ OpenAI 互換メッセージ変換
 package enum OpenAICompatibleMessageConverter {
@@ -77,7 +78,7 @@ package enum OpenAICompatibleMessageConverter {
         // メディアコンテンツを含むかチェック
         let hasMedia = message.contents.contains { content in
             switch content {
-            case .image, .audio, .video:
+            case .image, .audio, .video, .document:
                 return true
             default:
                 return false
@@ -96,17 +97,16 @@ package enum OpenAICompatibleMessageConverter {
                     contentParts.append(.text(text))
 
                 case .image(let imageContent):
-                    if let part = convertImageToPart(imageContent) {
-                        contentParts.append(part)
-                    }
+                    contentParts.append(convertImageToPart(imageContent))
 
                 case .audio(let audioContent):
-                    if let part = convertAudioToPart(audioContent) {
-                        contentParts.append(part)
-                    }
+                    contentParts.append(try convertAudioToPart(audioContent, providerName: providerName))
 
                 case .video:
                     throw LLMError.mediaNotSupported(mediaType: "video", provider: providerName)
+
+                case .document:
+                    throw LLMError.mediaNotSupported(mediaType: "document", provider: providerName)
 
                 case .toolUse, .toolResult:
                     break
@@ -150,27 +150,20 @@ package enum OpenAICompatibleMessageConverter {
 
     // MARK: - Private Helpers
 
-    private static func convertImageToPart(_ imageContent: ImageContent) -> OpenAICompatibleContentPart? {
-        let detail = imageContent.detail?.rawValue
-
-        switch imageContent.source {
-        case .base64(let data):
-            let base64String = data.base64EncodedString()
-            let dataUrl = "data:\(imageContent.mimeType);base64,\(base64String)"
-            return .imageUrl(url: dataUrl, detail: detail)
-
-        case .url(let url):
-            return .imageUrl(url: url.absoluteString, detail: detail)
-
-        case .fileReference(let id):
-            return .imageUrl(url: id, detail: detail)
-        }
+    private static func convertImageToPart(_ imageContent: ImageContent) -> OpenAICompatibleContentPart {
+        imageContent.source.fold(
+            base64: { .imageUrl(url: "data:\(imageContent.mimeType);base64,\($0.base64EncodedString())", detail: nil) },
+            url: { .imageUrl(url: $0.absoluteString, detail: nil) },
+            fileReference: { .imageUrl(url: $0, detail: nil) }
+        )
     }
 
-    private static func convertAudioToPart(_ audioContent: AudioContent) -> OpenAICompatibleContentPart? {
+    private static func convertAudioToPart(
+        _ audioContent: AudioContent,
+        providerName: String
+    ) throws -> OpenAICompatibleContentPart {
         switch audioContent.source {
         case .base64(let data):
-            let base64String = data.base64EncodedString()
             let format: String
             switch audioContent.mediaType {
             case .wav:
@@ -178,12 +171,12 @@ package enum OpenAICompatibleMessageConverter {
             case .mp3:
                 format = "mp3"
             case .aac, .flac, .ogg, .aiff:
-                return nil
+                throw LLMError.mediaNotSupported(mediaType: audioContent.mimeType, provider: providerName)
             }
-            return .inputAudio(data: base64String, format: format)
+            return .inputAudio(data: data.base64EncodedString(), format: format)
 
         case .url, .fileReference:
-            return nil
+            throw LLMError.mediaNotSupported(mediaType: "audio (\(audioContent.source.sourceType))", provider: providerName)
         }
     }
 }

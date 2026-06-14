@@ -123,18 +123,23 @@ extension AnthropicAPI {
         static let method: APIMethod = .post
         static let subPath: String = ""
 
-        /// 構造化出力用ベータヘッダー
-        let beta: String?
+        /// ベータヘッダー値（複数可。カンマ結合で `anthropic-beta` に出す）
+        let beta: [String]
         /// リクエストボディ
         let request: AnthropicRequestBody
+
+        init(beta: [String] = [], request: AnthropicRequestBody) {
+            self.beta = beta
+            self.request = request
+        }
 
         var pathParameters: [String: String] { [:] }
         var queryParameters: [String: String]? { nil }
 
         var additionalHeaders: [String: String] {
             var headers: [String: String] = [:]
-            if let beta {
-                headers["anthropic-beta"] = beta
+            if !beta.isEmpty {
+                headers["anthropic-beta"] = beta.joined(separator: ",")
             }
             return headers
         }

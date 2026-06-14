@@ -20,6 +20,8 @@ enum AnthropicMessageConverter {
                 ))
             case .image(let imageContent):
                 blocks.append(.image(imageContent))
+            case .document(let documentContent):
+                blocks.append(.document(documentContent))
             case .audio:
                 throw LLMError.mediaNotSupported(mediaType: "audio", provider: "Anthropic")
             case .video:

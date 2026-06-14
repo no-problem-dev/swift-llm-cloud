@@ -78,7 +78,7 @@ extension OpenAIClient: ImageGenerationCapable {
         }
 
         let actualFormat = format ?? .png
-        if !ImageOutputFormat.openaiFormats.contains(actualFormat) {
+        if !MediaCompatibility.isSupported(actualFormat, by: .openai) {
             throw ImageGenerationError.unsupportedFormat(actualFormat, model: model.displayName)
         }
 

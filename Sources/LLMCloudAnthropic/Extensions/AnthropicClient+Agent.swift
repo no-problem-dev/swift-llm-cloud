@@ -45,11 +45,12 @@ extension AnthropicClient: AgentCapableClient {
             temperature: nil,
             outputConfig: outputConfig,
             tools: anthropicTools,
-            toolChoice: anthropicToolChoice
+            toolChoice: anthropicToolChoice,
+            cachePolicy: cachePolicy
         )
 
-        // 構造化出力は GA（output_config.format）。beta ヘッダーは不要。
-        let beta: String? = nil
+        // 構造化出力は GA（output_config.format）。Files API(file_id)と extended-cache-ttl は必要時のみ beta を付与。
+        let beta = AnthropicProvider.betaValues(for: messages) + body.cacheBetaValues
         let response = try await RetryRunner.run(
             policy: retryConfiguration.policy,
             eventHandler: retryEventHandler
@@ -163,6 +164,7 @@ extension AnthropicClient: AgentCapableClient {
                         toolChoice: toolChoice,
                         responseSchema: responseSchema,
                         maxTokens: maxTokens,
+                        cachePolicy: cachePolicy,
                         continuation: continuation
                     )
                 } catch {
@@ -181,6 +183,7 @@ extension AnthropicClient: AgentCapableClient {
         toolChoice: ToolChoice?,
         responseSchema: JSONSchema?,
         maxTokens: Int?,
+        cachePolicy: PromptCachePolicy,
         continuation: AsyncThrowingStream<StreamingAgentEvent, Error>.Continuation
     ) async throws {
         let anthropicMessages = try messages.map { try AnthropicMessageConverter.convert($0, includeThinking: true) }
@@ -204,10 +207,11 @@ extension AnthropicClient: AgentCapableClient {
             tools: anthropicTools,
             toolChoice: anthropicToolChoice,
             stream: true,
-            thinking: AnthropicThinkingConfig(type: "enabled", budgetTokens: effectiveBudget)
+            thinking: AnthropicThinkingConfig(type: "enabled", budgetTokens: effectiveBudget),
+            cachePolicy: cachePolicy
         )
-        // 構造化出力は GA（output_config.format）。beta ヘッダーは不要。
-        let beta: String? = nil
+        // 構造化出力は GA（output_config.format）。Files API(file_id)と extended-cache-ttl は必要時のみ beta を付与。
+        let beta = AnthropicProvider.betaValues(for: messages) + body.cacheBetaValues
 
         var accumulator = AnthropicStreamAccumulator()
         for try await event in baseProvider.streamMessageEvents(body, beta: beta) {

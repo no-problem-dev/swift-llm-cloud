@@ -52,13 +52,13 @@ internal struct AnthropicProvider: LLMProvider, RetryableProviderProtocol {
 
     /// ストリーミング(stream: true)ボディを contract 経由で送信し、生の SSEEvent を流す。
     /// イベント解釈はプロバイダ側の accumulator が行う。
-    func streamMessageEvents(_ body: AnthropicRequestBody, beta: String?) -> AsyncThrowingStream<SSEEvent, Error> {
+    func streamMessageEvents(_ body: AnthropicRequestBody, beta: [String] = []) -> AsyncThrowingStream<SSEEvent, Error> {
         apiClient.executeEventStream(AnthropicAPI.CreateMessage(beta: beta, request: body))
     }
 
     /// 構築済みボディを contract 経由で送信する（tools/structured output 等、send で
     /// 表現できないリクエストはこちらを使う）。
-    func sendBody(_ body: AnthropicRequestBody, beta: String?) async throws -> (AnthropicResponseBody, Int, [String: String]) {
+    func sendBody(_ body: AnthropicRequestBody, beta: [String] = []) async throws -> (AnthropicResponseBody, Int, [String: String]) {
         let endpoint = AnthropicAPI.CreateMessage(beta: beta, request: body)
         do {
             let apiResponse = try await apiClient.executeWithResponse(endpoint)
@@ -92,8 +92,8 @@ internal struct AnthropicProvider: LLMProvider, RetryableProviderProtocol {
         // リクエストボディを構築
         let body = try buildRequestBody(from: request)
 
-        // 構造化出力は GA（output_config.format）。beta ヘッダーは不要。
-        let endpoint = AnthropicAPI.CreateMessage(beta: nil, request: body)
+        // 構造化出力は GA（output_config.format）。Files API(file_id)と extended-cache-ttl は必要時のみ beta を付与。
+        let endpoint = AnthropicAPI.CreateMessage(beta: Self.betaValues(for: request) + body.cacheBetaValues, request: body)
 
         do {
             let apiResponse = try await apiClient.executeWithResponse(endpoint)
@@ -155,8 +155,30 @@ internal struct AnthropicProvider: LLMProvider, RetryableProviderProtocol {
             system: effectiveSystemPrompt,
             maxTokens: request.maxTokens ?? Self.defaultMaxTokens,
             temperature: request.temperature,
-            outputConfig: outputFormat.map { AnthropicOutputConfig(format: $0) }
+            outputConfig: outputFormat.map { AnthropicOutputConfig(format: $0) },
+            cachePolicy: request.cachePolicy
         )
+    }
+
+    /// Files API beta ヘッダー値
+    static let filesAPIBeta = "files-api-2025-04-14"
+
+    /// メッセージ内の image/document が file_id 参照を使う場合に必要な beta 値を返す。
+    static func betaValues(for request: LLMRequest) -> [String] {
+        betaValues(for: request.messages)
+    }
+
+    static func betaValues(for messages: [LLMMessage]) -> [String] {
+        let usesFileReference = messages.contains { message in
+            message.contents.contains { content in
+                switch content {
+                case .image(let image): return image.source.isFileReference
+                case .document(let document): return document.source.isFileReference
+                default: return false
+                }
+            }
+        }
+        return usesFileReference ? [filesAPIBeta] : []
     }
 
     // MARK: - Response Conversion

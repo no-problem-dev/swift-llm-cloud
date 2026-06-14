@@ -24,8 +24,8 @@ extension AnthropicClient: ChatCapableClient {
             outputConfig: AnthropicOutputConfig(format: outputFormat)
         )
 
-        // 構造化出力は GA（output_config.format）。beta ヘッダーは不要。
-        let (response, _, _) = try await baseProvider.sendBody(body, beta: nil)
+        // 構造化出力は GA（output_config.format）。Files API(file_id)を使う場合のみ beta を付与。
+        let (response, _, _) = try await baseProvider.sendBody(body, beta: AnthropicProvider.betaValues(for: messages))
 
         guard let rawText = response.content.first(where: { AnthropicBlockType(rawValue: $0.type) == .text })?.text else {
             throw LLMError.emptyResponse

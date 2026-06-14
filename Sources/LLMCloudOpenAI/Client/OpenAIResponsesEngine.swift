@@ -83,7 +83,7 @@ package struct OpenAIResponsesEngine: Sendable {
         reasoningEffort: ReasoningEffort?,
         maxTokens: Int?
     ) async throws -> LLMResponse {
-        let inputItems = OpenAIResponsesConverter.toInputItems(messages)
+        let inputItems = try OpenAIResponsesConverter.toInputItems(messages)
         let toolDefs: [OpenAIResponsesToolDef]? = tools.isEmpty
             ? nil
             : OpenAIResponsesConverter.toToolDefs(tools)

@@ -40,7 +40,7 @@ extension AnthropicClient {
                         temperature: temperature,
                         stream: true
                     )
-                    for try await event in baseProvider.streamMessageEvents(body, beta: nil) {
+                    for try await event in baseProvider.streamMessageEvents(body, beta: AnthropicProvider.betaValues(for: messages)) {
                         if let text = Self.extractTextDelta(from: event) {
                             continuation.yield(text)
                         }
