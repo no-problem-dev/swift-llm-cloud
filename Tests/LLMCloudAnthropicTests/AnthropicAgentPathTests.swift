@@ -57,7 +57,8 @@ struct AnthropicAgentPathTests {
         #expect(response.stopReason == .toolUse)
 
         let req = try #require(mock.recordedRequests.first)
-        #expect(req.headers["anthropic-beta"] == "structured-outputs-2025-11-13")
+        // 構造化出力は GA。beta ヘッダーは送らない。
+        #expect(req.headers["anthropic-beta"] == nil)
         let sent = String(decoding: try #require(req.body), as: UTF8.self)
         #expect(sent.contains("\"thinking\""))
         #expect(sent.contains("earlier"))

@@ -48,7 +48,8 @@ extension AnthropicClient: AgentCapableClient {
             toolChoice: anthropicToolChoice
         )
 
-        let beta = responseSchema != nil ? Self.structuredOutputsBeta : nil
+        // 構造化出力は GA（output_config.format）。beta ヘッダーは不要。
+        let beta: String? = nil
         let response = try await RetryRunner.run(
             policy: retryConfiguration.policy,
             eventHandler: retryEventHandler
@@ -82,9 +83,6 @@ extension AnthropicClient: AgentCapableClient {
     }
 
     // MARK: - Private Constants
-
-    /// 構造化出力のベータヘッダー
-    private static let structuredOutputsBeta = "structured-outputs-2025-11-13"
 
     /// デフォルトの最大トークン数（non-thinking 用）
     private static let defaultMaxTokens = 4096
@@ -208,7 +206,8 @@ extension AnthropicClient: AgentCapableClient {
             stream: true,
             thinking: AnthropicThinkingConfig(type: "enabled", budgetTokens: effectiveBudget)
         )
-        let beta = responseSchema != nil ? Self.structuredOutputsBeta : nil
+        // 構造化出力は GA（output_config.format）。beta ヘッダーは不要。
+        let beta: String? = nil
 
         var accumulator = AnthropicStreamAccumulator()
         for try await event in baseProvider.streamMessageEvents(body, beta: beta) {

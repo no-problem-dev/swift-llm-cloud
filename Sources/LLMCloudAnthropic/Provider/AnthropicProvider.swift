@@ -20,9 +20,6 @@ internal struct AnthropicProvider: LLMProvider, RetryableProviderProtocol {
     /// デフォルトの最大トークン数
     private static let defaultMaxTokens = 4096
 
-    /// 構造化出力のベータヘッダー
-    private static let structuredOutputsBeta = "structured-outputs-2025-11-13"
-
     // MARK: - Initializers
 
     /// API キーを指定して初期化
@@ -95,11 +92,8 @@ internal struct AnthropicProvider: LLMProvider, RetryableProviderProtocol {
         // リクエストボディを構築
         let body = try buildRequestBody(from: request)
 
-        // ベータヘッダーの判定
-        let beta: String? = request.responseSchema != nil ? Self.structuredOutputsBeta : nil
-
-        // APIContract エンドポイント経由で実行
-        let endpoint = AnthropicAPI.CreateMessage(beta: beta, request: body)
+        // 構造化出力は GA（output_config.format）。beta ヘッダーは不要。
+        let endpoint = AnthropicAPI.CreateMessage(beta: nil, request: body)
 
         do {
             let apiResponse = try await apiClient.executeWithResponse(endpoint)

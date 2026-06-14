@@ -32,6 +32,7 @@ struct GeminiStreamTextTests {
         #expect(req.headers["accept"] == "text/event-stream")
         #expect(req.url.absoluteString.contains(":streamGenerateContent"))
         #expect(req.url.absoluteString.contains("alt=sse"))
-        #expect(req.url.absoluteString.contains("key=k"))
+        #expect(req.headers["x-goog-api-key"] == "k")
+        #expect(!req.url.absoluteString.contains("key=k"))
     }
 }

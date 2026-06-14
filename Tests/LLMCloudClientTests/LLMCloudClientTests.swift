@@ -3,7 +3,7 @@ import LLMClient
 @testable import LLMCloudClient
 
 @Test func testClaudeModelId() {
-    #expect(ClaudeModel.opus.id == "claude-opus-4-7")
+    #expect(ClaudeModel.opus.id == "claude-opus-4-8")
     #expect(ClaudeModel.opus4_7.id == "claude-opus-4-7")
     #expect(ClaudeModel.opus4_6.id == "claude-opus-4-6")
     #expect(ClaudeModel.sonnet.id == "claude-sonnet-4-6")

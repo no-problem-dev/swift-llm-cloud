@@ -21,6 +21,9 @@ package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol 
     /// プロバイダー固有のカスタムヘッダー
     private let customHeaders: [String: String]
 
+    /// 最大トークン数の送信フィールド名（プロバイダーごとに分岐）
+    private let maxTokensParameter: OpenAICompatibleMaxTokensParameter
+
     /// エンドポイント URL（レスポンスメタデータ構成用）
     private let endpoint: URL
 
@@ -42,11 +45,13 @@ package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol 
         endpoint: URL,
         providerName: String,
         session: URLSession = .shared,
-        customHeaders: [String: String] = [:]
+        customHeaders: [String: String] = [:],
+        maxTokensParameter: OpenAICompatibleMaxTokensParameter = .maxCompletionTokens
     ) {
         self.init(
             transport: URLSessionTransport(session: session),
-            apiKey: apiKey, endpoint: endpoint, providerName: providerName, customHeaders: customHeaders
+            apiKey: apiKey, endpoint: endpoint, providerName: providerName,
+            customHeaders: customHeaders, maxTokensParameter: maxTokensParameter
         )
     }
 
@@ -56,10 +61,12 @@ package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol 
         apiKey: String,
         endpoint: URL,
         providerName: String,
-        customHeaders: [String: String] = [:]
+        customHeaders: [String: String] = [:],
+        maxTokensParameter: OpenAICompatibleMaxTokensParameter = .maxCompletionTokens
     ) {
         self.providerName = providerName
         self.customHeaders = customHeaders
+        self.maxTokensParameter = maxTokensParameter
         self.endpoint = endpoint
         self.apiClient = APIClientImpl(
             baseURL: endpoint,
@@ -161,6 +168,7 @@ package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol 
             model: request.model.id,
             messages: messages,
             maxCompletionTokens: request.maxTokens ?? Self.defaultMaxTokens,
+            maxTokensParameter: maxTokensParameter,
             temperature: request.temperature,
             responseFormat: responseFormat,
             tools: nil,

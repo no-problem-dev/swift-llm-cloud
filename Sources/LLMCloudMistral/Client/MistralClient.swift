@@ -50,6 +50,8 @@ public struct MistralClient: OpenAICompatibleClientProtocol {
             endpoint: endpoint ?? Self.defaultEndpoint,
             providerName: "Mistral",
             session: session,
+            // Mistral は max_completion_tokens を 422 で拒否する（max_tokens のみ）。
+            maxTokensParameter: .maxTokens,
             retryConfiguration: retryConfiguration,
             retryEventHandler: retryEventHandler
         )

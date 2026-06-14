@@ -50,6 +50,8 @@ public struct DeepSeekClient: OpenAICompatibleClientProtocol {
             endpoint: endpoint ?? Self.defaultEndpoint,
             providerName: "DeepSeek",
             session: session,
+            // DeepSeek は max_tokens を使う（max_completion_tokens 非対応）。
+            maxTokensParameter: .maxTokens,
             retryConfiguration: retryConfiguration,
             retryEventHandler: retryEventHandler
         )

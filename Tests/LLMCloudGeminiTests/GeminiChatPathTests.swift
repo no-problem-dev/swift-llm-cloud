@@ -45,7 +45,8 @@ struct GeminiChatPathTests {
         #expect(response.stopReason == .endTurn)
 
         let req = try #require(mock.recordedRequests.first)
-        #expect(req.url.absoluteString.contains("key=k"))
+        #expect(req.headers["x-goog-api-key"] == "k")
+        #expect(!req.url.absoluteString.contains("key=k"))
         #expect(req.url.absoluteString.contains(":generateContent"))
         let sent = String(decoding: try #require(req.body), as: UTF8.self)
         #expect(sent.contains("generationConfig"))

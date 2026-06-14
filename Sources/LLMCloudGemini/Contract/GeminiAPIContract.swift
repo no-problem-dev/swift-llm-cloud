@@ -10,12 +10,13 @@ import FoundationNetworking
 
 /// Google Gemini API のグループ定義
 ///
-/// - Auth: `key` クエリパラメータ
+/// - Auth: `x-goog-api-key` ヘッダー
 /// - basePath は空文字列（baseURL にモデルベースパスを含む）
 /// - Custom Error Decoding: LLMError + RateLimitAwareError
 enum GeminiAPI: APIContractGroup {
     static let basePath: String = ""
-    static let auth: AuthScheme = .queryParam(name: "key")
+    // Google 現行推奨は x-goog-api-key ヘッダー（query param の key は URL ログ漏洩リスクで非推奨）。
+    static let auth: AuthScheme = .apiKey(headerName: "x-goog-api-key")
     static let endpoints: [EndpointDescriptor] = []
     static let commonHeaders: [String: String] = [:]
 

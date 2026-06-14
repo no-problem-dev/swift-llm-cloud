@@ -5,7 +5,9 @@ import LLMClient
 package struct OpenAICompatibleRequestBody: Encodable, Sendable {
     package let model: String
     package let messages: [OpenAICompatibleMessage]
-    package let maxCompletionTokens: Int
+    package let maxTokens: Int
+    /// 最大トークン数を送るフィールド名（プロバイダーごとに max_completion_tokens / max_tokens）。
+    package let maxTokensParameter: OpenAICompatibleMaxTokensParameter
     package let temperature: Double?
     package let responseFormat: OpenAICompatibleResponseFormat?
     package let tools: [OpenAICompatibleToolDef]?
@@ -17,6 +19,7 @@ package struct OpenAICompatibleRequestBody: Encodable, Sendable {
         model: String,
         messages: [OpenAICompatibleMessage],
         maxCompletionTokens: Int,
+        maxTokensParameter: OpenAICompatibleMaxTokensParameter = .maxCompletionTokens,
         temperature: Double?,
         responseFormat: OpenAICompatibleResponseFormat?,
         tools: [OpenAICompatibleToolDef]?,
@@ -25,7 +28,8 @@ package struct OpenAICompatibleRequestBody: Encodable, Sendable {
     ) {
         self.model = model
         self.messages = messages
-        self.maxCompletionTokens = maxCompletionTokens
+        self.maxTokens = maxCompletionTokens
+        self.maxTokensParameter = maxTokensParameter
         self.temperature = temperature
         self.responseFormat = responseFormat
         self.tools = tools
@@ -36,7 +40,6 @@ package struct OpenAICompatibleRequestBody: Encodable, Sendable {
     enum CodingKeys: String, CodingKey {
         case model
         case messages
-        case maxCompletionTokens = "max_completion_tokens"
         case temperature
         case responseFormat = "response_format"
         case tools
@@ -44,11 +47,22 @@ package struct OpenAICompatibleRequestBody: Encodable, Sendable {
         case reasoningEffort = "reasoning_effort"
     }
 
+    /// 最大トークン数フィールドを実行時に決まる名前で出力するための動的キー。
+    private struct DynamicCodingKey: CodingKey {
+        let stringValue: String
+        init(_ stringValue: String) { self.stringValue = stringValue }
+        init?(stringValue: String) { self.stringValue = stringValue }
+        var intValue: Int? { nil }
+        init?(intValue: Int) { nil }
+    }
+
     package func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(model, forKey: .model)
         try container.encode(messages, forKey: .messages)
-        try container.encode(maxCompletionTokens, forKey: .maxCompletionTokens)
+        // 最大トークン数はプロバイダー指定のフィールド名で出力する。
+        var dynamic = encoder.container(keyedBy: DynamicCodingKey.self)
+        try dynamic.encode(maxTokens, forKey: DynamicCodingKey(maxTokensParameter.rawValue))
         if let temperature = temperature {
             try container.encode(temperature, forKey: .temperature)
         }

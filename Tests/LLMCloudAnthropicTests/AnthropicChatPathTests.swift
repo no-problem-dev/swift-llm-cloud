@@ -49,7 +49,8 @@ struct AnthropicChatPathTests {
         let req = try #require(mock.recordedRequests.first)
         #expect(req.headers["x-api-key"] == "k")
         #expect(req.headers["anthropic-version"] == "2023-06-01")
-        #expect(req.headers["anthropic-beta"] == "structured-outputs-2025-11-13")
+        // 構造化出力は GA。beta ヘッダーは送らない。
+        #expect(req.headers["anthropic-beta"] == nil)
         let sent = String(decoding: try #require(req.body), as: UTF8.self)
         #expect(sent.contains("output_config"))
         #expect(sent.contains("max_tokens"))

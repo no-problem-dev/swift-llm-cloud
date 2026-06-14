@@ -24,7 +24,8 @@ extension AnthropicClient: ChatCapableClient {
             outputConfig: AnthropicOutputConfig(format: outputFormat)
         )
 
-        let (response, _, _) = try await baseProvider.sendBody(body, beta: Self.structuredOutputsBeta)
+        // 構造化出力は GA（output_config.format）。beta ヘッダーは不要。
+        let (response, _, _) = try await baseProvider.sendBody(body, beta: nil)
 
         guard let rawText = response.content.first(where: { AnthropicBlockType(rawValue: $0.type) == .text })?.text else {
             throw LLMError.emptyResponse
@@ -52,7 +53,6 @@ extension AnthropicClient: ChatCapableClient {
         )
     }
 
-    private static let structuredOutputsBeta = "structured-outputs-2025-11-13"
     private static let chatDefaultMaxTokens = 4096
 
     private func buildChatSystemPrompt(base: String?, schema: JSONSchema) -> String {

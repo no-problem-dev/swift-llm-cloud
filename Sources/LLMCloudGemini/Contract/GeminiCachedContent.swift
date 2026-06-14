@@ -233,10 +233,10 @@ enum GeminiCacheErrorClassifier {
 
 /// `cachedContents` リソースの CRUD エンドポイント群
 ///
-/// baseURL は `/v1beta`（`/models` の外）。認証は generateContent と同じ `key` クエリパラメータ。
+/// baseURL は `/v1beta`（`/models` の外）。認証は generateContent と同じ `x-goog-api-key` ヘッダー。
 enum GeminiCacheAPI: APIContractGroup {
     static let basePath: String = ""
-    static let auth: AuthScheme = .queryParam(name: "key")
+    static let auth: AuthScheme = .apiKey(headerName: "x-goog-api-key")
     static let endpoints: [EndpointDescriptor] = []
     static let commonHeaders: [String: String] = [:]
 

@@ -36,6 +36,9 @@ package struct OpenAICompatibleEngine: Sendable {
     /// カスタム HTTP ヘッダー
     package let customHeaders: [String: String]
 
+    /// 最大トークン数の送信フィールド名（プロバイダーごとに分岐）
+    package let maxTokensParameter: OpenAICompatibleMaxTokensParameter
+
     /// リトライ設定
     package let retryConfiguration: RetryConfiguration
 
@@ -50,6 +53,7 @@ package struct OpenAICompatibleEngine: Sendable {
         providerName: String,
         session: URLSession = .shared,
         customHeaders: [String: String] = [:],
+        maxTokensParameter: OpenAICompatibleMaxTokensParameter = .maxCompletionTokens,
         retryConfiguration: RetryConfiguration = .default,
         retryEventHandler: RetryEventHandler? = nil
     ) {
@@ -57,6 +61,7 @@ package struct OpenAICompatibleEngine: Sendable {
             transport: URLSessionTransport(session: session),
             apiKey: apiKey, endpoint: endpoint, providerName: providerName,
             session: session, customHeaders: customHeaders,
+            maxTokensParameter: maxTokensParameter,
             retryConfiguration: retryConfiguration, retryEventHandler: retryEventHandler
         )
     }
@@ -69,6 +74,7 @@ package struct OpenAICompatibleEngine: Sendable {
         providerName: String,
         session: URLSession = .shared,
         customHeaders: [String: String] = [:],
+        maxTokensParameter: OpenAICompatibleMaxTokensParameter = .maxCompletionTokens,
         retryConfiguration: RetryConfiguration = .default,
         retryEventHandler: RetryEventHandler? = nil
     ) {
@@ -77,6 +83,7 @@ package struct OpenAICompatibleEngine: Sendable {
         self.providerName = providerName
         self.session = session
         self.customHeaders = customHeaders
+        self.maxTokensParameter = maxTokensParameter
         self.retryConfiguration = retryConfiguration
         self.retryEventHandler = retryEventHandler
 
@@ -85,7 +92,8 @@ package struct OpenAICompatibleEngine: Sendable {
             apiKey: apiKey,
             endpoint: endpoint,
             providerName: providerName,
-            customHeaders: customHeaders
+            customHeaders: customHeaders,
+            maxTokensParameter: maxTokensParameter
         )
         self.baseProvider = baseProvider
 
@@ -198,6 +206,7 @@ package struct OpenAICompatibleEngine: Sendable {
             model: modelId,
             messages: openAIMessages,
             maxCompletionTokens: maxTokens ?? Self.defaultMaxTokens,
+            maxTokensParameter: maxTokensParameter,
             temperature: temperature,
             responseFormat: nil,
             tools: tools.toOpenAIToolDefs(),
@@ -254,6 +263,7 @@ package struct OpenAICompatibleEngine: Sendable {
             model: modelId,
             messages: openAIMessages,
             maxCompletionTokens: maxTokens ?? Self.defaultMaxTokens,
+            maxTokensParameter: maxTokensParameter,
             temperature: nil,
             responseFormat: responseFormat,
             tools: openAITools,

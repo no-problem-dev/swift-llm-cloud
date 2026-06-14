@@ -26,7 +26,7 @@ extension GrokModel: OpenAICompatibleModelProtocol {
 ///
 /// let result: UserInfo = try await client.generate(
 ///     input: "山田太郎さんは35歳です。",
-///     model: .grok3
+///     model: .grok43
 /// )
 /// ```
 public struct XAIClient: OpenAICompatibleClientProtocol {

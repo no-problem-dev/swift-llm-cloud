@@ -400,6 +400,8 @@ public struct OpenRouterClient: OpenAICompatibleClientProtocol {
             providerName: "OpenRouter",
             session: session,
             customHeaders: customHeaders,
+            // OpenRouter は OpenAI 形式の max_tokens を正規パラメータとして扱う。
+            maxTokensParameter: .maxTokens,
             retryConfiguration: retryConfiguration,
             retryEventHandler: retryEventHandler
         )
