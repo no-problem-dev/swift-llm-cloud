@@ -103,4 +103,15 @@ struct OpenAICompatibleURLAndTokenFieldTests {
         #expect(body.contains("\"additionalProperties\""))
         #expect(!body.contains("\"additional_properties\""))
     }
+
+    @Test("引数なしツール: required があれば properties も出す(Groq の properties 欠落拒否再発防止)")
+    func emptyObjectSchemaKeepsProperties() throws {
+        // 引数なしツール相当: object + required(空)だが properties 無し。
+        let schema = JSONSchema(type: .object, required: [])
+        let adapted = OpenAISchemaAdapter().adapt(schema)
+        // strict バリデータは required があるのに properties が無いと拒否するため、
+        // 空でも properties を必ず持たせる。
+        #expect(adapted.properties != nil)
+        #expect(adapted.additionalProperties == false)
+    }
 }

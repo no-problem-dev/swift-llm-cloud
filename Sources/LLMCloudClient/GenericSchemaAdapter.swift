@@ -172,10 +172,18 @@ package struct GenericSchemaAdapter: ProviderSchemaAdapter {
             adaptedRequired = adaptedProperties.map { Array($0.keys).sorted() } ?? schema.required
         }
 
+        // object スキーマが `required` を持つのに `properties` を欠くと、strict バリデータ
+        // (Groq/OpenAI) が「'required' present but 'properties' is missing」で拒否する。
+        // 引数なしツール等の空オブジェクトでも properties を必ず出す（空なら {}）。
+        var finalProperties = adaptedProperties
+        if schema.type == .object, finalProperties == nil, adaptedRequired != nil {
+            finalProperties = [:]
+        }
+
         let adaptedSchema = JSONSchema(
             type: schema.type,
             description: schema.description,
-            properties: adaptedProperties,
+            properties: finalProperties,
             required: adaptedRequired,
             items: adaptedItems,
             additionalProperties: adaptedAdditional,
