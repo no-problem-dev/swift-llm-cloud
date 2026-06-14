@@ -107,9 +107,22 @@ package struct GenericSchemaAdapter: ProviderSchemaAdapter {
     }
 
     package func adaptWithConstraints(_ schema: JSONSchema, fieldPath: String) -> SchemaAdaptationResult {
+        adaptWithConstraints(schema, fieldPath: fieldPath, forceNullable: false)
+    }
+
+    /// - Parameter forceNullable: 親が optional として扱うプロパティに対し null 許容を強制する
+    ///   （OpenAI strict の「全 required + optional は nullable」表現のため）。
+    private func adaptWithConstraints(_ schema: JSONSchema, fieldPath: String, forceNullable: Bool) -> SchemaAdaptationResult {
         var removed: [RemovedConstraint] = []
 
-        let (adaptedProperties, propertyConstraints) = adaptProperties(schema.properties, parentPath: fieldPath)
+        // strict(全プロパティ required)では optional プロパティを nullable 化して required に含める。
+        let strictObjects: Bool
+        if case .allPropertiesOnObjects = capabilities.required { strictObjects = true } else { strictObjects = false }
+
+        let (adaptedProperties, propertyConstraints) = adaptProperties(
+            schema.properties, parentPath: fieldPath,
+            originalRequired: Set(schema.required ?? []), optionalAsNullable: strictObjects
+        )
         removed.append(contentsOf: propertyConstraints)
         let (adaptedItems, itemsConstraints) = adaptItems(schema.items, parentPath: fieldPath)
         removed.append(contentsOf: itemsConstraints)
@@ -175,9 +188,6 @@ package struct GenericSchemaAdapter: ProviderSchemaAdapter {
         // strict モード(OpenAI/Groq)の object は、空でも `properties` を必ず持たねばならない。
         // properties を欠くと「'required' present but 'properties' is missing」や
         // additionalProperties:false の整合性で拒否される。引数なしツール等の空オブジェクト対策。
-        // strict 判定は「全プロパティ required + additionalProperties=false 強制」設定で行う。
-        let strictObjects: Bool
-        if case .allPropertiesOnObjects = capabilities.required { strictObjects = true } else { strictObjects = false }
         var finalProperties = adaptedProperties
         if schema.type == .object, finalProperties == nil, strictObjects || adaptedRequired != nil {
             finalProperties = [:]
@@ -185,6 +195,7 @@ package struct GenericSchemaAdapter: ProviderSchemaAdapter {
 
         let adaptedSchema = JSONSchema(
             type: schema.type,
+            nullable: schema.nullable || forceNullable,
             description: schema.description,
             properties: finalProperties,
             required: adaptedRequired,
@@ -207,13 +218,18 @@ package struct GenericSchemaAdapter: ProviderSchemaAdapter {
 
     // MARK: - Helpers
 
-    private func adaptProperties(_ properties: [String: JSONSchema]?, parentPath: String) -> ([String: JSONSchema]?, [RemovedConstraint]) {
+    private func adaptProperties(
+        _ properties: [String: JSONSchema]?, parentPath: String,
+        originalRequired: Set<String>, optionalAsNullable: Bool
+    ) -> ([String: JSONSchema]?, [RemovedConstraint]) {
         guard let properties else { return (nil, []) }
         var adapted: [String: JSONSchema] = [:]
         var constraints: [RemovedConstraint] = []
         for (key, value) in properties {
             let path = parentPath.isEmpty ? key : "\(parentPath).\(key)"
-            let result = adaptWithConstraints(value, fieldPath: path)
+            // strict で元々 optional(required 外)のプロパティは null 許容にして全 required に含める。
+            let forceNullable = optionalAsNullable && !originalRequired.contains(key)
+            let result = adaptWithConstraints(value, fieldPath: path, forceNullable: forceNullable)
             adapted[key] = result.schema
             constraints.append(contentsOf: result.removedConstraints)
         }
