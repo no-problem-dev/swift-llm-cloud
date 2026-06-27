@@ -33,7 +33,8 @@ jobs:
         run: |
           swift package --allow-writing-to-directory ./docs \
             generate-documentation \
-            --target LLMCloud \
+            --enable-experimental-combined-documentation \
+            --target LLMCloudClient --target LLMCloudOpenAICompatible --target LLMCloudAnthropic --target LLMCloudOpenAI --target LLMCloudGemini --target LLMCloudDeepSeek --target LLMCloudXAI --target LLMCloudGroq --target LLMCloudMistral --target LLMCloudOpenRouter --target LLMCloud --target LLMCloudBranding \
             --disable-indexing \
             --transform-for-static-hosting \
             --hosting-base-path swift-llm-cloud \
