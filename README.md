@@ -44,12 +44,19 @@ dependencies: [
 ```swift
 import LLMCloudAnthropic
 
-let anthropic = AnthropicProvider(apiKey: "your-api-key")
-for try await chunk in anthropic.stream(messages: [
-    .user("Swift 6 の並行処理について教えて")
-], model: "claude-sonnet-4-20250514") {
-    print(chunk.text, terminator: "")
+let client = AnthropicClient(apiKey: "your-api-key")
+
+@Structured("応答")
+struct Reply {
+    @StructuredField("回答")
+    var answer: String
 }
+
+let result: Reply = try await client.generate(
+    input: "Swift 6 の並行処理について教えて",
+    model: .sonnet
+)
+print(result.answer)
 ```
 
 ### OpenAI GPT
@@ -57,12 +64,19 @@ for try await chunk in anthropic.stream(messages: [
 ```swift
 import LLMCloudOpenAI
 
-let openai = OpenAIProvider(apiKey: "your-api-key")
-for try await chunk in openai.stream(messages: [
-    .user("関数型プログラミングの利点は？")
-], model: "gpt-4o") {
-    print(chunk.text, terminator: "")
+let client = OpenAIClient(apiKey: "your-api-key")
+
+@Structured("応答")
+struct Reply {
+    @StructuredField("回答")
+    var answer: String
 }
+
+let result: Reply = try await client.generate(
+    input: "関数型プログラミングの利点は？",
+    model: .gpt4o
+)
+print(result.answer)
 ```
 
 ### Google Gemini
@@ -70,12 +84,19 @@ for try await chunk in openai.stream(messages: [
 ```swift
 import LLMCloudGemini
 
-let gemini = GeminiProvider(apiKey: "your-api-key")
-for try await chunk in gemini.stream(messages: [
-    .user("SwiftUI のベストプラクティスを教えて")
-], model: "gemini-2.0-flash") {
-    print(chunk.text, terminator: "")
+let client = GeminiClient(apiKey: "your-api-key")
+
+@Structured("応答")
+struct Reply {
+    @StructuredField("回答")
+    var answer: String
 }
+
+let result: Reply = try await client.generate(
+    input: "SwiftUI のベストプラクティスを教えて",
+    model: .flash25
+)
+print(result.answer)
 ```
 
 ## ドキュメント
@@ -94,7 +115,7 @@ for try await chunk in gemini.stream(messages: [
 
 ## 依存関係
 
-- [swift-llm-client](https://github.com/no-problem-dev/swift-llm-client) (>= 1.1.0) - LLM クライアント抽象化
+- [swift-llm-client](https://github.com/no-problem-dev/swift-llm-client) (>= 3.9.0) - LLM クライアント抽象化
 
 ## ライセンス
 

@@ -5,9 +5,13 @@ import LLMClient
 
 /// リトライイベント
 public struct RetryEvent: Sendable {
+    /// 現在の試行回数（1 始まり）。
     public let attempt: Int
+    /// 最大リトライ回数。
     public let maxRetries: Int
+    /// 発生したエラー。
     public let error: LLMError
+    /// 次のリトライまでの待機時間（秒）。
     public let delaySeconds: TimeInterval
 
     public var reason: String {
