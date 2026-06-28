@@ -1,5 +1,7 @@
 # ``LLMCloudAnthropic``
 
+Anthropic Claude API のクライアント実装。
+
 ## Overview
 
 `LLMCloudAnthropic` は Anthropic Claude API のクライアント実装です。`AnthropicClient` を通じて、構造化出力・チャット・ツールコール・エージェントステップ・トークンカウント・ストリーミングの各機能を提供します。
