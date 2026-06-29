@@ -17,8 +17,8 @@ extension OpenAIClient: VideoGenerationCapable {
 
     /// 動画生成ジョブを開始
     ///
-    /// Sora 2 API を使用して動画生成を開始します。
-    /// 動画生成は非同期で処理されるため、ジョブ ID を返します。
+    /// Sora 2 API を使用して動画生成を開始する。
+    /// 動画生成は非同期で処理されるため、ジョブ ID を返す。
     ///
     /// ## 使用例
     /// ```swift

@@ -2,12 +2,12 @@
 
 ## Installation
 
-`LLMCloudClient` は swift-llm-cloud の内部モジュールです。通常は上位のプロバイダーモジュール（`LLMCloudAnthropic` 等）への依存を追加することで自動的に含まれます。
+`LLMCloudClient` は swift-llm-cloud の内部モジュール。通常は上位のプロバイダーモジュール（`LLMCloudAnthropic` 等）への依存を追加することで自動的に含まれる。
 
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-llm-cloud.git", from: "1.0.0")
+    .package(url: "https://github.com/no-problem-dev/swift-llm-cloud.git", from: "3.37.0")
 ],
 targets: [
     .target(name: "MyApp", dependencies: [
@@ -18,11 +18,11 @@ targets: [
 
 ## Basic Usage
 
-`LLMCloudClient` を直接使う主なユースケースは **カスタムリトライポリシー** の実装です。
+`LLMCloudClient` を直接使う主なユースケースは **カスタムリトライポリシー** の実装。
 
 ### カスタムリトライポリシーの実装
 
-`RetryPolicy` プロトコルに準拠した独自ポリシーを定義し、プロバイダーへ注入できます。
+`RetryPolicy` プロトコルに準拠した独自ポリシーを定義し、プロバイダーへ注入できる。
 
 ```swift
 import LLMCloudClient
@@ -44,7 +44,7 @@ struct LinearBackoffPolicy: RetryPolicy {
 
 ### リトライイベントの監視
 
-`RetryEventHandler` を渡すと各リトライ試行を監視できます。
+`RetryEventHandler` を渡すと各リトライ試行を監視できる。
 
 ```swift
 let client = AnthropicClient(

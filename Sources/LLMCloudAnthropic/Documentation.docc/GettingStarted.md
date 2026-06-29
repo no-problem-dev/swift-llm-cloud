@@ -5,7 +5,7 @@
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-llm-cloud.git", from: "1.0.0")
+    .package(url: "https://github.com/no-problem-dev/swift-llm-cloud.git", from: "3.37.0")
 ],
 targets: [
     .target(name: "MyApp", dependencies: [
@@ -26,7 +26,7 @@ let client = AnthropicClient(apiKey: "sk-ant-...")
 
 ### 2. 出力型を定義
 
-`@Structured` と `@StructuredField` マクロで型を定義します。
+`@Structured` と `@StructuredField` マクロで型を定義する。
 
 ```swift
 @Structured("商品情報")

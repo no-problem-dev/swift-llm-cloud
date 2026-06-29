@@ -14,10 +14,10 @@ extension MistralModel: OpenAICompatibleModelProtocol {
 
 // MARK: - MistralClient
 
-/// Mistral AI API クライアント
+/// Mistral AI API クライアント。
 ///
 /// Mistral モデルを使用した構造化出力、チャット、
-/// ツールコール、エージェント機能を提供します。
+/// ツールコール、エージェント機能を提供する。
 ///
 /// ## 使用例
 ///

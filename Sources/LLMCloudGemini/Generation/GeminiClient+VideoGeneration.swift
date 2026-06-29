@@ -17,8 +17,8 @@ extension GeminiClient: VideoGenerationCapable {
 
     /// 動画生成ジョブを開始
     ///
-    /// Veo API を使用して動画生成を開始します。
-    /// 動画生成は非同期で処理されるため、ジョブ ID を返します。
+    /// Veo API を使用して動画生成を開始する。
+    /// 動画生成は非同期で処理されるため、ジョブ ID を返す。
     public func startVideoGeneration(
         input: LLMInput,
         model: GeminiVideoModel,

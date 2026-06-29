@@ -8,11 +8,11 @@ import FoundationNetworking
 
 // MARK: - AnthropicClient
 
-/// Anthropic Claude API クライアント
+/// Anthropic Claude API クライアント。
 ///
-/// Claude モデルを使用して型安全な構造化出力を生成します。
+/// Claude モデルを使用して型安全な構造化出力を生成する。
 /// モデル選択は `ClaudeModel` 型に制約されており、
-/// 他のプロバイダーのモデルを誤って指定することはできません。
+/// 他のプロバイダーのモデルを誤って指定できない。
 ///
 /// ## 使用例
 ///
@@ -51,10 +51,12 @@ import FoundationNetworking
 /// ```
 ///
 /// ## 対応モデル
-/// - `.opus` - Claude Opus 4.5（最高性能）
-/// - `.sonnet` - Claude Sonnet 4.5（バランス型）
+/// - `.opus` - Claude Opus 4.8（最新 Opus への別名・最高性能）
+/// - `.sonnet` - Claude Sonnet 4.6（バランス型）
 /// - `.haiku` - Claude Haiku 4.5（高速・低コスト）
-/// - `.opus4_1` - Claude Opus 4.1
+///
+/// バージョン固定の別名（`.opus4_5`・`.sonnet4_5` 等）や、
+/// 明示バージョン指定（`.opus4_1_version("...")` 等）も利用できる。
 public struct AnthropicClient: StructuredLLMClient {
     public typealias Model = ClaudeModel
 

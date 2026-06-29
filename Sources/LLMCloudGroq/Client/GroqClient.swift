@@ -14,10 +14,10 @@ extension GroqModel: OpenAICompatibleModelProtocol {
 
 // MARK: - GroqClient
 
-/// Groq API クライアント
+/// Groq API クライアント。
 ///
 /// Groq のホステッドモデル（Llama, Qwen 等）を使用した構造化出力、チャット、
-/// ツールコール、エージェント機能を提供します。
+/// ツールコール、エージェント機能を提供する。
 ///
 /// ## 使用例
 ///

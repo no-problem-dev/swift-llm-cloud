@@ -1,62 +1,72 @@
-[English](README_EN.md) | 日本語
+English | [日本語](./README.ja.md)
 
 # LLMCloud
 
-マルチプロバイダー LLM クラウドクライアント Swift パッケージ
+A multi-provider LLM cloud client Swift package
 
 ![Swift](https://img.shields.io/badge/Swift-6.2-orange.svg)
 ![Platforms](https://img.shields.io/badge/Platforms-iOS%2017.0+%20%7C%20macOS%2014.0+-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-## 特徴
+## Features
 
-- **マルチプロバイダー** - Anthropic Claude、OpenAI GPT、Google Gemini を統一 API で利用
-- **統一インターフェース** - プロバイダー間で共通のプロトコルベース設計
-- **ストリーミング** - 全プロバイダーで AsyncThrowingStream によるリアルタイム出力
-- **Function Calling** - 全プロバイダーでツール呼び出しをサポート
-- **構造化出力** - JSON Schema ベースの型安全なレスポンス
+- **Multi-Provider** — Anthropic Claude, OpenAI GPT, Google Gemini, and more via a unified API
+- **Unified Interface** — Common protocol-based design across all providers
+- **Streaming** — Real-time output via `AsyncThrowingStream` for all providers
+- **Function Calling** — Tool invocation support across all providers
+- **Structured Output** — Type-safe responses using `@Structured` macro (JSON Schema auto-generated)
 
-## インストール
+## Installation
 
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-llm-cloud.git", .upToNextMajor(from: "1.0.0"))
+    .package(url: "https://github.com/no-problem-dev/swift-llm-cloud.git", from: "3.37.0")
 ]
 ```
 
-### モジュール構成
+### Module Structure
 
-用途に応じて必要なモジュールのみをインポートできます：
+Import only the modules you need:
 
-| モジュール | 用途 |
-|-----------|------|
-| `LLMCloud` | アンブレラ（全プロバイダー再エクスポート） |
-| `LLMCloudClient` | プロバイダー共通インフラストラクチャ |
-| `LLMCloudAnthropic` | Anthropic Claude プロバイダー |
-| `LLMCloudOpenAI` | OpenAI GPT プロバイダー |
-| `LLMCloudGemini` | Google Gemini プロバイダー |
+| Module | Purpose |
+|--------|---------|
+| `LLMCloud` | Umbrella (re-exports Anthropic, OpenAI, Gemini) |
+| `LLMCloudClient` | Shared infrastructure (retry, rate limiting, schema conversion) |
+| `LLMCloudAnthropic` | Anthropic Claude provider |
+| `LLMCloudOpenAI` | OpenAI GPT provider (with Responses API support) |
+| `LLMCloudGemini` | Google Gemini provider (with context cache support) |
+| `LLMCloudDeepSeek` | DeepSeek provider (V4 Flash/Pro) |
+| `LLMCloudXAI` | xAI Grok provider |
+| `LLMCloudGroq` | Groq-hosted models (Llama, Qwen, etc.) |
+| `LLMCloudMistral` | Mistral AI provider |
+| `LLMCloudOpenRouter` | OpenRouter (single interface to multiple providers) |
+| `LLMCloudOpenAICompatible` | Shared OpenAI-compatible engine layer |
+| `LLMCloudBranding` | Provider brand logos (SwiftUI) |
 
-## クイックスタート
+## Quick Start
 
 ### Anthropic Claude
 
 ```swift
 import LLMCloudAnthropic
 
-let client = AnthropicClient(apiKey: "your-api-key")
+let client = AnthropicClient(apiKey: "sk-ant-...")
 
-@Structured("応答")
-struct Reply {
-    @StructuredField("回答")
-    var answer: String
+@Structured("Product info")
+struct Product {
+    @StructuredField("Product name")
+    var name: String
+    @StructuredField("Price in USD", .minimum(0))
+    var price: Double
 }
 
-let result: Reply = try await client.generate(
-    input: "Swift 6 の並行処理について教えて",
+let result: Product = try await client.generate(
+    input: "The iPhone 16 Pro costs $999 and is a smartphone.",
     model: .sonnet
 )
-print(result.answer)
+print(result.name)   // "iPhone 16 Pro"
+print(result.price)  // 999.0
 ```
 
 ### OpenAI GPT
@@ -64,19 +74,12 @@ print(result.answer)
 ```swift
 import LLMCloudOpenAI
 
-let client = OpenAIClient(apiKey: "your-api-key")
+let client = OpenAIClient(apiKey: "sk-...")
 
-@Structured("応答")
-struct Reply {
-    @StructuredField("回答")
-    var answer: String
-}
-
-let result: Reply = try await client.generate(
-    input: "関数型プログラミングの利点は？",
+let result: Product = try await client.generate(
+    input: "The MacBook Pro costs $1999 and is a laptop.",
     model: .gpt4o
 )
-print(result.answer)
 ```
 
 ### Google Gemini
@@ -84,46 +87,40 @@ print(result.answer)
 ```swift
 import LLMCloudGemini
 
-let client = GeminiClient(apiKey: "your-api-key")
+let client = GeminiClient(apiKey: "AIza...")
 
-@Structured("応答")
-struct Reply {
-    @StructuredField("回答")
-    var answer: String
-}
-
-let result: Reply = try await client.generate(
-    input: "SwiftUI のベストプラクティスを教えて",
+let result: Product = try await client.generate(
+    input: "The AirPods Pro cost $249 and are wireless earbuds.",
     model: .flash25
 )
-print(result.answer)
 ```
 
-## ドキュメント
+## Documentation
 
-詳細なガイドと API リファレンスは DocC ドキュメントを参照してください。
+| Guide | Description |
+|-------|-------------|
+| [API Reference](https://no-problem-dev.github.io/swift-llm-cloud/documentation/llmcloud/) | Full public API |
 
-| ガイド | 内容 |
-|-------|------|
-| [API Reference](https://no-problem-dev.github.io/swift-llm-cloud/documentation/llmcloud/) | 全パブリック API |
-
-## 要件
+## Requirements
 
 - iOS 17.0+ / macOS 14.0+
 - Swift 6.2+
 - Xcode 16.0+
 
-## 依存関係
+## Dependencies
 
-- [swift-llm-client](https://github.com/no-problem-dev/swift-llm-client) (>= 3.9.0) - LLM クライアント抽象化
+- [swift-llm-client](https://github.com/no-problem-dev/swift-llm-client) (>= 3.9.0) — LLM client abstraction
+- [swift-structured-data](https://github.com/no-problem-dev/swift-structured-data) (>= 1.1.0) — Structured data conversion
+- [swift-api-contract](https://github.com/no-problem-dev/swift-api-contract) (>= 2.1.2) — API contract definition
+- [swift-api-client](https://github.com/no-problem-dev/swift-api-client) (>= 2.3.1) — HTTP client
 
-## ライセンス
+## License
 
-MIT License - 詳細は [LICENSE](LICENSE) を参照
+MIT License — See [LICENSE](LICENSE) for details
 
-## リンク
+## Links
 
-- [完全なドキュメント](https://no-problem-dev.github.io/swift-llm-cloud/documentation/llmcloud/)
-- [Issue報告](https://github.com/no-problem-dev/swift-llm-cloud/issues)
-- [ディスカッション](https://github.com/no-problem-dev/swift-llm-cloud/discussions)
-- [リリースプロセス](RELEASE_PROCESS.md)
+- [Full Documentation](https://no-problem-dev.github.io/swift-llm-cloud/documentation/llmcloud/)
+- [Report Issues](https://github.com/no-problem-dev/swift-llm-cloud/issues)
+- [Discussions](https://github.com/no-problem-dev/swift-llm-cloud/discussions)
+- [Release Process](RELEASE_PROCESS.md)

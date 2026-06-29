@@ -4,9 +4,9 @@ OpenRouter 経由で複数プロバイダーのモデルを利用するための
 
 ## Overview
 
-`LLMCloudOpenRouter` は OpenRouter API に対応した Swift クライアントです。`OpenRouterClient` を通じて、Anthropic・OpenAI・Google・xAI・DeepSeek・Meta・Mistral など複数プロバイダーのモデルを単一のインターフェースで利用できます。
+`LLMCloudOpenRouter` は OpenRouter API に対応した Swift クライアント。`OpenRouterClient` を通じて、Anthropic・OpenAI・Google・xAI・DeepSeek・Meta・Mistral など複数プロバイダーのモデルを単一のインターフェースで利用できる。
 
-モデルは `OpenRouterModel` 型で指定します。文字列で任意のモデル ID を指定できるほか、キュレーション済みのプリセットを `OpenRouterModel.Preset` から選択することもできます。内部的に `LLMCloudOpenAICompatible` の共有エンジンを使用しています。
+モデルは `OpenRouterModel` 型で指定する。文字列で任意のモデル ID を指定できるほか、キュレーション済みのプリセットを `OpenRouterModel.Preset` から選択することもできる。内部的に `LLMCloudOpenAICompatible` の共有エンジンを使用している。
 
 ### 任意モデルの指定
 
@@ -46,11 +46,11 @@ let result: Summary = try await client.generate(
 
 ## Topics
 
-### Client
+### クライアント
 
 - ``OpenRouterClient``
 
-### Model
+### モデル
 
 - ``OpenRouterModel``
 - ``OpenRouterModel/Preset``

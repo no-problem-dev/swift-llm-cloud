@@ -16,11 +16,11 @@ extension GPTModel: OpenAICompatibleModelProtocol {
 
 // MARK: - OpenAIClient
 
-/// OpenAI GPT API クライアント
+/// OpenAI GPT API クライアント。
 ///
-/// GPT モデルを使用して型安全な構造化出力を生成します。
+/// GPT モデルを使用して型安全な構造化出力を生成する。
 /// モデル選択は `GPTModel` 型に制約されており、
-/// 他のプロバイダーのモデルを誤って指定することはできません。
+/// 他のプロバイダーのモデルを誤って指定できない。
 ///
 /// ## 使用例
 ///

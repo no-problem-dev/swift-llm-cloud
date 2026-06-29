@@ -6,32 +6,32 @@ import LLMClient
 
 // MARK: - RetryableProviderProtocol
 
-/// リトライ可能なプロバイダーのプロトコル
+/// リトライ可能なプロバイダーのプロトコル。
 ///
-/// HTTPレスポンスを含むリクエスト送信機能を提供し、
-/// レート制限情報の抽出とリトライ判定を可能にします。
+/// HTTP レスポンスを含むリクエスト送信機能を持ち、
+/// レート制限情報の抽出とリトライ判定を可能にする。
 public protocol RetryableProviderProtocol: LLMProvider {
-    /// リクエストを送信し、レスポンスとHTTPレスポンスの両方を返します。
+    /// リクエストを送信し、LLM レスポンスと HTTP レスポンスのタプルを返す。
     ///
-    /// - Parameter request: 送信するLLMリクエスト。
-    /// - Returns: LLMレスポンスとHTTPレスポンスのタプル。
+    /// - Parameter request: 送信する LLM リクエスト。
+    /// - Returns: LLM レスポンスと HTTP レスポンスのタプル。
     /// - Throws: リクエストの送信に失敗した場合。
     func sendWithResponse(_ request: LLMRequest) async throws -> (LLMResponse, HTTPURLResponse)
 }
 
 // MARK: - RetryableProvider
 
-/// リトライ機能付きのLLMプロバイダーラッパー
+/// リトライ機能付きの LLM プロバイダーラッパー。
 ///
 /// 内部プロバイダーをラップし、設定されたリトライポリシーに基づいて
-/// 失敗したリクエストを自動的にリトライします。
-/// レート制限情報を考慮した待機時間の調整もサポートします。
+/// 失敗したリクエストを自動的にリトライする。
+/// レート制限情報を考慮した待機時間の調整もサポートする。
 public struct RetryableProvider<ExtractorType: RateLimitInfoExtractable>: LLMProvider {
     private let innerProvider: any RetryableProviderProtocol
     private let retryPolicy: any RetryPolicy
     private let eventHandler: RetryEventHandler?
 
-    /// 新しいリトライ可能プロバイダーを作成します。
+    /// 新しいリトライ可能プロバイダーを作成する。
     ///
     /// - Parameters:
     ///   - provider: ラップする内部プロバイダー。
@@ -58,10 +58,10 @@ public struct RetryableProvider<ExtractorType: RateLimitInfoExtractable>: LLMPro
 
 // MARK: - RateLimitAwareError
 
-/// レート制限情報を含むエラー
+/// レート制限情報と元エラーをペアで保持するエラー型。
 ///
-/// HTTPレスポンスからレート制限情報を抽出した際に、
-/// 元のエラーとレート制限情報をペアで保持します。
+/// HTTP レスポンスからレート制限情報を抽出した際に生成される。
+/// `RetryRunner` がレート制限情報を待機時間の計算に利用するために使用する。
 public struct RateLimitAwareError: Error, Sendable {
     /// 元のLLMエラー。
     public let underlyingError: LLMError
@@ -70,12 +70,12 @@ public struct RateLimitAwareError: Error, Sendable {
     /// HTTPステータスコード。
     public let statusCode: Int
 
-    /// 新しいレート制限対応エラーを作成します。
+    /// 新しいレート制限対応エラーを作成する。
     ///
     /// - Parameters:
-    ///   - underlyingError: 元のLLMエラー。
+    ///   - underlyingError: 元の LLM エラー。
     ///   - rateLimitInfo: 抽出されたレート制限情報。
-    ///   - statusCode: HTTPステータスコード。
+    ///   - statusCode: HTTP ステータスコード。
     public init(underlyingError: LLMError, rateLimitInfo: RateLimitInfo, statusCode: Int) {
         self.underlyingError = underlyingError
         self.rateLimitInfo = rateLimitInfo

@@ -340,10 +340,10 @@ extension OpenRouterModel {
 
 // MARK: - OpenRouterClient
 
-/// OpenRouter API クライアント
+/// OpenRouter API クライアント。
 ///
-/// OpenRouter 経由で任意のモデルにアクセスするクライアントです。
-/// 構造化出力、チャット、ツールコール、エージェント機能を提供します。
+/// OpenRouter 経由で任意のモデルにアクセスするクライアント。
+/// 構造化出力、チャット、ツールコール、エージェント機能を提供する。
 ///
 /// ## 使用例
 ///

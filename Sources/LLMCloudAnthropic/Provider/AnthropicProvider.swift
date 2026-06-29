@@ -12,7 +12,7 @@ import FoundationNetworking
 /// Anthropic Claude API プロバイダー（内部実装）
 ///
 /// APIClient + APIContract を使用して Anthropic Messages API を呼び出す。
-/// このプロバイダーは `AnthropicClient` 内部で使用されます。
+/// このプロバイダーは `AnthropicClient` 内部で使用される。
 internal struct AnthropicProvider: LLMProvider, RetryableProviderProtocol {
     /// APIClient（同一モジュール内の拡張から count_tokens でも利用するため internal）
     let apiClient: APIClientImpl

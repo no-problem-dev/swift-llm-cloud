@@ -13,7 +13,7 @@ import FoundationNetworking
 /// Google Gemini API プロバイダー（内部実装）
 ///
 /// APIClient + APIContract を使用して Gemini API を呼び出す。
-/// このプロバイダーは `GeminiClient` 内部で使用されます。
+/// このプロバイダーは `GeminiClient` 内部で使用される。
 internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
     /// APIClient
     private let apiClient: APIClientImpl

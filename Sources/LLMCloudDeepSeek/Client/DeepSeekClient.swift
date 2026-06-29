@@ -14,10 +14,10 @@ extension DeepSeekModel: OpenAICompatibleModelProtocol {
 
 // MARK: - DeepSeekClient
 
-/// DeepSeek API クライアント
+/// DeepSeek API クライアント。
 ///
-/// DeepSeek-V3 / DeepSeek-R1 モデルを使用した構造化出力、チャット、
-/// ツールコール、エージェント機能を提供します。
+/// DeepSeek-V4 モデル（`.v4Flash` / `.v4Pro`）を使用した構造化出力、チャット、
+/// ツールコール、エージェント機能を提供する。
 ///
 /// ## 使用例
 ///
@@ -26,7 +26,7 @@ extension DeepSeekModel: OpenAICompatibleModelProtocol {
 ///
 /// let result: UserInfo = try await client.generate(
 ///     input: "山田太郎さんは35歳です。",
-///     model: .v3
+///     model: .v4Flash
 /// )
 /// ```
 public struct DeepSeekClient: OpenAICompatibleClientProtocol {

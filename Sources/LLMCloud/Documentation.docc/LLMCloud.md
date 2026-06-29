@@ -4,9 +4,9 @@ swift-llm-cloud の主要モジュールをまとめてインポートするア�
 
 ## Overview
 
-`LLMCloud` は `LLMCloudClient`、`LLMCloudAnthropic`、`LLMCloudOpenAI`、`LLMCloudGemini` の 4 モジュールを `@_exported import` で再公開するアンブレラターゲットです。
+`LLMCloud` は `LLMCloudClient`、`LLMCloudAnthropic`、`LLMCloudOpenAI`、`LLMCloudGemini` の 4 モジュールを `@_exported import` で再公開するアンブレラターゲット。
 
-複数のプロバイダーを 1 つの `import` 文でまとめて利用したい場合に使用します。特定のプロバイダーのみ使用する場合は、そのプロバイダーのモジュール（`LLMCloudAnthropic` など）を直接インポートした方がコンパイル時間を短縮できます。
+複数のプロバイダーを 1 つの `import` 文でまとめて利用したい場合に使用する。特定のプロバイダーのみ使用する場合は、そのプロバイダーのモジュール（`LLMCloudAnthropic` など）を直接インポートした方がコンパイル時間を短縮できる。
 
 ```swift
 import LLMCloud
@@ -24,6 +24,6 @@ let gemini = GeminiClient(apiKey: "AIza...")
 - `LLMCloudOpenAI` — OpenAI GPT クライアント（Responses API 対応）
 - `LLMCloudGemini` — Google Gemini クライアント（コンテキストキャッシュ対応）
 
-DeepSeek・xAI・Groq・Mistral・OpenRouter を使用する場合は、それぞれのモジュール（`LLMCloudDeepSeek`、`LLMCloudXAI`、`LLMCloudGroq`、`LLMCloudMistral`、`LLMCloudOpenRouter`）を直接インポートしてください。`LLMCloud` はこれらを含みません。
+DeepSeek・xAI・Groq・Mistral・OpenRouter を使用する場合は、それぞれのモジュール（`LLMCloudDeepSeek`、`LLMCloudXAI`、`LLMCloudGroq`、`LLMCloudMistral`、`LLMCloudOpenRouter`）を直接インポートする。`LLMCloud` はこれらを含まない。
 
 ## Topics

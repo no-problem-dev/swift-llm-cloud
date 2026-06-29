@@ -10,9 +10,9 @@ import Foundation
 extension AnthropicClient: AgentCapableClient {
     /// エージェントステップを実行
     ///
-    /// Anthropic Claude API を使用してエージェントステップを実行します。
-    /// ツールコールと構造化出力の両方をサポートします。
-    /// リトライ設定に基づいて、レート制限やサーバーエラー時に自動リトライを行います。
+    /// Anthropic Claude API を使用してエージェントステップを実行する。
+    /// ツールコールと構造化出力の両方をサポートする。
+    /// リトライ設定に基づいて、レート制限やサーバーエラー時に自動リトライを行う。
     public func executeAgentStep(
         messages: [LLMMessage],
         model: ClaudeModel,
@@ -94,7 +94,7 @@ extension AnthropicClient: AgentCapableClient {
     /// Extended Thinking 有効時のデフォルト思考バジェットトークン数
     ///
     /// `defaultMaxTokensWithThinking` (16384) のうち 10240 を思考に割り当て、
-    /// 残り 6144 を出力用に確保します。
+    /// 残り 6144 を出力用に確保する。
     private static let defaultThinkingBudgetTokens = 10240
 
     // MARK: - Private Helpers
@@ -103,8 +103,8 @@ extension AnthropicClient: AgentCapableClient {
 
     /// エージェントステップをストリーミング実行
     ///
-    /// thinking が有効な場合、SSE ストリーミングで thinking_delta/text_delta をリアルタイムに返します。
-    /// thinking が無効な場合は既存の `executeAgentStep()` にフォールバックします。
+    /// thinking が有効な場合、SSE ストリーミングで thinking_delta/text_delta をリアルタイムに返す。
+    /// thinking が無効な場合は既存の `executeAgentStep()` にフォールバックする。
     public func streamAgentStep(
         messages: [LLMMessage],
         model: ClaudeModel,

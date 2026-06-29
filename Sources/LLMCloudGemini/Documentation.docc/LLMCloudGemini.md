@@ -4,9 +4,9 @@ Google Gemini モデルの Swift クライアント実装。
 
 ## Overview
 
-`LLMCloudGemini` は Google Gemini API に対応した Swift クライアントです。`GeminiClient` を通じて、構造化出力・チャット・ツールコール・エージェントステップ・画像生成・動画生成（Veo）・明示的プロンプトキャッシュ（`cachedContents`）の各機能を提供します。
+`LLMCloudGemini` は Google Gemini API に対応した Swift クライアント。`GeminiClient` を通じて、構造化出力・チャット・ツールコール・エージェントステップ・画像生成・動画生成（Veo）・明示的プロンプトキャッシュ（`cachedContents`）の各機能を提供する。
 
-モデル選択は `GeminiModel` 型に制約されており、型安全なプロバイダー指定が保証されます。
+モデル選択は `GeminiModel` 型に制約されており、型安全なプロバイダー指定が保証される。
 
 ### 構造化出力
 
@@ -33,7 +33,7 @@ print(summary.positives)  // ["直感的な操作", "素晴らしい画質"]
 
 ### 明示的プロンプトキャッシュ
 
-長いシステムプロンプトやドキュメントを `cachedContents` に保持することで、繰り返しリクエストのコストを削減できます。キャッシュのライフサイクルイベントは `GeminiCacheEventHandler` で観測できます。
+長いシステムプロンプトやドキュメントを `cachedContents` に保持することで、繰り返しリクエストのコストを削減できる。キャッシュのライフサイクルイベントは `GeminiCacheEventHandler` で観測できる。
 
 ```swift
 let client = GeminiClient(
@@ -50,11 +50,11 @@ let client = GeminiClient(
 
 ## Topics
 
-### Client
+### クライアント
 
 - ``GeminiClient``
 
-### Context Cache
+### コンテキストキャッシュ
 
 - ``GeminiCacheEvent``
 - ``GeminiCacheEventHandler``

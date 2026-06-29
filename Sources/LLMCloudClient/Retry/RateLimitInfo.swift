@@ -5,10 +5,10 @@ import FoundationNetworking
 
 // MARK: - RateLimitInfo
 
-/// APIレート制限の情報
+/// API レート制限情報。
 ///
-/// HTTPレスポンスヘッダーから抽出されたレート制限に関する情報を保持します。
-/// リトライ待機時間の算出に使用されます。
+/// HTTP レスポンスヘッダーから抽出されたレート制限情報を保持する。
+/// リトライ待機時間の算出に使用する。
 public struct RateLimitInfo: Sendable {
     /// サーバーが指定したリトライ待機時間（秒）。
     public let retryAfter: TimeInterval?
@@ -27,7 +27,7 @@ public struct RateLimitInfo: Sendable {
         remainingTokens: nil, tokensResetIn: nil
     )
 
-    /// 新しいレート制限情報を作成します。
+    /// 新しいレート制限情報を作成する。
     ///
     /// - Parameters:
     ///   - retryAfter: サーバーが指定したリトライ待機時間（秒）。
@@ -51,7 +51,7 @@ public struct RateLimitInfo: Sendable {
 
     /// 推奨される待機時間（秒）。
     ///
-    /// `retryAfter`、`requestsResetIn`、`tokensResetIn` の順で最初に利用可能な値を返します。
+    /// `retryAfter`、`requestsResetIn`、`tokensResetIn` の順で最初に利用可能な値を返す。
     public var suggestedWaitTime: TimeInterval? {
         retryAfter ?? requestsResetIn ?? tokensResetIn
     }
@@ -59,13 +59,13 @@ public struct RateLimitInfo: Sendable {
 
 // MARK: - RateLimitInfoExtractable Protocol
 
-/// HTTPレスポンスからレート制限情報を抽出するプロトコル
+/// HTTP レスポンスからレート制限情報を抽出するプロトコル。
 ///
-/// プロバイダー固有のレスポンスヘッダーからレート制限情報を解析する機能を提供します。
+/// プロバイダー固有のレスポンスヘッダーからレート制限情報を解析する。
 public protocol RateLimitInfoExtractable {
-    /// HTTPレスポンスからレート制限情報を抽出します。
+    /// HTTP レスポンスからレート制限情報を抽出する。
     ///
-    /// - Parameter response: レート制限ヘッダーを含むHTTPレスポンス。
+    /// - Parameter response: レート制限ヘッダーを含む HTTP レスポンス。
     /// - Returns: 抽出されたレート制限情報。
     static func extractRateLimitInfo(from response: HTTPURLResponse) -> RateLimitInfo
 }

@@ -4,9 +4,9 @@
 
 ## Overview
 
-`LLMCloudBranding` は、各クラウド LLM プロバイダー / モデルファミリーのブランド identity（表示名・ロゴアセット）を 1 モジュールに集約します。他のターゲットには一切依存せず、純粋な表示資産として機能します。
+`LLMCloudBranding` は、各クラウド LLM プロバイダー / モデルファミリーのブランド identity（表示名・ロゴアセット）を 1 モジュールに集約する。他のターゲットには一切依存せず、純粋な表示資産として機能する。
 
-`CloudProviderBrand` でプロバイダーを特定し、`CloudProviderLogo` SwiftUI ビューでロゴを描画します。アセットは `ProviderLogos.xcassets`（モジュール同梱）に格納されており、アプリバンドルへのコピーは不要です。
+`CloudProviderBrand` でプロバイダーを特定し、`CloudProviderLogo` SwiftUI ビューでロゴを描画する。アセットは `ProviderLogos.xcassets`（モジュール同梱）に格納されており、アプリバンドルへのコピーは不要。
 
 ### ロゴの表示
 
@@ -37,7 +37,7 @@ struct BrandList: View {
 
 ### モデルファミリー名からブランドを解決
 
-モデル ID やファミリー名だけからブランドを推定したい場合は `from(modelFamily:)` を使用します。
+モデル ID やファミリー名だけからブランドを推定したい場合は `from(modelFamily:)` を使用する。
 
 ```swift
 let brand = CloudProviderBrand.from(modelFamily: "claude")  // .anthropic
@@ -46,10 +46,10 @@ let brand = CloudProviderBrand.from(modelFamily: "gemini")  // .google
 
 ## Topics
 
-### Brand Identity
+### ブランド識別子
 
 - ``CloudProviderBrand``
 
-### SwiftUI Views
+### SwiftUI ビュー
 
 - ``CloudProviderLogo``

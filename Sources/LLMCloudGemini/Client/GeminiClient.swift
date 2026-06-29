@@ -8,11 +8,11 @@ import FoundationNetworking
 
 // MARK: - GeminiClient
 
-/// Google Gemini API クライアント
+/// Google Gemini API クライアント。
 ///
-/// Gemini モデルを使用して型安全な構造化出力を生成します。
+/// Gemini モデルを使用して型安全な構造化出力を生成する。
 /// モデル選択は `GeminiModel` 型に制約されており、
-/// 他のプロバイダーのモデルを誤って指定することはできません。
+/// 他のプロバイダーのモデルを誤って指定できない。
 ///
 /// ## 使用例
 ///
@@ -38,7 +38,7 @@ import FoundationNetworking
 /// // トークン使用量を取得
 /// let resultWithUsage: GenerationResult<UserInfo> = try await client.generateWithUsage(
 ///     input: "山田太郎さんは35歳です。",
-///     model: .flash3
+///     model: .flash3Preview
 /// )
 /// print("Input tokens: \(resultWithUsage.usage.inputTokens)")
 /// print("Output tokens: \(resultWithUsage.usage.outputTokens)")
@@ -51,11 +51,15 @@ import FoundationNetworking
 /// ```
 ///
 /// ## 対応モデル
-/// - `.pro31` - Gemini 3.1 Pro（最新・最高性能）
-/// - `.pro3` - Gemini 3 Pro
-/// - `.flash3` - Gemini 3 Flash
+/// - `.flash35` - Gemini 3.5 Flash
+/// - `.pro31Preview` - Gemini 3.1 Pro（Preview）
+/// - `.flashLite31` - Gemini 3.1 Flash-Lite
+/// - `.flash3Preview` - Gemini 3 Flash（Preview）
 /// - `.pro25` - Gemini 2.5 Pro
 /// - `.flash25` - Gemini 2.5 Flash
+/// - `.flashLite25` - Gemini 2.5 Flash-Lite
+///
+/// バージョン固定指定（`.pro25_version("...")` 等）も利用できる。
 public struct GeminiClient: StructuredLLMClient {
     public typealias Model = GeminiModel
 
@@ -104,6 +108,7 @@ public struct GeminiClient: StructuredLLMClient {
     ///   - session: カスタム URLSession（オプション）
     ///   - retryConfiguration: リトライ設定（デフォルト: 有効）
     ///   - retryEventHandler: リトライイベントハンドラー（オプション）
+    ///   - cacheEventHandler: プロンプトキャッシュのライフサイクルイベントハンドラー（オプション）
     public init(
         apiKey: String,
         baseURL: String? = nil,
