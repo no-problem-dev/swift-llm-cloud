@@ -6,7 +6,7 @@ import LLMClient
 package struct StaticTokenProvider: AuthTokenProvider {
     package let token: String
     package init(token: String) { self.token = token }
-    package func getToken() async throws -> String? { token }
+    package func fetchToken() async throws -> String? { token }
 }
 
 /// ベースのシステムプロンプトと制約プロンプトを合成する。各プロバイダ共通。

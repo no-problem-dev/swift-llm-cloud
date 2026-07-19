@@ -9,6 +9,16 @@
 
 なし
 
+## [4.0.0] - 2026-07-19
+
+### ⚠️ 破壊的変更
+
+- swift-api-client の依存を `from: "3.0.0"` に更新（ファミリーの api-client 世代統一）。
+  api-client 3.0.0 の `AuthTokenProvider` 要件改名に伴い、内部の
+  `StaticTokenProvider.getToken()` を `fetchToken()` に改名した。
+  `package` アクセスレベルのため公開 API の変更は無いが、依存の major が上がるため
+  消費者の解決グラフに影響する。
+
 ## [3.32.0] - 2026-06-14
 
 コンテキストウィンドウ内訳のための Anthropic `count_tokens` アダプタを追加。
