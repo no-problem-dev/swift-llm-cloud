@@ -19,6 +19,20 @@ package func composeSystemPrompt(base: String?, constraints: SystemPrompt?) -> S
     }
 }
 
+package extension URL {
+    /// 末尾のパスコンポーネントを取り除いた、末尾スラッシュなしの base URL。
+    ///
+    /// `deletingLastPathComponent()` は末尾スラッシュ付き URL（`…/v1beta/`）を返し、
+    /// Foundation の版によっては leading slash 付きパスとの結合で `…/v1beta//models/…` の
+    /// ような二重スラッシュ URL を生む。エンドポイント base として使う URL は
+    /// 常に末尾スラッシュなしへ正規化する。
+    var deletingLastPathComponentAsBase: URL {
+        let parent = deletingLastPathComponent()
+        guard parent.absoluteString.hasSuffix("/") else { return parent }
+        return URL(string: String(parent.absoluteString.dropLast())) ?? parent
+    }
+}
+
 /// 通信層の ``APIError`` をドメインの ``LLMError`` へ写像する。各プロバイダ共通。
 package func mapAPIErrorToLLMError(_ error: APIError) -> LLMError {
     switch error {

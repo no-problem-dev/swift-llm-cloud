@@ -146,7 +146,7 @@ public struct OpenAIClient: OpenAICompatibleClientProtocol {
 
         // `/v1/chat/completions` → `/v1` をメディアの baseURL とする。
         self.mediaClient = APIClientImpl(
-            baseURL: chatEndpoint.deletingLastPathComponent().deletingLastPathComponent(),
+            baseURL: chatEndpoint.deletingLastPathComponentAsBase.deletingLastPathComponentAsBase,
             transport: transport,
             authTokenProvider: StaticTokenProvider(token: apiKey),
             defaultHeaders: customHeaders,

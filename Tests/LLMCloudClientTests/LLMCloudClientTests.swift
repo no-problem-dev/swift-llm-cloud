@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import LLMClient
 @testable import LLMCloudClient
@@ -39,4 +40,18 @@ import LLMClient
     let config = RetryConfiguration.disabled
     #expect(config.isEnabled == false)
     #expect(config.maxRetries == 0)
+}
+
+@Suite("URL base 正規化")
+struct URLBaseNormalizationTests {
+    @Test("deletingLastPathComponentAsBase は末尾スラッシュを残さない")
+    func noTrailingSlash() {
+        let media = URL(string: "https://generativelanguage.googleapis.com/v1beta/models")!
+        #expect(media.deletingLastPathComponentAsBase.absoluteString
+            == "https://generativelanguage.googleapis.com/v1beta")
+
+        let chat = URL(string: "https://api.openai.com/v1/chat/completions")!
+        #expect(chat.deletingLastPathComponentAsBase.deletingLastPathComponentAsBase.absoluteString
+            == "https://api.openai.com/v1")
+    }
 }

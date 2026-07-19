@@ -151,7 +151,7 @@ public struct GeminiClient: StructuredLLMClient {
             keyStyle: .default
         )
         self.veoClient = APIClientImpl(
-            baseURL: mediaBaseURL.deletingLastPathComponent(),
+            baseURL: mediaBaseURL.deletingLastPathComponentAsBase,
             transport: transport,
             authTokenProvider: StaticTokenProvider(token: apiKey),
             keyStyle: .default
@@ -159,7 +159,7 @@ public struct GeminiClient: StructuredLLMClient {
         // cachedContents は models/ の外 (/v1beta/cachedContents)。認証は key クエリパラメータ
         self.contextCache = GeminiContextCacheStore(
             apiClient: APIClientImpl(
-                baseURL: mediaBaseURL.deletingLastPathComponent(),
+                baseURL: mediaBaseURL.deletingLastPathComponentAsBase,
                 transport: transport,
                 authTokenProvider: StaticTokenProvider(token: apiKey),
                 keyStyle: .default
