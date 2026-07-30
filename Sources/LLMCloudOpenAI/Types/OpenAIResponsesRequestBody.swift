@@ -20,6 +20,8 @@ package struct OpenAIResponsesRequestBody: Encodable, Sendable {
     package let maxOutputTokens: Int
     /// stateless 運用: false 固定（previous_response_id を使わないため）
     package let store: Bool
+    /// SSE ストリーミング。false のときはキー自体を出力しない（非ストリーミングの wire 形を不変に保つ）。
+    package let stream: Bool
 
     package init(
         model: String,
@@ -30,7 +32,8 @@ package struct OpenAIResponsesRequestBody: Encodable, Sendable {
         reasoning: OpenAIResponsesReasoningConfig?,
         text: OpenAIResponsesTextConfig?,
         maxOutputTokens: Int,
-        store: Bool = false
+        store: Bool = false,
+        stream: Bool = false
     ) {
         self.model = model
         self.instructions = instructions
@@ -41,6 +44,7 @@ package struct OpenAIResponsesRequestBody: Encodable, Sendable {
         self.text = text
         self.maxOutputTokens = maxOutputTokens
         self.store = store
+        self.stream = stream
     }
 
     enum CodingKeys: String, CodingKey {
@@ -53,6 +57,7 @@ package struct OpenAIResponsesRequestBody: Encodable, Sendable {
         case text
         case maxOutputTokens = "max_output_tokens"
         case store
+        case stream
     }
 
     package func encode(to encoder: Encoder) throws {
@@ -76,6 +81,9 @@ package struct OpenAIResponsesRequestBody: Encodable, Sendable {
         }
         try container.encode(maxOutputTokens, forKey: .maxOutputTokens)
         try container.encode(store, forKey: .store)
+        if stream {
+            try container.encode(true, forKey: .stream)
+        }
     }
 }
 

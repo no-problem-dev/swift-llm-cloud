@@ -123,6 +123,108 @@ package struct OpenAIResponsesEngine: Sendable {
         return OpenAIResponsesConverter.toLLMResponse(responseBody)
     }
 
+    /// エージェントステップをストリーミング実行する。
+    ///
+    /// SSE の `data:` JSON を `type` で分岐し、`response.output_text.delta` をテキスト
+    /// デルタとして即 yield する。ground truth は `response.completed` に入る完全な
+    /// Response で、既存の `OpenAIResponsesConverter.toLLMResponse` でそのまま変換する
+    /// （ツール引数のデルタ組み立ては不要）。
+    ///
+    /// ストリーミング経路はリトライしない（途中失敗の再試行はデルタ重複になる）。
+    package func streamAgentStep(
+        messages: [LLMMessage],
+        modelId: String,
+        systemPrompt: SystemPrompt?,
+        tools: ToolSet,
+        toolChoice: ToolChoice?,
+        responseSchema: JSONSchema?,
+        reasoningEffort: ReasoningEffort?,
+        maxTokens: Int?
+    ) -> AsyncThrowingStream<StreamingAgentEvent, Error> {
+        makeCancellableStream { continuation in
+            Task {
+                do {
+                    try await self.executeStreamingAgentStep(
+                        messages: messages,
+                        modelId: modelId,
+                        systemPrompt: systemPrompt,
+                        tools: tools,
+                        toolChoice: toolChoice,
+                        responseSchema: responseSchema,
+                        reasoningEffort: reasoningEffort,
+                        maxTokens: maxTokens,
+                        continuation: continuation
+                    )
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    private func executeStreamingAgentStep(
+        messages: [LLMMessage],
+        modelId: String,
+        systemPrompt: SystemPrompt?,
+        tools: ToolSet,
+        toolChoice: ToolChoice?,
+        responseSchema: JSONSchema?,
+        reasoningEffort: ReasoningEffort?,
+        maxTokens: Int?,
+        continuation: AsyncThrowingStream<StreamingAgentEvent, Error>.Continuation
+    ) async throws {
+        let inputItems = try OpenAIResponsesConverter.toInputItems(messages)
+        let toolDefs: [OpenAIResponsesToolDef]? = tools.isEmpty
+            ? nil
+            : OpenAIResponsesConverter.toToolDefs(tools)
+        let resolvedToolChoice = OpenAIResponsesConverter.toToolChoice(toolChoice, hasTools: !tools.isEmpty)
+
+        let textConfig: OpenAIResponsesTextConfig? = responseSchema.map { schema in
+            let adapter = OpenAISchemaAdapter()
+            return OpenAIResponsesTextConfig(
+                format: OpenAIResponsesFormat(
+                    name: "response",
+                    schema: adapter.adapt(schema),
+                    strict: true
+                )
+            )
+        }
+
+        let body = OpenAIResponsesRequestBody(
+            model: modelId,
+            instructions: systemPrompt?.render(),
+            input: inputItems,
+            tools: toolDefs,
+            toolChoice: resolvedToolChoice,
+            reasoning: reasoningEffort.map { OpenAIResponsesReasoningConfig(effort: $0) },
+            text: textConfig,
+            maxOutputTokens: maxTokens ?? Self.defaultMaxOutputTokens,
+            store: false,
+            stream: true
+        )
+
+        let contract = OpenAIResponsesAPI.CreateResponse(customHeaders: customHeaders, request: body)
+        var completed = false
+        for try await sse in apiClient.executeEventStream(contract) {
+            switch OpenAIResponsesStreamEvent(data: sse.data) {
+            case .outputTextDelta(let delta):
+                continuation.yield(.delta(.textDelta(delta)))
+            case .reasoningTextDelta(let delta):
+                continuation.yield(.delta(.thinkingDelta(delta)))
+            case .completed(let response):
+                guard !completed else { break }
+                completed = true
+                continuation.yield(.completed(OpenAIResponsesConverter.toLLMResponse(response)))
+            case .failed(let message):
+                continuation.finish(throwing: LLMError.serverError(0, message))
+                return
+            case .ignored:
+                break
+            }
+        }
+        continuation.finish()
+    }
+
     // MARK: - Private
 
     /// リクエストボディを contract 経由で送信し、デコード済みレスポンスボディを返す。

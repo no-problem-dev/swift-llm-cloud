@@ -67,4 +67,45 @@ extension OpenAIClient {
             maxTokens: maxTokens
         )
     }
+
+    /// エージェントステップをストリーミング実行する。
+    ///
+    /// ストリーミングは常に `/v1/responses` 経由（`OpenAIResponsesEngine`）。
+    /// `executeAgentStep` の reasoning_effort 依存の経路分岐をストリーミングに
+    /// 持ち込まない — 「特定の設定のときだけストリーミングされない」という
+    /// 分かりにくい条件を作らないため。thinking の有無ともストリーミング可否は独立。
+    public func streamAgentStep(
+        messages: [LLMMessage],
+        model: GPTModel,
+        systemPrompt: SystemPrompt?,
+        tools: ToolSet,
+        toolChoice: ToolChoice?,
+        responseSchema: JSONSchema?,
+        thinkingMode: ThinkingMode,
+        reasoningEffort: ReasoningEffort?,
+        maxTokens: Int?,
+        cachePolicy: PromptCachePolicy
+    ) -> AsyncThrowingStream<StreamingAgentEvent, Error> {
+        _ = thinkingMode
+        _ = cachePolicy // OpenAI のプロンプトキャッシュは自動（明示パラメータなし）
+
+        let effectiveEffort: ReasoningEffort? = {
+            guard let effort = reasoningEffort, model.supportsReasoningEffort else { return nil }
+            if effort == .minimal, !model.supportsMinimalReasoningEffort {
+                return .low
+            }
+            return effort
+        }()
+
+        return responsesEngine.streamAgentStep(
+            messages: messages,
+            modelId: model.id,
+            systemPrompt: systemPrompt,
+            tools: tools,
+            toolChoice: toolChoice,
+            responseSchema: responseSchema,
+            reasoningEffort: effectiveEffort,
+            maxTokens: maxTokens
+        )
+    }
 }
