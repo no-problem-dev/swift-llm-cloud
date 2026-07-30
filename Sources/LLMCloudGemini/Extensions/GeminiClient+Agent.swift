@@ -4,6 +4,12 @@ import LLMTool
 import LLMAgentStep
 import Foundation
 
+/// エージェントステップ用に構築済みのリクエスト（ボディ + キャッシュ回復に使う安定プレフィックス）
+struct GeminiAgentStepRequest: Sendable {
+    let body: GeminiRequestBody
+    let prefix: GeminiStablePrefix
+}
+
 extension GeminiClient: AgentCapableClient {
     public func executeAgentStep(
         messages: [LLMMessage],
@@ -19,6 +25,44 @@ extension GeminiClient: AgentCapableClient {
     ) async throws -> LLMResponse {
         _ = thinkingMode
 
+        let request = await makeAgentStepRequest(
+            messages: messages,
+            model: model,
+            systemPrompt: systemPrompt,
+            tools: tools,
+            toolChoice: toolChoice,
+            responseSchema: responseSchema,
+            reasoningEffort: reasoningEffort,
+            maxTokens: maxTokens,
+            cachePolicy: cachePolicy
+        )
+
+        let response = try await RetryRunner.run(
+            policy: retryConfiguration.policy,
+            eventHandler: retryEventHandler
+        ) {
+            try await self.sendBodyRecoveringCacheLoss(
+                request.body,
+                prefix: request.prefix,
+                cachePolicy: cachePolicy,
+                modelId: model.id
+            ).0
+        }
+        return Self.agentResponseToLLM(response, model: model.id)
+    }
+
+    /// エージェントステップのリクエストを構築する（非ストリーミング/ストリーミング共用）
+    func makeAgentStepRequest(
+        messages: [LLMMessage],
+        model: GeminiModel,
+        systemPrompt: SystemPrompt?,
+        tools: ToolSet,
+        toolChoice: ToolChoice?,
+        responseSchema: JSONSchema?,
+        reasoningEffort: ReasoningEffort?,
+        maxTokens: Int?,
+        cachePolicy: PromptCachePolicy
+    ) async -> GeminiAgentStepRequest {
         let contents = messages.flatMap { GeminiContentConverter.convert($0) }
 
         var systemInstruction: GeminiContent?
@@ -59,14 +103,7 @@ extension GeminiClient: AgentCapableClient {
             generationConfig: generationConfig,
             promptContext: promptContext
         )
-
-        let response = try await RetryRunner.run(
-            policy: retryConfiguration.policy,
-            eventHandler: retryEventHandler
-        ) {
-            try await self.sendBodyRecoveringCacheLoss(body, prefix: prefix, cachePolicy: cachePolicy, modelId: model.id).0
-        }
-        return Self.agentResponseToLLM(response, model: model.id)
+        return GeminiAgentStepRequest(body: body, prefix: prefix)
     }
 
     private static let agentDefaultMaxTokens = 4096
