@@ -33,15 +33,10 @@ extension OpenAIClient {
     ) async throws -> LLMResponse {
         _ = thinkingMode // OpenAI 系は Extended Thinking ではなく reasoning_effort で思考量を制御する
 
-        // モデルが対応しない場合は reasoning_effort を必ず落とす（API 拒否回避）。
-        // また minimal 非対応モデル（o-series）で minimal が来た場合は low に丸める。
-        let effectiveEffort: ReasoningEffort? = {
-            guard let effort = reasoningEffort, model.supportsReasoningEffort else { return nil }
-            if effort == .minimal, !model.supportsMinimalReasoningEffort {
-                return .low
-            }
-            return effort
-        }()
+        // モデルが受け付ける段に寄せる（API 拒否回避）。対応する段はモデルの
+        // 世代ごとに違う — GPT-5.6 は max まで、o-series は low/medium/high だけ、
+        // minimal は 5.1 以降で none に置き換わった
+        let effectiveEffort = reasoningEffort.flatMap(model.clamped)
 
         if effectiveEffort != nil, !tools.isEmpty {
             return try await responsesEngine.executeAgentStep(
@@ -89,13 +84,7 @@ extension OpenAIClient {
         _ = thinkingMode
         _ = cachePolicy // OpenAI のプロンプトキャッシュは自動（明示パラメータなし）
 
-        let effectiveEffort: ReasoningEffort? = {
-            guard let effort = reasoningEffort, model.supportsReasoningEffort else { return nil }
-            if effort == .minimal, !model.supportsMinimalReasoningEffort {
-                return .low
-            }
-            return effort
-        }()
+        let effectiveEffort = reasoningEffort.flatMap(model.clamped)
 
         return responsesEngine.streamAgentStep(
             messages: messages,

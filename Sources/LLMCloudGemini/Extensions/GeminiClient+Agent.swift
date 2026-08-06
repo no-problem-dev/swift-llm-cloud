@@ -110,24 +110,31 @@ extension GeminiClient: AgentCapableClient {
 
     /// `ReasoningEffort` を Gemini の `thinkingConfig` にマップする。
     /// 3 系: thinkingLevel 文字列。2.5 系: thinkingBudget 整数。
+    ///
+    /// `ReasoningEffort` は OpenAI の段（none / minimal / low / medium / high /
+    /// xhigh / max）だが、**Gemini が受け付ける thinkingLevel は
+    /// minimal / low / medium / high の 4 つだけ**（実 API で確認）。
+    /// 無い段は近いものへ寄せる。
     private static func thinkingConfig(for effort: ReasoningEffort, model: GeminiModel) -> GeminiThinkingConfig {
         switch model.thinkingControlStyle {
         case .level:
             let level: String
             switch effort {
-            case .minimal: level = model.supportsMinimalThinkingLevel ? "minimal" : "low"
+            // none に当たる段は無い。minimal が最小
+            case .none, .minimal: level = model.supportsMinimalThinkingLevel ? "minimal" : "low"
             case .low: level = "low"
             case .medium: level = "medium"
-            case .high: level = "high"
+            // xhigh / max に当たる段は無い。high が上限
+            case .high, .xhigh, .max: level = "high"
             }
             return GeminiThinkingConfig(thinkingLevel: level, thinkingBudget: nil)
         case .budget:
             let budget: Int
             switch effort {
-            case .minimal: budget = model.canDisableThinking ? 0 : 128
+            case .none, .minimal: budget = model.canDisableThinking ? 0 : 128
             case .low: budget = 1024
             case .medium: budget = 8192
-            case .high: budget = 24576
+            case .high, .xhigh, .max: budget = 24576
             }
             return GeminiThinkingConfig(thinkingLevel: nil, thinkingBudget: budget)
         case .unsupported:

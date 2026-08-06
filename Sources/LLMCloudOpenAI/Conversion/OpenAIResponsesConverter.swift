@@ -1,5 +1,6 @@
 import Foundation
 import LLMClient
+import LLMCloudClient
 import LLMCloudOpenAICompatible
 import LLMTool
 
@@ -10,43 +11,60 @@ package enum OpenAIResponsesConverter {
     /// `LLMMessage` 配列を Responses API の `input` 配列に変換する。
     ///
     /// - 通常テキスト → `{role, content}`
+    /// - 画像を含むメッセージ → `{role, content: [{input_text}, {input_image}]}`
     /// - アシスタントの `.toolUse` → `{type: "function_call", call_id, name, arguments}`
     /// - ユーザーの `.toolResult` → `{type: "function_call_output", call_id, output}`
-    /// - メディア（image/audio/video/document）はこのルート未対応のため `LLMError.mediaNotSupported` を throw する。
+    /// - audio / video / document は Responses API の画像入力に相当するものが無いため
+    ///   `LLMError.mediaNotSupported` を throw する。
     /// - `.thinking` はモデル生成の推論であり、本ルートでは再注入しない。
     package static func toInputItems(_ messages: [LLMMessage]) throws -> [OpenAIResponsesInputItem] {
         var items: [OpenAIResponsesInputItem] = []
 
         for message in messages {
             let role = message.role == .user ? "user" : "assistant"
-            var textBuffer = ""
+            // テキストと画像は**同じメッセージにまとめる**。分けると画像が
+            // どの発言に付いていたのかが失われる
+            var parts: [OpenAIResponsesContentPart] = []
+
+            /// 溜めた content を吐く。テキストだけなら文字列のまま送る
+            func flush() {
+                guard !parts.isEmpty else {
+                    return
+                }
+                defer { parts = [] }
+                if parts.count == 1, case .inputText(let only) = parts[0] {
+                    items.append(.message(role: role, content: only))
+                } else {
+                    items.append(.multipartMessage(role: role, parts: parts))
+                }
+            }
 
             for content in message.contents {
                 switch content {
                 case .text(let text):
-                    textBuffer += text
+                    // 連続するテキストは 1 つにまとめる
+                    if case .inputText(let previous)? = parts.last {
+                        parts[parts.count - 1] = .inputText(previous + text)
+                    } else {
+                        parts.append(.inputText(text))
+                    }
+
+                case .image(let image):
+                    parts.append(imagePart(image))
 
                 case .toolUse(let id, let name, let input):
-                    // 先行するテキストがあれば先に message として吐く
-                    if !textBuffer.isEmpty {
-                        items.append(.message(role: role, content: textBuffer))
-                        textBuffer = ""
-                    }
+                    // 先行する content があれば先に message として吐く
+                    flush()
                     let argsString = String(data: input, encoding: .utf8) ?? "{}"
                     items.append(.functionCall(callId: id, name: name, arguments: argsString))
 
                 case .toolResult(let toolCallId, _, let resultContent):
-                    if !textBuffer.isEmpty {
-                        items.append(.message(role: role, content: textBuffer))
-                        textBuffer = ""
-                    }
+                    flush()
                     items.append(.functionCallOutput(
                         callId: toolCallId,
                         output: resultContent.contentValue
                     ))
 
-                case .image(let image):
-                    throw LLMError.mediaNotSupported(mediaType: image.mimeType, provider: "OpenAI Responses")
                 case .audio(let audio):
                     throw LLMError.mediaNotSupported(mediaType: audio.mimeType, provider: "OpenAI Responses")
                 case .video(let video):
@@ -60,12 +78,22 @@ package enum OpenAIResponsesConverter {
                 }
             }
 
-            if !textBuffer.isEmpty {
-                items.append(.message(role: role, content: textBuffer))
-            }
+            flush()
         }
 
         return items
+    }
+
+    /// 画像を `input_image` にする。
+    ///
+    /// base64 は data URI に組み立てる（Responses API は `image_url` に data URI を受ける）。
+    /// Files API に上げたものは `file_id` で参照する。
+    private static func imagePart(_ image: ImageContent) -> OpenAIResponsesContentPart {
+        image.source.fold(
+            base64: { .inputImage(url: "data:\(image.mediaType.mimeType);base64,\($0.base64EncodedString())") },
+            url: { .inputImage(url: $0.absoluteString) },
+            fileReference: { .inputImageFile(fileId: $0) }
+        )
     }
 
     // MARK: - ToolSet → ToolDefs
