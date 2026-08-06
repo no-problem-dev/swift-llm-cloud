@@ -10,15 +10,20 @@ import LLMAgentStep
 extension OpenAIClient {
     /// エージェントステップを実行する。
     ///
-    /// OpenAI の reasoning モデル (GPT-5 系) では、function tools と `reasoning_effort` を
-    /// 同時に Chat Completions に送ると `Invalid request: Function tools with reasoning_effort
-    /// are not supported ... Please use /v1/responses instead` で拒否される。
+    /// **reasoning モデル(GPT-5 系)に function tools を渡すときは `/v1/responses`**。
+    /// Chat Completions に送ると拒否される:
     ///
-    /// そのため、本実装では:
-    /// - `reasoningEffort` が指定され、かつ `tools` が空でない場合は `/v1/responses` 経由（OpenAIResponsesEngine）
-    /// - それ以外は既存の Chat Completions 経路（OpenAICompatibleEngine 経由のデフォルト実装）
+    /// > Function tools with reasoning_effort are not supported for gpt-5.6-luna
+    /// > in /v1/chat/completions. To use function tools, use /v1/responses
     ///
-    /// にディスパッチする。Chat Completions 経路に流れた場合の挙動は従来と同一。
+    /// **`reasoning_effort` を送っていなくても拒否される。** これらのモデルは
+    /// 既定で reasoning するため、指定の有無は関係ない。以前は
+    /// 「effort が指定されているとき」だけ振り分けており、指定なしの呼び出し
+    /// (A2UI の副エージェントなど)が Chat Completions に落ちて失敗していた。
+    ///
+    /// なので振り分けは**モデルで決める**:
+    /// - reasoning モデル + tools あり → `/v1/responses`（OpenAIResponsesEngine）
+    /// - それ以外 → Chat Completions（OpenAICompatibleEngine 経由のデフォルト実装）
     public func executeAgentStep(
         messages: [LLMMessage],
         model: GPTModel,
@@ -38,7 +43,10 @@ extension OpenAIClient {
         // minimal は 5.1 以降で none に置き換わった
         let effectiveEffort = reasoningEffort.flatMap(model.clamped)
 
-        if effectiveEffort != nil, !tools.isEmpty {
+        // **effort の有無ではなくモデルで決める。** reasoning モデルは既定で
+        // 思考するので、effort を送っていなくても Chat Completions は
+        // function tools を拒否する
+        if model.supportsReasoningEffort, !tools.isEmpty {
             return try await responsesEngine.executeAgentStep(
                 messages: messages,
                 modelId: model.id,
