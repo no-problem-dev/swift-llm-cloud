@@ -1,0 +1,16 @@
+version: 1
+builder:
+  configs:
+    - documentation_targets:
+        - LLMCloud
+        - LLMCloudAnthropic
+        - LLMCloudBranding
+        - LLMCloudClient
+        - LLMCloudDeepSeek
+        - LLMCloudGemini
+        - LLMCloudGroq
+        - LLMCloudMistral
+        - LLMCloudOpenAI
+        - LLMCloudOpenAICompatible
+        - LLMCloudOpenRouter
+        - LLMCloudXAI
