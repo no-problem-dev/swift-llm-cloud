@@ -21,7 +21,7 @@
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-llm-cloud.git", from: "3.37.0")
+    .package(url: "https://github.com/no-problem-dev/swift-llm-cloud.git", from: "4.0.0")
 ]
 ```
 
