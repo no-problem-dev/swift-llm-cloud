@@ -1,3 +1,4 @@
+import LLMClient
 import Foundation
 
 /// ドメイン認識リトライの単一実装。
