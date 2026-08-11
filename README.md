@@ -62,7 +62,7 @@ let b: Product = try await gemini.generate(input: prompt, model: .flash25)
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-llm-cloud.git", from: "5.0.0")
+    .package(url: "https://github.com/no-problem-dev/swift-llm-cloud.git", from: "6.0.0")
 ]
 ```
 
