@@ -3,6 +3,7 @@ import LLMClient
 import APIClient
 import JSONParsing
 import Foundation
+import HTTPTransport
 
 extension AnthropicClient {
     /// Streams the assistant's visible text as it is generated.

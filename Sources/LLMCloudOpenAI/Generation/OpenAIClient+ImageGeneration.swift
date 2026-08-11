@@ -20,29 +20,19 @@ extension OpenAIClient: ImageGenerationCapable {
     /// - Parameters:
     ///   - input: Prompt describing the image.
     ///   - model: Image model to run.
-    ///   - size: Output size. Defaults to 1024×1024, and a size the model does not offer is
-    ///     rejected before the request goes out.
-    ///   - quality: Quality tier. It is forwarded as given and is not checked against the model,
-    ///     so a tier the model does not offer is rejected by the API rather than here.
-    ///   - format: Output format. Defaults to PNG.
-    ///   - n: Ignored. This overload always asks for one image.
+    ///   - options: Size defaults to 1024×1024 and one the model does not offer is rejected before
+    ///     the request goes out; quality is forwarded as given and is not checked against the
+    ///     model, so a tier the model does not offer is rejected by the API rather than here;
+    ///     format defaults to PNG; and `n` is forced to 1 here.
     /// - Throws: `LLMError.emptyResponse` if the API answers with no image at all.
     public func generateImage(
         input: LLMInput,
         model: OpenAIImageModel,
-        size: ImageSize?,
-        quality: ImageQuality?,
-        format: ImageOutputFormat?,
-        n: Int
+        options: ImageGenerationOptions
     ) async throws -> GeneratedImage {
-        let images = try await generateImages(
-            input: input,
-            model: model,
-            size: size,
-            quality: quality,
-            format: format,
-            n: 1
-        )
+        var single = options
+        single.n = 1
+        let images = try await generateImages(input: input, model: model, options: single)
         guard let image = images.first else {
             throw LLMError.emptyResponse
         }
@@ -58,34 +48,29 @@ extension OpenAIClient: ImageGenerationCapable {
     /// - Parameters:
     ///   - input: Prompt describing the images.
     ///   - model: Image model to run.
-    ///   - size: Output size. Defaults to 1024×1024.
-    ///   - quality: Quality tier. It is forwarded as given and is not checked against the model,
-    ///     so a tier the model does not offer is rejected by the API rather than here.
-    ///   - format: Output format. Defaults to PNG.
-    ///   - n: How many images to generate, capped by the model's own limit.
+    ///   - options: Size defaults to 1024×1024; quality is forwarded as given and is not checked
+    ///     against the model, so a tier the model does not offer is rejected by the API rather
+    ///     than here; format defaults to PNG; and `n` is capped by the model's own limit.
     /// - Throws: `ImageGenerationError` when the count, size, or format exceeds what the model
     ///   accepts, or `GeneratedMediaError` when a returned image can be neither decoded nor
     ///   downloaded.
     public func generateImages(
         input: LLMInput,
         model: OpenAIImageModel,
-        size: ImageSize?,
-        quality: ImageQuality?,
-        format: ImageOutputFormat?,
-        n: Int
+        options: ImageGenerationOptions
     ) async throws -> [GeneratedImage] {
         let prompt = input.prompt.render()
         // Validate locally so an impossible request never reaches the API.
-        if n > model.maxImages {
-            throw ImageGenerationError.exceedsMaxImages(requested: n, maximum: model.maxImages)
+        if options.n > model.maxImages {
+            throw ImageGenerationError.exceedsMaxImages(requested: options.n, maximum: model.maxImages)
         }
 
-        let actualSize = size ?? .square1024
+        let actualSize = options.size ?? .square1024
         if !model.supportedSizes.contains(actualSize) {
             throw ImageGenerationError.unsupportedSize(actualSize, model: model.displayName)
         }
 
-        let actualFormat = format ?? .png
+        let actualFormat = options.format ?? .png
         if !MediaCompatibility.isSupported(actualFormat, by: .openai) {
             throw ImageGenerationError.unsupportedFormat(actualFormat, model: model.displayName)
         }
@@ -97,9 +82,9 @@ extension OpenAIClient: ImageGenerationCapable {
         let request = OpenAIImageRequestBody(
             model: model.id,
             prompt: prompt,
-            n: n,
+            n: options.n,
             size: actualSize.rawValue,
-            quality: quality?.rawValue,
+            quality: options.quality?.rawValue,
             responseFormat: useResponseFormat ? "b64_json" : nil,
             outputFormat: actualFormat == .png ? nil : actualFormat.fileExtension
         )

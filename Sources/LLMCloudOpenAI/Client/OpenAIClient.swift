@@ -4,6 +4,7 @@ import LLMClient
 import LLMAgentStep
 import APIClient
 import Foundation
+import HTTPTransport
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif

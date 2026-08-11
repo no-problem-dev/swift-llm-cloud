@@ -3,6 +3,7 @@ import Foundation
 import LLMClient
 import LLMTool
 import Testing
+import HTTPTransport
 @testable import LLMCloudOpenAI
 
 /// Which OpenAI endpoint an agent step is routed to, and why the choice cannot depend on effort.

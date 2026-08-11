@@ -3,6 +3,7 @@ import LLMCloudClient
 import APIClient
 import APIContract
 import Foundation
+import HTTPTransport
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif

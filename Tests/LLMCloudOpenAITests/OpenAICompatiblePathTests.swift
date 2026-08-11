@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import APIClient   // re-exports HTTPTransport, MockTransport, and HTTPResponse
 import LLMClient
+import HTTPTransport
 @testable import LLMCloudOpenAICompatible
 
 /// Covers the plain send path after every request moved onto the contract, off a raw URLSession.

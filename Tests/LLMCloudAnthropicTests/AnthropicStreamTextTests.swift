@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import APIClient
 import LLMClient
+import HTTPTransport
 @testable import LLMCloudClient
 @testable import LLMCloudAnthropic
 

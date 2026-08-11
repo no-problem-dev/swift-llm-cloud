@@ -4,6 +4,7 @@ import LLMTool
 import LLMAgentStep
 import APIClient
 import Foundation
+import HTTPTransport
 
 // MARK: - AnthropicClient + AgentCapableClient
 

@@ -4,6 +4,7 @@ import APIClient
 import LLMAgentStep
 import LLMClient
 import LLMTool
+import HTTPTransport
 @testable import LLMCloudClient
 @testable import LLMCloudGemini
 

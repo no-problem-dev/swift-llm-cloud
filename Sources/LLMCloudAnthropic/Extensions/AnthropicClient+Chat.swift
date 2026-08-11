@@ -12,14 +12,18 @@ extension AnthropicClient: ChatCapableClient {
     /// `LLMError.emptyResponse`. This path sends no tools and, unlike the plain send path,
     /// performs no retry. Reported usage is normalized, so cached prompt tokens are included in
     /// the input count.
+    ///
+    /// - Parameters:
+    ///   - messages: The conversation so far, oldest first.
+    ///   - model: Claude model to answer the turn.
+    ///   - options: System prompt, temperature, and output ceiling. An unset ceiling falls back to
+    ///     4096 tokens, since Anthropic requires one.
     public func chat<T: StructuredProtocol>(
         messages: [LLMMessage],
         model: ClaudeModel,
-        systemPrompt: String?,
-        temperature: Double?,
-        maxTokens: Int?
+        options: ChatOptions
     ) async throws -> ChatResponse<T> {
-        let enhancedSystemPrompt = buildChatSystemPrompt(base: systemPrompt, schema: T.jsonSchema)
+        let enhancedSystemPrompt = buildChatSystemPrompt(base: options.systemPrompt, schema: T.jsonSchema)
         let anthropicMessages = try messages.map { try AnthropicMessageConverter.convert($0) }
 
         let outputFormat = AnthropicOutputFormat(type: "json_schema", schema: AnthropicSchemaAdapter().adapt(T.jsonSchema))
@@ -27,8 +31,8 @@ extension AnthropicClient: ChatCapableClient {
             model: model.id,
             messages: anthropicMessages,
             system: enhancedSystemPrompt.isEmpty ? nil : enhancedSystemPrompt,
-            maxTokens: maxTokens ?? Self.chatDefaultMaxTokens,
-            temperature: temperature,
+            maxTokens: options.maxTokens ?? Self.chatDefaultMaxTokens,
+            temperature: options.temperature,
             outputConfig: AnthropicOutputConfig(format: outputFormat)
         )
 

@@ -33,16 +33,20 @@ extension OpenAIClient: VideoGenerationCapable {
     ///     model: .sora2
     /// )
     /// ```
+    ///
+    /// - Parameters:
+    ///   - input: Prompt describing the clip.
+    ///   - model: Sora model to render with.
+    ///   - options: Duration, aspect ratio, and resolution. Anything left unset defaults to four
+    ///     seconds, 16:9, and the model's own default resolution.
     public func startVideoGeneration(
         input: LLMInput,
         model: OpenAIVideoModel,
-        duration: Int?,
-        aspectRatio: VideoAspectRatio?,
-        resolution: VideoResolution?
+        options: VideoGenerationOptions
     ) async throws -> VideoGenerationJob {
         let prompt = input.prompt.render()
         // Validate locally so an impossible request never reaches the API.
-        let actualDuration = duration ?? 4
+        let actualDuration = options.duration ?? 4
         if !model.supportedDurations.contains(actualDuration) {
             throw VideoGenerationError.durationExceedsLimit(
                 requested: actualDuration,
@@ -50,12 +54,12 @@ extension OpenAIClient: VideoGenerationCapable {
             )
         }
 
-        let actualAspectRatio = aspectRatio ?? .landscape16x9
+        let actualAspectRatio = options.aspectRatio ?? .landscape16x9
         if !model.supportedAspectRatios.contains(actualAspectRatio) {
             throw VideoGenerationError.unsupportedAspectRatio(actualAspectRatio, model: model.displayName)
         }
 
-        let actualResolution = resolution ?? model.defaultResolution
+        let actualResolution = options.resolution ?? model.defaultResolution
         if !model.supportedResolutions.contains(actualResolution) {
             throw VideoGenerationError.unsupportedResolution(actualResolution, model: model.displayName)
         }

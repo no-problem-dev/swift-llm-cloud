@@ -4,6 +4,7 @@ import APIClient
 import APIContract
 import Foundation
 import StructuredDataCore
+import HTTPTransport
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif

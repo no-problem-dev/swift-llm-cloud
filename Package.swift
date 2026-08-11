@@ -21,10 +21,13 @@ let package = Package(
         .library(name: "LLMCloudBranding", targets: ["LLMCloudBranding"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/no-problem-dev/swift-llm-client.git", from: "3.13.0"),
-        .package(url: "https://github.com/no-problem-dev/swift-structured-data.git", "1.3.0" ..< "3.0.0"),
+        .package(url: "https://github.com/no-problem-dev/swift-llm-client.git", from: "4.0.0"),
+        .package(url: "https://github.com/no-problem-dev/swift-structured-data.git", from: "3.0.0"),
         .package(url: "https://github.com/no-problem-dev/swift-api-contract.git", from: "2.1.2"),
-        .package(url: "https://github.com/no-problem-dev/swift-api-client.git", from: "3.0.2"),
+        .package(url: "https://github.com/no-problem-dev/swift-api-client.git", from: "3.0.3"),
+        // api-client 3.0.3 stopped re-exporting HTTPTransport, so the transport types this
+        // package names in its own initializers have to be depended on directly.
+        .package(url: "https://github.com/no-problem-dev/swift-http-transport.git", from: "1.1.2"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.4.0"),
     ],
     targets: [
@@ -33,6 +36,7 @@ let package = Package(
             .product(name: "LLMClient", package: "swift-llm-client"),
             .product(name: "LLMTool", package: "swift-llm-client"),
             .product(name: "APIClient", package: "swift-api-client"),
+            .product(name: "HTTPTransport", package: "swift-http-transport"),
             .product(name: "StructuredDataCore", package: "swift-structured-data"),
             .product(name: "JSONParsing", package: "swift-structured-data"),
         ]),
@@ -45,6 +49,7 @@ let package = Package(
             .product(name: "LLMChat", package: "swift-llm-client"),
             .product(name: "APIContract", package: "swift-api-contract"),
             .product(name: "APIClient", package: "swift-api-client"),
+            .product(name: "HTTPTransport", package: "swift-http-transport"),
             .product(name: "StructuredDataCore", package: "swift-structured-data"),
             .product(name: "JSONParsing", package: "swift-structured-data"),
         ]),
@@ -57,6 +62,7 @@ let package = Package(
             .product(name: "LLMChat", package: "swift-llm-client"),
             .product(name: "APIContract", package: "swift-api-contract"),
             .product(name: "APIClient", package: "swift-api-client"),
+            .product(name: "HTTPTransport", package: "swift-http-transport"),
             .product(name: "StructuredDataCore", package: "swift-structured-data"),
             .product(name: "JSONParsing", package: "swift-structured-data"),
         ]),
@@ -71,6 +77,7 @@ let package = Package(
             .product(name: "StructuredDataCore", package: "swift-structured-data"),
             .product(name: "JSONParsing", package: "swift-structured-data"),
             .product(name: "APIClient", package: "swift-api-client"),
+            .product(name: "HTTPTransport", package: "swift-http-transport"),
             .product(name: "APIContract", package: "swift-api-contract"),
         ]),
         // Gemini provider
@@ -82,6 +89,7 @@ let package = Package(
             .product(name: "LLMChat", package: "swift-llm-client"),
             .product(name: "APIContract", package: "swift-api-contract"),
             .product(name: "APIClient", package: "swift-api-client"),
+            .product(name: "HTTPTransport", package: "swift-http-transport"),
             .product(name: "StructuredDataCore", package: "swift-structured-data"),
             .product(name: "JSONParsing", package: "swift-structured-data"),
         ]),
@@ -144,16 +152,19 @@ let package = Package(
         .testTarget(name: "LLMCloudAnthropicTests", dependencies: [
             "LLMCloudAnthropic", "LLMCloudClient",
             .product(name: "APIClient", package: "swift-api-client"),
+            .product(name: "HTTPTransport", package: "swift-http-transport"),
             .product(name: "LLMTool", package: "swift-llm-client"),
         ]),
         .testTarget(name: "LLMCloudOpenAITests", dependencies: [
             "LLMCloudOpenAI", "LLMCloudOpenAICompatible", "LLMCloudClient",
             .product(name: "APIClient", package: "swift-api-client"),
+            .product(name: "HTTPTransport", package: "swift-http-transport"),
             .product(name: "LLMTool", package: "swift-llm-client"),
         ]),
         .testTarget(name: "LLMCloudGeminiTests", dependencies: [
             "LLMCloudGemini", "LLMCloudClient",
             .product(name: "APIClient", package: "swift-api-client"),
+            .product(name: "HTTPTransport", package: "swift-http-transport"),
             .product(name: "LLMTool", package: "swift-llm-client"),
         ]),
     ]

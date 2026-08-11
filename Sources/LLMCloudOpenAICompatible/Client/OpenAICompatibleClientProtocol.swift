@@ -25,37 +25,41 @@ where Model: OpenAICompatibleModelProtocol {
 extension OpenAICompatibleClientProtocol {
     public var provider: any LLMProvider { engine.provider }
 
+    /// Generates a structured value from one prompt, by handing the call to the engine.
+    ///
+    /// - Parameters:
+    ///   - input: The prompt, optionally carrying images, audio, or video.
+    ///   - model: The vendor model to serve the request.
+    ///   - options: System prompt, temperature, and output ceiling.
     public func generateWithUsage<T: StructuredProtocol>(
         input: LLMInput,
         model: Model,
-        systemPrompt: String?,
-        temperature: Double?,
-        maxTokens: Int?
+        options: GenerationOptions
     ) async throws -> GenerationResult<T> {
         try await engine.generateWithUsage(
             input: input,
             modelId: model.id,
             toLLMModel: { model.toLLMModel() },
-            systemPrompt: systemPrompt,
-            temperature: temperature,
-            maxTokens: maxTokens
+            options: options
         )
     }
 
+    /// Generates a structured value from a conversation history, by handing the call to the engine.
+    ///
+    /// - Parameters:
+    ///   - messages: The conversation so far, oldest first.
+    ///   - model: The vendor model to serve the request.
+    ///   - options: System prompt, temperature, and output ceiling.
     public func generateWithUsage<T: StructuredProtocol>(
         messages: [LLMMessage],
         model: Model,
-        systemPrompt: String?,
-        temperature: Double?,
-        maxTokens: Int?
+        options: GenerationOptions
     ) async throws -> GenerationResult<T> {
         try await engine.generateWithUsage(
             messages: messages,
             modelId: model.id,
             toLLMModel: { model.toLLMModel() },
-            systemPrompt: systemPrompt,
-            temperature: temperature,
-            maxTokens: maxTokens
+            options: options
         )
     }
 }
@@ -63,20 +67,22 @@ extension OpenAICompatibleClientProtocol {
 // MARK: - ChatCapableClient Default Implementation
 
 extension OpenAICompatibleClientProtocol {
+    /// Continues a conversation, by handing the turn to the engine.
+    ///
+    /// - Parameters:
+    ///   - messages: The conversation so far, oldest first.
+    ///   - model: The vendor model to answer the turn.
+    ///   - options: System prompt, temperature, and output ceiling.
     public func chat<T: StructuredProtocol>(
         messages: [LLMMessage],
         model: Model,
-        systemPrompt: String?,
-        temperature: Double?,
-        maxTokens: Int?
+        options: ChatOptions
     ) async throws -> ChatResponse<T> {
         try await engine.chat(
             messages: messages,
             modelId: model.id,
-            systemPrompt: systemPrompt,
             responseSchema: T.jsonSchema,
-            temperature: temperature,
-            maxTokens: maxTokens
+            options: options
         )
     }
 }

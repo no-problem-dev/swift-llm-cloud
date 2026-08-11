@@ -4,6 +4,7 @@ import APIClient   // re-exports HTTPTransport, MockTransport, and HTTPResponse
 import LLMClient
 import LLMTool
 import LLMCloudClient
+import HTTPTransport
 @testable import LLMCloudOpenAICompatible
 
 /// Regression gate on the request URL and the token-limit field name for OpenAI-compatible vendors.

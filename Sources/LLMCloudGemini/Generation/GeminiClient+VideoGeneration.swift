@@ -20,21 +20,24 @@ extension GeminiClient: VideoGenerationCapable {
     /// Veo is a long-running operation: this call returns as soon as the job is accepted, with
     /// the operation name as the job id, and the video only becomes available after polling with
     /// ``checkVideoStatus(_:)``. The request is validated against the model's capabilities before
-    /// it is sent, and unset parameters default to four seconds, 16:9, and 720p.
+    /// it is sent, and unset options default to four seconds, 16:9, and 720p.
     ///
+    /// - Parameters:
+    ///   - input: Prompt; only its text is used.
+    ///   - model: Veo model to render with.
+    ///   - options: Duration, aspect ratio, and resolution. Anything left unset defaults to four
+    ///     seconds, 16:9, and 720p.
     /// - Throws: `VideoGenerationError` when the duration, aspect ratio, or resolution is one the
     ///   model does not offer, including the combination of 1080p with any duration other than
     ///   eight seconds.
     public func startVideoGeneration(
         input: LLMInput,
         model: GeminiVideoModel,
-        duration: Int?,
-        aspectRatio: VideoAspectRatio?,
-        resolution: VideoResolution?
+        options: VideoGenerationOptions
     ) async throws -> VideoGenerationJob {
         let prompt = input.prompt.render()
         // Reject unsupported combinations locally rather than paying for a failed job.
-        let actualDuration = duration ?? 4
+        let actualDuration = options.duration ?? 4
         if !model.supportedDurations.contains(actualDuration) {
             throw VideoGenerationError.durationExceedsLimit(
                 requested: actualDuration,
@@ -42,12 +45,12 @@ extension GeminiClient: VideoGenerationCapable {
             )
         }
 
-        let actualAspectRatio = aspectRatio ?? .landscape16x9
+        let actualAspectRatio = options.aspectRatio ?? .landscape16x9
         if !model.supportedAspectRatios.contains(actualAspectRatio) {
             throw VideoGenerationError.unsupportedAspectRatio(actualAspectRatio, model: model.displayName)
         }
 
-        let actualResolution = resolution ?? .hd720p
+        let actualResolution = options.resolution ?? .hd720p
         if !model.supportedResolutions.contains(actualResolution) {
             throw VideoGenerationError.unsupportedResolution(actualResolution, model: model.displayName)
         }

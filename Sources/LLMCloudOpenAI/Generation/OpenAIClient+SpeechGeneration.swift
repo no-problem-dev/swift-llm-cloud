@@ -26,8 +26,8 @@ extension OpenAIClient: SpeechGenerationCapable {
     ///   - input: Text to speak. OpenAI caps a single request at 4096 characters.
     ///   - model: Text-to-speech model to run.
     ///   - voice: Voice to speak in.
-    ///   - speed: Playback rate from 0.25 to 4.0. Defaults to 1.0.
-    ///   - format: Audio encoding. Defaults to MP3.
+    ///   - options: Playback rate, from 0.25 to 4.0 and defaulting to 1.0, and the audio encoding,
+    ///     defaulting to MP3.
     /// - Throws: `SpeechGenerationError` when the text is empty or too long, the speed is out
     ///   of range, or the model does not offer the requested format. All four are checked before
     ///   the request goes out.
@@ -35,8 +35,7 @@ extension OpenAIClient: SpeechGenerationCapable {
         input: LLMInput,
         model: OpenAITTSModel,
         voice: OpenAIVoice,
-        speed: Double?,
-        format: AudioOutputFormat?
+        options: SpeechGenerationOptions
     ) async throws -> GeneratedAudio {
         let text = input.prompt.render()
 
@@ -49,12 +48,12 @@ extension OpenAIClient: SpeechGenerationCapable {
             throw SpeechGenerationError.textTooLong(length: text.count, maximum: 4096)
         }
 
-        let actualSpeed = speed ?? 1.0
+        let actualSpeed = options.speed ?? 1.0
         if actualSpeed < 0.25 || actualSpeed > 4.0 {
             throw SpeechGenerationError.invalidSpeed(actualSpeed)
         }
 
-        let actualFormat = format ?? .mp3
+        let actualFormat = options.format ?? .mp3
         if !model.supportedFormats.contains(actualFormat) {
             throw SpeechGenerationError.unsupportedFormat(actualFormat, model: model.displayName)
         }

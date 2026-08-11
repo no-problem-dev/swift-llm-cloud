@@ -5,6 +5,7 @@ import LLMAgentStep
 import LLMChat
 import APIClient
 import Foundation
+import HTTPTransport
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -118,17 +119,13 @@ package struct OpenAICompatibleEngine: Sendable {
         input: LLMInput,
         modelId: String,
         toLLMModel: @Sendable () -> LLMModel,
-        systemPrompt: String?,
-        temperature: Double?,
-        maxTokens: Int?
+        options: GenerationOptions
     ) async throws -> GenerationResult<T> {
         try await generateWithUsage(
             messages: [input.toLLMMessage()],
             modelId: modelId,
             toLLMModel: toLLMModel,
-            systemPrompt: systemPrompt,
-            temperature: temperature,
-            maxTokens: maxTokens
+            options: options
         )
     }
 
@@ -136,19 +133,20 @@ package struct OpenAICompatibleEngine: Sendable {
         messages: [LLMMessage],
         modelId: String,
         toLLMModel: @Sendable () -> LLMModel,
-        systemPrompt: String?,
-        temperature: Double?,
-        maxTokens: Int?
+        options: GenerationOptions
     ) async throws -> GenerationResult<T> {
-        let enhancedSystemPrompt = buildSystemPrompt(base: systemPrompt, schema: T.jsonSchema)
+        let enhancedSystemPrompt = buildSystemPrompt(
+            base: options.systemPrompt?.render(),
+            schema: T.jsonSchema
+        )
 
         let request = LLMRequest(
             model: toLLMModel(),
             messages: messages,
             systemPrompt: enhancedSystemPrompt,
             responseSchema: T.jsonSchema,
-            temperature: temperature,
-            maxTokens: maxTokens
+            temperature: options.temperature,
+            maxTokens: options.maxTokens
         )
 
         let response = try await provider.send(request)
@@ -160,10 +158,8 @@ package struct OpenAICompatibleEngine: Sendable {
     package func chat<T: StructuredProtocol>(
         messages: [LLMMessage],
         modelId: String,
-        systemPrompt: String?,
         responseSchema: JSONSchema,
-        temperature: Double?,
-        maxTokens: Int?
+        options: ChatOptions
     ) async throws -> ChatResponse<T> {
         // Goes through the contract like every other send, so schema adaptation, the constraint
         // prompt, and the vendor's token-cap field name are decided in one place and errors arrive
@@ -171,10 +167,10 @@ package struct OpenAICompatibleEngine: Sendable {
         let request = LLMRequest(
             model: .custom(modelId),
             messages: messages,
-            systemPrompt: systemPrompt,
+            systemPrompt: options.systemPrompt,
             responseSchema: responseSchema,
-            temperature: temperature,
-            maxTokens: maxTokens
+            temperature: options.temperature,
+            maxTokens: options.maxTokens
         )
         let (output, _, _) = try await baseProvider.sendRaw(request)
         return try OpenAICompatibleResponseConverter.toChatResponse(output)

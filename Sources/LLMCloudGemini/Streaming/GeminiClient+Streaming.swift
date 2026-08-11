@@ -4,6 +4,7 @@ import APIClient
 import StructuredDataCore
 import JSONParsing
 import Foundation
+import HTTPTransport
 
 extension GeminiClient {
     /// Streams plain text for a single prompt.

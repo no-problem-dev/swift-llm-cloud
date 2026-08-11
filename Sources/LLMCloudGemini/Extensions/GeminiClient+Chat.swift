@@ -9,23 +9,27 @@ extension GeminiClient: ChatCapableClient {
     /// The response schema is adapted to Gemini's OpenAPI subset and sent with a JSON mime type,
     /// so the reply is parsed directly rather than being stripped of a markdown fence first. This
     /// path declares no tools, uses no prompt cache, and bypasses the retry layer.
+    ///
+    /// - Parameters:
+    ///   - messages: The conversation so far, oldest first.
+    ///   - model: Gemini model to answer the turn.
+    ///   - options: System prompt, temperature, and output ceiling. An unset ceiling falls back to
+    ///     4096 tokens.
     public func chat<T: StructuredProtocol>(
         messages: [LLMMessage],
         model: GeminiModel,
-        systemPrompt: String?,
-        temperature: Double?,
-        maxTokens: Int?
+        options: ChatOptions
     ) async throws -> ChatResponse<T> {
         let contents = messages.flatMap { GeminiContentConverter.convert($0) }
 
         var systemInstruction: GeminiContent?
-        if let systemPrompt, !systemPrompt.isEmpty {
+        if let systemPrompt = options.systemPrompt, !systemPrompt.isEmpty {
             systemInstruction = GeminiContent(role: "user", parts: [GeminiPart(text: systemPrompt)])
         }
 
         var generationConfig = GeminiGenerationConfig(
-            maxOutputTokens: maxTokens ?? Self.chatDefaultMaxTokens,
-            temperature: temperature
+            maxOutputTokens: options.maxTokens ?? Self.chatDefaultMaxTokens,
+            temperature: options.temperature
         )
         generationConfig.responseMimeType = "application/json"
         generationConfig.responseSchema = GeminiSchemaAdapter().adapt(T.jsonSchema)

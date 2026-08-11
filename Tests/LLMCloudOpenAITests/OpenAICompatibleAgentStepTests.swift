@@ -3,6 +3,7 @@ import Testing
 import APIClient   // re-exports HTTPTransport, MockTransport, and HTTPResponse
 import LLMClient
 import LLMTool
+import HTTPTransport
 @testable import LLMCloudClient
 @testable import LLMCloudOpenAICompatible
 

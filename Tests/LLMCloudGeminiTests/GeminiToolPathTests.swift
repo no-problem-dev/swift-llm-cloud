@@ -3,6 +3,7 @@ import Testing
 import APIClient
 import LLMClient
 import LLMTool
+import HTTPTransport
 @testable import LLMCloudClient
 @testable import LLMCloudGemini
 

@@ -21,28 +21,18 @@ extension GeminiClient: ImageGenerationCapable {
     /// - Parameters:
     ///   - input: Prompt; only its text is used, as neither image endpoint accepts attachments.
     ///   - model: Image model, which decides whether the Imagen or Gemini endpoint is called.
-    ///   - size: Output size, defaulting to 1024 square. Sent to Imagen as an aspect ratio, since
-    ///     that is all Imagen takes.
-    ///   - quality: Ignored; Gemini exposes no quality setting.
-    ///   - format: Must be PNG, the only format either endpoint returns.
-    ///   - n: Ignored here; exactly one image is returned.
+    ///   - options: Size defaults to 1024 square and is sent to Imagen as an aspect ratio, since
+    ///     that is all Imagen takes; quality is ignored, as Gemini exposes no such setting; format
+    ///     must be PNG, the only format either endpoint returns; and `n` is forced to 1 here.
     /// - Throws: `LLMError.emptyResponse` when the model returned no image at all.
     public func generateImage(
         input: LLMInput,
         model: GeminiImageModel,
-        size: ImageSize?,
-        quality: ImageQuality?,
-        format: ImageOutputFormat?,
-        n: Int
+        options: ImageGenerationOptions
     ) async throws -> GeneratedImage {
-        let images = try await generateImages(
-            input: input,
-            model: model,
-            size: size,
-            quality: quality,
-            format: format,
-            n: 1
-        )
+        var single = options
+        single.n = 1
+        let images = try await generateImages(input: input, model: model, options: single)
         guard let image = images.first else {
             throw LLMError.emptyResponse
         }
@@ -58,35 +48,31 @@ extension GeminiClient: ImageGenerationCapable {
     /// - Parameters:
     ///   - input: Prompt; only its text is used.
     ///   - model: Image model, which decides which endpoint is called.
-    ///   - size: Output size, defaulting to 1024 square. Imagen receives it as an aspect ratio.
-    ///   - quality: Ignored; Gemini exposes no quality setting.
-    ///   - format: Must be PNG, the only format either endpoint returns.
-    ///   - n: Number of images requested, honoured only by Imagen models.
+    ///   - options: Size defaults to 1024 square and reaches Imagen as an aspect ratio; quality is
+    ///     ignored, as Gemini exposes no such setting; format must be PNG, the only format either
+    ///     endpoint returns; and `n` is honoured only by Imagen models.
     /// - Throws: `ImageGenerationError` when `n` is above the model's limit or the size or format
     ///   is unsupported, and `GeneratedMediaError.invalidBase64Data` when a returned image cannot
     ///   be decoded.
     public func generateImages(
         input: LLMInput,
         model: GeminiImageModel,
-        size: ImageSize?,
-        quality: ImageQuality?,
-        format: ImageOutputFormat?,
-        n: Int
+        options: ImageGenerationOptions
     ) async throws -> [GeneratedImage] {
         let prompt = input.prompt.render()
         // Reject what the model cannot do before spending a request on it.
-        if n > model.maxImages {
-            throw ImageGenerationError.exceedsMaxImages(requested: n, maximum: model.maxImages)
+        if options.n > model.maxImages {
+            throw ImageGenerationError.exceedsMaxImages(requested: options.n, maximum: model.maxImages)
         }
 
-        let actualSize = size ?? .square1024
+        let actualSize = options.size ?? .square1024
         if !model.supportedSizes.contains(actualSize) {
             throw ImageGenerationError.unsupportedSize(actualSize, model: model.displayName)
         }
 
         // Both endpoints return PNG and nothing else.
         let actualFormat: ImageOutputFormat = .png
-        if let requestedFormat = format, requestedFormat != .png {
+        if let requestedFormat = options.format, requestedFormat != .png {
             throw ImageGenerationError.unsupportedFormat(requestedFormat, model: model.displayName)
         }
 
@@ -96,7 +82,7 @@ extension GeminiClient: ImageGenerationCapable {
                 prompt: prompt,
                 model: model,
                 size: actualSize,
-                n: n,
+                n: options.n,
                 format: actualFormat
             )
         } else {

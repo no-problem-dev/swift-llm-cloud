@@ -2,6 +2,7 @@ import LLMCloudClient
 import LLMClient
 import APIClient
 import Foundation
+import HTTPTransport
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -150,32 +151,38 @@ public struct AnthropicClient: StructuredLLMClient {
 
     // MARK: - StructuredLLMClient
 
+    /// Generates a structured value from one prompt.
+    ///
+    /// - Parameters:
+    ///   - input: The prompt, optionally carrying images, audio, or video.
+    ///   - model: Claude model to serve the request.
+    ///   - options: System prompt, temperature, and output ceiling.
     public func generateWithUsage<T: StructuredProtocol>(
         input: LLMInput,
         model: ClaudeModel,
-        systemPrompt: String?,
-        temperature: Double?,
-        maxTokens: Int?
+        options: GenerationOptions
     ) async throws -> GenerationResult<T> {
         try await generateWithUsage(
             messages: [input.toLLMMessage()],
             model: model,
-            systemPrompt: systemPrompt,
-            temperature: temperature,
-            maxTokens: maxTokens
+            options: options
         )
     }
 
+    /// Generates a structured value from a conversation history.
+    ///
+    /// - Parameters:
+    ///   - messages: The conversation so far, oldest first.
+    ///   - model: Claude model to serve the request.
+    ///   - options: System prompt, temperature, and output ceiling.
     public func generateWithUsage<T: StructuredProtocol>(
         messages: [LLMMessage],
         model: ClaudeModel,
-        systemPrompt: String?,
-        temperature: Double?,
-        maxTokens: Int?
+        options: GenerationOptions
     ) async throws -> GenerationResult<T> {
         // Fold the schema description into the system prompt on top of output_config.format.
         let enhancedSystemPrompt = buildSystemPrompt(
-            base: systemPrompt,
+            base: options.systemPrompt?.render(),
             schema: T.jsonSchema
         )
 
@@ -184,8 +191,8 @@ public struct AnthropicClient: StructuredLLMClient {
             messages: messages,
             systemPrompt: enhancedSystemPrompt,
             responseSchema: T.jsonSchema,
-            temperature: temperature,
-            maxTokens: maxTokens
+            temperature: options.temperature,
+            maxTokens: options.maxTokens
         )
 
         let response = try await provider.send(request)

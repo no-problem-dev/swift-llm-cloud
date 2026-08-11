@@ -7,7 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing.
+### Fixed
+
+- **`generateWithUsage` and `generate` recursed forever on every cloud client.** Both were
+  unreachable at run time on `AnthropicClient`, `GeminiClient`, `OpenAIClient`, `DeepSeekClient`,
+  `GroqClient`, `MistralClient`, `OpenRouterClient` and `XAIClient` — a call never returned, and
+  the process grew until it was killed. The requirement in llm-client 3.x took
+  `systemPrompt: SystemPrompt?` while every implementation here declared `systemPrompt: String?`,
+  so none of them witnessed it. The convenience method beside the requirement — same signature,
+  optional arguments defaulted — witnessed it instead and called straight back into itself. It
+  compiled, and no test called either method, so nothing ever said so. llm-client 4.0.0 gives the
+  requirement a distinct signature, which turned this into a compile error and is how it was
+  found. Confirmed against 3.13.0 in a throwaway package: 85 GB of memory before the kernel
+  killed it, with neither implementation ever entered.
+
+### Removed
+
+- **BREAKING — the methods that implement llm-client's protocol requirements now take an options
+  value** instead of a list of optional arguments, following llm-client 4.0.0. Gone from the
+  public API:
+
+  | Type | Removed |
+  |---|---|
+  | `AnthropicClient`, `GeminiClient` | `generateWithUsage(input:model:systemPrompt:temperature:maxTokens:)`, `generateWithUsage(messages:model:systemPrompt:temperature:maxTokens:)`, `chat(messages:model:systemPrompt:temperature:maxTokens:)` |
+  | `OpenAIClient`, `DeepSeekClient`, `GroqClient`, `MistralClient`, `OpenRouterClient`, `XAIClient` | the same three, inherited from `OpenAICompatibleClientProtocol` |
+  | `GeminiClient`, `OpenAIClient` | `generateImage(input:model:size:quality:format:n:)`, `generateImages(input:model:size:quality:format:n:)`, `startVideoGeneration(input:model:duration:aspectRatio:resolution:)` |
+  | `OpenAIClient` | `generateSpeech(input:model:voice:speed:format:)` |
+
+  Each is replaced by a form taking `GenerationOptions`, `ChatOptions`, `ImageGenerationOptions`,
+  `VideoGenerationOptions` or `SpeechGenerationOptions`.
+
+  **Most call sites need no change.** llm-client still supplies the same argument lists as
+  convenience methods with defaults, so `client.generateImage(input:, model:, size: .square1024)`
+  and `client.chat(messages:, model:, systemPrompt: "…")` still compile and now reach a real
+  implementation. What breaks is passing a `String` variable as `generateWithUsage`'s system
+  prompt: the surviving overload takes `SystemPrompt`, which a string *literal* converts to but a
+  `String` does not — wrap it as `SystemPrompt(stringLiteral: text)` or pass the literal directly.
+  Code that conformed its own type to these protocols by forwarding to a cloud client must adopt
+  the options-taking signatures too, or it will no longer conform.
+
+### Changed
+
+- Raised the floors to llm-client 4.0.0, swift-structured-data 3.0.0 and swift-api-client 3.0.3,
+  and added a direct dependency on swift-http-transport 1.1.2. api-client 3.0.3 stopped
+  re-exporting `HTTPTransport`, and this package names `HTTPTransport`, `HTTPStreamingTransport`,
+  `URLSessionTransport` and `SSEEvent` internally, so it now depends on and imports that module
+  itself. None of those types appear in this package's public API, so nothing is asked of
+  consumers beyond resolving the new floors.
 
 ## [4.4.0] - 2026-08-06
 
