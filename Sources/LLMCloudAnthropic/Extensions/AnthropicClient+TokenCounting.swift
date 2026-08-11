@@ -6,11 +6,15 @@ import LLMTool
 
 extension AnthropicClient {
 
-    /// コンテキストウィンドウ内訳算出（`SegmentBreakdownEngine`）に渡す `TokenCounting` port の
-    /// Anthropic 実装を返す。
+    /// Token counter backed by Anthropic's own `count_tokens` endpoint.
     ///
-    /// 内部の base provider（リトライ非適用）を用いて `/v1/messages/count_tokens` を呼ぶ。
-    /// 見積り計測はメータリング用途であり、リトライは内訳エンジン側の責務とする。
+    /// Each count is a real request to `/v1/messages/count_tokens`, not a local estimate, so the
+    /// figure matches what Anthropic would bill for the input — at the cost of a round trip that
+    /// consumes request rate limit.
+    ///
+    /// Counting goes through the unretried provider on purpose: measurement is metering, and a
+    /// caller that wants failed counts retried owns that decision rather than silently paying
+    /// for extra round trips here.
     public var tokenCounter: any TokenCounting {
         AnthropicTokenCounter(provider: baseProvider)
     }

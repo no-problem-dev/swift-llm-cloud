@@ -1,38 +1,39 @@
 # ``LLMCloudXAI``
 
-xAI Grok モデルの Swift クライアント実装。
+xAI Grok client for structured output, chat, tool calls, and agent steps.
 
 ## Overview
 
-`LLMCloudXAI` は xAI の Grok API に対応した Swift クライアント。`XAIClient` を通じて、構造化出力・チャット・ツールコール・エージェントステップの各機能を提供する。
+`XAIClient` takes an API key and a `GrokModel`. Model selection is typed, so a model from another
+provider will not compile against it.
 
-モデル選択は `GrokModel` 型に制約されており、型安全なプロバイダー指定が保証される。内部的に `LLMCloudOpenAICompatible` の共有エンジンを使用している。
-
-### 基本的な使い方
+Underneath it is the shared Chat Completions engine from `LLMCloudOpenAICompatible`. xAI follows
+OpenAI's field naming and takes `max_completion_tokens`, which the client sends.
 
 ```swift
 import LLMCloudXAI
 
 let client = XAIClient(apiKey: "xai-...")
 
-@Structured("分析結果")
+@Structured("Sentiment read off a short piece of text")
 struct Analysis {
-    @StructuredField("要約")
+    @StructuredField("One-sentence summary")
     var summary: String
-    @StructuredField("感情")
+    @StructuredField("Overall sentiment: positive, negative, or neutral")
     var sentiment: String
 }
 
 let result: Analysis = try await client.generate(
-    input: "今日は素晴らしい天気で、気分が最高でした。",
+    input: "The weather was glorious today and I felt great.",
     model: .grok43
 )
-print(result.summary)
-print(result.sentiment)  // "ポジティブ"
 ```
+
+Retry and rate-limit handling come from `LLMCloudClient` and are configured with
+`RetryConfiguration` at construction.
 
 ## Topics
 
-### クライアント
+### Client
 
 - ``XAIClient``

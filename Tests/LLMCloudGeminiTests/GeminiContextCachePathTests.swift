@@ -72,13 +72,15 @@ struct GeminiContextCachePathTests {
         #expect(cacheCreates.count == 1)
         #expect(generates.count == 2)
 
-        // create body は安定プレフィックスを保持
+        // The create call is what carries the stable prefix: system instruction, tool declarations,
+        // and the TTL.
         let createBody = String(decoding: cacheCreates[0].body ?? Data(), as: UTF8.self)
         #expect(createBody.contains("you are a researcher"))
         #expect(createBody.contains("functionDeclarations"))
         #expect(createBody.contains(#""ttl":"3600s""#))
 
-        // generate body は cachedContent のみで prefix 系フィールドを含まない（API 排他制約）
+        // Once cached, generate must reference cachedContent alone. Gemini rejects a request that
+        // repeats the prefix fields alongside it.
         for generate in generates {
             let body = String(decoding: generate.body ?? Data(), as: UTF8.self)
             #expect(body.contains("cachedContents/cache-1"))
@@ -119,13 +121,13 @@ struct GeminiContextCachePathTests {
         _ = try await runStep(client)
 
         let cacheCreates = mock.recordedRequests.filter { $0.url.path.contains("cachedContents") }
-        #expect(cacheCreates.count == 1) // 恒久条件として記憶され再試行しない
+        #expect(cacheCreates.count == 1) // recorded as permanent for this prefix, so never retried
 
         let generates = mock.recordedRequests.filter { $0.url.path.contains("generateContent") }
         #expect(generates.count == 2)
         for generate in generates {
             let body = String(decoding: generate.body ?? Data(), as: UTF8.self)
-            #expect(body.contains("systemInstruction")) // inline 送信
+            #expect(body.contains("systemInstruction")) // fell back to sending the prefix inline
             #expect(!body.contains("cachedContent\""))
         }
     }
@@ -141,7 +143,7 @@ struct GeminiContextCachePathTests {
             if request.url.path.contains("cachedContents") {
                 return self.ok(self.cacheCreatedJSON)
             }
-            // 1 回目の generate だけ失効エラーを返す
+            // Only the first generate fails as expired; the retry after re-creation succeeds.
             if counter.next() == 0 {
                 return HTTPResponse(status: 403, headers: ["Content-Type": "application/json"], body: notFoundJSON)
             }
@@ -154,8 +156,8 @@ struct GeminiContextCachePathTests {
 
         let cacheCreates = mock.recordedRequests.filter { $0.url.path.contains("cachedContents") && $0.method == "POST" }
         let generates = mock.recordedRequests.filter { $0.url.path.contains("generateContent") }
-        #expect(cacheCreates.count == 2) // 初回 + 再作成
-        #expect(generates.count == 2)   // 失敗 + リトライ成功
+        #expect(cacheCreates.count == 2) // initial create + re-create after the cache expired
+        #expect(generates.count == 2)   // the 403 attempt + the retry that succeeded
     }
 
     @Test("releasePromptCaches: 作成済みリソースを DELETE する")

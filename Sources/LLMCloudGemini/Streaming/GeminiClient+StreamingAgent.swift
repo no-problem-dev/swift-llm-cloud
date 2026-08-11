@@ -9,15 +9,23 @@ import LLMTool
 // MARK: - Streaming Agent Step
 
 extension GeminiClient {
-    /// エージェントステップをストリーミング実行
+    /// Runs one agent step, emitting text deltas as they arrive and a full response at the end.
     ///
-    /// `streamGenerateContent`（SSE）でテキストデルタをリアルタイムに返す。
-    /// thinking の有無に関わらず常にストリーミングする（thinking 制御は
-    /// `reasoningEffort` 由来の `thinkingConfig` で行い、ストリーミング可否とは独立）。
+    /// Streaming is unconditional. Thinking is controlled through the reasoning effort, which
+    /// becomes a thinking config on the request, and has no bearing on whether the step streams.
     ///
-    /// ストリーミング経路はリトライしない（途中失敗の再試行はデルタ重複になるため）。
-    /// キャッシュ失効（`GeminiCachedContentError.notFound`）のみ、デルタ送出前に限り
-    /// キャッシュ再作成 + 1 回リトライで回復する。
+    /// This path does not retry: replaying a request that failed midway would repeat deltas the
+    /// caller already saw. The one exception is a cache the server no longer has, and only while
+    /// nothing has been emitted yet: the cache is recreated and the request sent once more, so
+    /// the caller sees a single clean stream. A cache loss after the first delta propagates as an
+    /// error instead.
+    ///
+    /// Tool calls do not stream. Gemini delivers each `functionCall` complete in one chunk, so
+    /// they surface in the final response rather than as deltas.
+    ///
+    /// `thinkingMode` is ignored, since Gemini's thinking budget comes from `reasoningEffort`
+    /// alone. `cachePolicy` selects whether the stable prefix is cached explicitly on the server,
+    /// and therefore also decides whether the cache-loss recovery above is available at all.
     public func streamAgentStep(
         messages: [LLMMessage],
         model: GeminiModel,
@@ -132,15 +140,18 @@ extension GeminiClient {
 
 // MARK: - GeminiStreamAccumulator
 
-/// SSE チャンク（各チャンク = `GeminiResponseBody` 全体）からストリーミングデルタと
-/// 完全レスポンスを構築するアキュムレータ
+/// Builds streaming deltas and the final response out of Gemini's SSE chunks.
 ///
-/// Anthropic のブロック指向 SSE と違い、Gemini のチャンクは自己完結している:
-/// - テキストは `parts[].text` の増分（連結して全文になる）
-/// - `functionCall` は 1 チャンクに完全体（`args` はパース済み構造）で届く
-/// - `usageMetadata` は毎チャンク累積値なので加算せず上書きする
-/// - `finishReason` は最終チャンクにのみ入る
-/// - 明示的な完了イベントは無く、ストリームの EOF が正常終了
+/// Unlike Anthropic's block-oriented events, every Gemini chunk is a whole response body:
+/// - Text arrives as an increment in `parts[].text` and is concatenated into the full answer.
+/// - A `functionCall` arrives complete in one chunk, arguments already parsed, so tool calls are
+///   never assembled from fragments and never carry a provider-supplied id.
+/// - `usageMetadata` is a running total on every chunk, so it is overwritten rather than summed.
+/// - `finishReason` appears only on the last chunk.
+/// - There is no explicit completion event; the end of the stream is the successful end.
+///
+/// A chunk that fails to parse is skipped rather than treated as an error, since a malformed
+/// chunk should not discard the text already accumulated.
 struct GeminiStreamAccumulator {
     enum Action {
         case yieldDelta(StreamDelta)
@@ -152,7 +163,10 @@ struct GeminiStreamAccumulator {
     private var latestUsage: GeminiUsageMetadata?
     private var finishReason: String?
 
-    /// まだ何も蓄積していないか（キャッシュ失効リトライの可否判定に使う）
+    /// Whether nothing has been observed yet, including usage and finish reason.
+    ///
+    /// The cache-loss retry is only safe while this holds: past that point the caller has already
+    /// been handed deltas, and resending would duplicate them.
     var isEmpty: Bool {
         textContent.isEmpty && toolUseBlocks.isEmpty && latestUsage == nil && finishReason == nil
     }
@@ -183,7 +197,8 @@ struct GeminiStreamAccumulator {
             }
             if let functionCall = part.functionCall {
                 let input = (functionCall.args.flatMap { try? JSONEncoder().encode($0) }) ?? Data("{}".utf8)
-                // encodeToolCallId は UUID を含むため、functionCall 検出時に一度だけ呼んで保持する
+                // The id is minted here and stored, because it embeds a fresh UUID: calling the
+                // encoder again later would produce a different id for the same call.
                 toolUseBlocks.append((
                     id: GeminiThoughtSignatureEncoding.encodeToolCallId(thoughtSignature: part.thoughtSignature),
                     name: functionCall.name,
@@ -194,7 +209,11 @@ struct GeminiStreamAccumulator {
         return actions
     }
 
-    /// ストリーム終端（EOF）で完全レスポンスを構築する
+    /// Assembles the complete response once the stream ends.
+    ///
+    /// Text comes first as a single joined block, then the tool calls in arrival order. Usage is
+    /// taken from the last chunk that carried it and normalized; a stream that reported none
+    /// yields zeros rather than an estimate.
     func buildResponse(model: String) -> LLMResponse {
         var blocks: [LLMResponse.ContentBlock] = []
         if !textContent.isEmpty {

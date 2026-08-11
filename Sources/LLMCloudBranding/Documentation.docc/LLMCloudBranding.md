@@ -1,14 +1,19 @@
 # ``LLMCloudBranding``
 
-クラウド LLM プロバイダーのブランドロゴと表示 identity を提供する SwiftUI モジュール。
+Provider logos and display names as a SwiftUI module, with no dependency on any client code.
 
 ## Overview
 
-`LLMCloudBranding` は、各クラウド LLM プロバイダー / モデルファミリーのブランド identity（表示名・ロゴアセット）を 1 モジュールに集約する。他のターゲットには一切依存せず、純粋な表示資産として機能する。
+An app that lets users choose a provider needs the logo and the name, which is a presentation
+concern that has nothing to do with sending requests. `LLMCloudBranding` isolates it: the module
+depends on no other target in the package, so a settings screen or a model picker can render
+without linking a single API client.
 
-`CloudProviderBrand` でプロバイダーを特定し、`CloudProviderLogo` SwiftUI ビューでロゴを描画する。アセットは `ProviderLogos.xcassets`（モジュール同梱）に格納されており、アプリバンドルへのコピーは不要。
+``CloudProviderBrand`` identifies a provider and carries its display name.
+``CloudProviderLogo`` draws the mark. Artwork ships inside the module as a bundled asset catalog —
+nothing to copy into the app bundle, and nothing to keep in sync.
 
-### ロゴの表示
+### Drawing a logo
 
 ```swift
 import LLMCloudBranding
@@ -24,8 +29,12 @@ struct ProviderRow: View {
         }
     }
 }
+```
 
-// 全プロバイダーを一覧表示
+`CloudProviderBrand` is `CaseIterable`, so a full picker needs no hand-maintained list and gains
+new providers when the package does.
+
+```swift
 struct BrandList: View {
     var body: some View {
         List(CloudProviderBrand.allCases) { brand in
@@ -35,21 +44,25 @@ struct BrandList: View {
 }
 ```
 
-### モデルファミリー名からブランドを解決
+### Resolving a brand from a model name
 
-モデル ID やファミリー名だけからブランドを推定したい場合は `from(modelFamily:)` を使用する。
+When all you have is a model identifier — from a config file, a server response, or OpenRouter's
+`provider/model` strings — `from(modelFamily:)` maps it to a brand.
 
 ```swift
-let brand = CloudProviderBrand.from(modelFamily: "claude")  // .anthropic
-let brand = CloudProviderBrand.from(modelFamily: "gemini")  // .google
+CloudProviderBrand.from(modelFamily: "claude")  // .anthropic
+CloudProviderBrand.from(modelFamily: "gemini")  // .google
 ```
+
+An unrecognised family has no brand, so treat a `nil` result as "show a generic placeholder" rather
+than as an error.
 
 ## Topics
 
-### ブランド識別子
+### Brand identity
 
 - ``CloudProviderBrand``
 
-### SwiftUI ビュー
+### SwiftUI views
 
 - ``CloudProviderLogo``

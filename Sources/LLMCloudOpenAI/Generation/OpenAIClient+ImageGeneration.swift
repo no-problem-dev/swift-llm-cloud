@@ -3,7 +3,7 @@ import LLMClient
 // OpenAIClient+ImageGeneration.swift
 // swift-llm-structured-outputs
 //
-// OpenAI クライアントの画像生成機能拡張
+// Image generation for the OpenAI client.
 
 import Foundation
 #if canImport(FoundationNetworking)
@@ -15,16 +15,18 @@ import FoundationNetworking
 extension OpenAIClient: ImageGenerationCapable {
     public typealias ImageModel = OpenAIImageModel
 
-    /// 画像を生成
+    /// Generates a single image.
     ///
     /// - Parameters:
-    ///   - input: LLM 入力（プロンプトテキスト）
-    ///   - model: 使用する画像生成モデル
-    ///   - size: 出力画像のサイズ
-    ///   - quality: 画像品質
-    ///   - format: 出力フォーマット
-    ///   - n: 生成する画像の数
-    /// - Returns: 生成された画像
+    ///   - input: Prompt describing the image.
+    ///   - model: Image model to run.
+    ///   - size: Output size. Defaults to 1024×1024, and a size the model does not offer is
+    ///     rejected before the request goes out.
+    ///   - quality: Quality tier. It is forwarded as given and is not checked against the model,
+    ///     so a tier the model does not offer is rejected by the API rather than here.
+    ///   - format: Output format. Defaults to PNG.
+    ///   - n: Ignored. This overload always asks for one image.
+    /// - Throws: `LLMError.emptyResponse` if the API answers with no image at all.
     public func generateImage(
         input: LLMInput,
         model: OpenAIImageModel,
@@ -47,16 +49,23 @@ extension OpenAIClient: ImageGenerationCapable {
         return image
     }
 
-    /// 複数の画像を生成
+    /// Generates several images from one prompt.
+    ///
+    /// Size, format, and count are validated locally first, so an unsupported combination fails
+    /// without spending a request. Images that OpenAI returns as links are downloaded in
+    /// parallel, which means the returned array is not in the order the API listed them.
     ///
     /// - Parameters:
-    ///   - input: LLM 入力（プロンプトテキスト）
-    ///   - model: 使用する画像生成モデル
-    ///   - size: 出力画像のサイズ
-    ///   - quality: 画像品質
-    ///   - format: 出力フォーマット
-    ///   - n: 生成する画像の数
-    /// - Returns: 生成された画像の配列
+    ///   - input: Prompt describing the images.
+    ///   - model: Image model to run.
+    ///   - size: Output size. Defaults to 1024×1024.
+    ///   - quality: Quality tier. It is forwarded as given and is not checked against the model,
+    ///     so a tier the model does not offer is rejected by the API rather than here.
+    ///   - format: Output format. Defaults to PNG.
+    ///   - n: How many images to generate, capped by the model's own limit.
+    /// - Throws: `ImageGenerationError` when the count, size, or format exceeds what the model
+    ///   accepts, or `GeneratedMediaError` when a returned image can be neither decoded nor
+    ///   downloaded.
     public func generateImages(
         input: LLMInput,
         model: OpenAIImageModel,
@@ -65,9 +74,8 @@ extension OpenAIClient: ImageGenerationCapable {
         format: ImageOutputFormat?,
         n: Int
     ) async throws -> [GeneratedImage] {
-        // プロンプトテキストを取得
         let prompt = input.prompt.render()
-        // バリデーション
+        // Validate locally so an impossible request never reaches the API.
         if n > model.maxImages {
             throw ImageGenerationError.exceedsMaxImages(requested: n, maximum: model.maxImages)
         }
@@ -82,7 +90,8 @@ extension OpenAIClient: ImageGenerationCapable {
             throw ImageGenerationError.unsupportedFormat(actualFormat, model: model.displayName)
         }
 
-        // GPT-Image は response_format 非対応（常に base64）。DALL-E のみ response_format を使う。
+        // GPT-Image rejects response_format and always answers with base64. Only DALL·E
+        // has to be told which of the two encodings to use.
         let useResponseFormat = model == .dalle2 || model == .dalle3
 
         let request = OpenAIImageRequestBody(
@@ -99,20 +108,20 @@ extension OpenAIClient: ImageGenerationCapable {
             OpenAIMediaAPI.GenerateImage(customHeaders: [:], request: request)
         ).output
 
-        // レスポンス変換
+        // Inline images decode immediately; linked ones still have to be fetched.
         return try await withThrowingTaskGroup(of: GeneratedImage.self) { group in
             for item in response.data {
                 group.addTask {
                     let imageData: Data
 
                     if let b64Json = item.b64Json {
-                        // Base64データがある場合
                         guard let data = Data(base64Encoded: b64Json) else {
                             throw GeneratedMediaError.invalidBase64Data
                         }
                         imageData = data
                     } else if let urlString = item.url, let imageURL = URL(string: urlString) {
-                        // URLがある場合はダウンロード
+                        // The link expires, so download it now. This uses the shared session
+                        // rather than the one configured on the client.
                         let (data, _) = try await URLSession.shared.data(from: imageURL)
                         imageData = data
                     } else {

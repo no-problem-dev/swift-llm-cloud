@@ -6,6 +6,7 @@ import JSONParsing
 import Foundation
 
 extension GeminiClient {
+    /// Streams plain text for a single prompt.
     public func streamText(
         input: LLMInput,
         model: GeminiModel,
@@ -22,6 +23,11 @@ extension GeminiClient {
         )
     }
 
+    /// Streams plain text for a conversation, yielding each chunk's text as it arrives.
+    ///
+    /// Text only: no tools are declared, no response schema is set, and no prompt cache is used,
+    /// so every request carries its full prefix. Streaming is never retried, and cancelling the
+    /// stream cancels the request. Usage counters are not surfaced on this path.
     public func streamText(
         messages: [LLMMessage],
         model: GeminiModel,
@@ -64,6 +70,10 @@ extension GeminiClient {
         }
     }
 
+    /// Pulls the text out of one SSE event, or nil when the chunk carries none.
+    ///
+    /// A chunk that fails to parse is skipped rather than failing the stream, and a chunk holding
+    /// only a function call or usage totals simply has no text to yield.
     private static func extractTextDelta(from event: SSEEvent) -> String? {
         guard let chunk = try? JSONParser().parse(event.data).decode(GeminiResponseBody.self),
               let parts = chunk.candidates?.first?.content?.parts else {

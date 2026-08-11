@@ -1,55 +1,74 @@
 # ``LLMCloudOpenAI``
 
-OpenAI GPT モデルの Swift クライアント実装。
+OpenAI GPT client covering chat, tools, and image, speech, and video generation, with automatic routing to the Responses API.
 
 ## Overview
 
-`LLMCloudOpenAI` は OpenAI の Chat Completions API および Responses API に対応した Swift クライアント。`OpenAIClient` を通じて、構造化出力・チャット・ツールコール・エージェントステップ・画像生成・音声生成・動画生成の各機能を提供する。
+`OpenAIClient` takes an API key and a `GPTModel`. Model selection is typed, so a Claude or Gemini
+model will not compile against it.
 
-モデル選択は `GPTModel` 型に制約されており、型安全なプロバイダー指定が保証される。reasoning モデルに対するエージェントステップは、Chat Completions ではなく Responses API へ自動的にルーティングされる。
+The module speaks both OpenAI request shapes. Ordinary calls use Chat Completions; agent steps on a
+reasoning model that also has tools are routed to `/v1/responses` instead, and streaming agent
+steps always go through `/v1/responses`. You do not choose — the client picks based on the model
+and the arguments, because reasoning models drop their chain of thought between Chat Completions
+turns and the Responses API is what preserves it.
 
-### 構造化出力
+### What differs from the other providers
 
-`@Structured` マクロで定義した型をそのまま戻り値として指定できる。
+**Two APIs, one client.** The Responses API models a turn as typed output *items* rather than a
+single message, so a reply can contain reasoning, tool calls, and text side by side.
+
+**Streaming is typed events.** Instead of opaque chunks you get named events such as
+`response.output_text.delta`, each mapping to a case rather than requiring you to diff successive
+snapshots. Text arrives incrementally; tool calls do not — partial argument deltas are discarded and
+the completed response is taken as the truth, because half a JSON object is not something a caller
+can act on. Unknown or malformed events are ignored rather than aborting the stream.
+
+**Reasoning tokens are billed and invisible.** They are a subset of the output token count, not an
+addition to it, and `max_output_tokens` covers them — a step that thinks hard can exhaust the budget
+before emitting any text at all.
+
+**Tool results are matched by `call_id`.** The id from the call must come back on the function
+output item, or the model has no way to associate the two.
+
+### Structured output
 
 ```swift
 import LLMCloudOpenAI
 
 let client = OpenAIClient(apiKey: "sk-...")
 
-@Structured("商品情報")
-struct Product {
-    @StructuredField("商品名")
-    var name: String
-    @StructuredField("価格（円）", .minimum(0))
-    var price: Int
+@Structured("A support ticket triaged from a customer message")
+struct Ticket {
+    @StructuredField("One-line summary of the problem")
+    var summary: String
+    @StructuredField("Severity from 1 (cosmetic) to 5 (outage)", .minimum(1), .maximum(5))
+    var severity: Int
 }
 
-let result: Product = try await client.generate(
-    input: "iPhone 16 Pro は 159,800 円のスマートフォンです。",
+let ticket: Ticket = try await client.generate(
+    input: "Nobody on the team can log in since this morning's deploy.",
     model: .gpt4o
 )
-print(result.name)   // "iPhone 16 Pro"
-print(result.price)  // 159800
 ```
 
-### 組織 ID の指定
+### Multiple organizations
 
-複数組織を使い分ける場合は初期化時に指定する。
+Pass the organization at construction time when one key is shared across several of them; billing
+and rate limits are tracked per organization.
 
 ```swift
-let client = OpenAIClient(
-    apiKey: "sk-...",
-    organization: "org-..."
-)
+let client = OpenAIClient(apiKey: "sk-...", organization: "org-...")
 ```
 
-### リトライ設定
+### Retry
 
-`RetryConfiguration` を渡すことでリトライ挙動をカスタマイズできる（`LLMCloudClient` 参照）。
+Retry behaviour comes from `LLMCloudClient` and is configured with `RetryConfiguration` at
+construction. OpenAI's `x-ratelimit-*` headers are parsed into `RateLimitInfo`, and a rate-limited
+response is retried on the window the headers describe rather than on blind backoff.
 
 ## Topics
 
-### クライアント
+### Client
 
 - ``OpenAIClient``

@@ -5,6 +5,13 @@ import JSONParsing
 import Foundation
 
 extension AnthropicClient {
+    /// Streams the assistant's visible text as it is generated.
+    ///
+    /// Only `text_delta` payloads are yielded: thinking and tool-argument deltas are dropped, and
+    /// no tools are sent, so this is the plain-prose path. The stream finishes when Anthropic
+    /// closes it, and cancelling the consuming task cancels the request. Token usage is not
+    /// surfaced here even though the stream carries it. Without an explicit limit, 4096 is sent
+    /// as `max_tokens`, which Anthropic requires.
     public func streamText(
         input: LLMInput,
         model: ClaudeModel,
@@ -21,6 +28,12 @@ extension AnthropicClient {
         )
     }
 
+    /// Streams the assistant's visible text for a multi-turn conversation.
+    ///
+    /// Same filtering as the single-input form: `text_delta` only, no tools, and no usage
+    /// reporting. A failure before the stream opens is thrown, but Anthropic's in-band `error`
+    /// event is not recognized here — a stream that fails midway simply ends early, so a
+    /// truncated answer is indistinguishable from a complete one.
     public func streamText(
         messages: [LLMMessage],
         model: ClaudeModel,
@@ -54,6 +67,11 @@ extension AnthropicClient {
         }
     }
 
+    /// Pulls assistant text out of one event, or `nil` if the event carries none.
+    ///
+    /// The event kind is taken from the `type` field inside the payload rather than the SSE
+    /// `event:` line. Only `content_block_delta` payloads with a `text` field qualify, so
+    /// thinking deltas and `input_json_delta` tool-argument fragments are skipped.
     private static func extractTextDelta(from event: SSEEvent) -> String? {
         guard let e = AnthropicSSE.decode(AnthropicSSE.TextDelta.self, from: event.data),
               e.type.flatMap(AnthropicSSE.EventName.init(rawValue:)) == .contentBlockDelta else {

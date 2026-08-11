@@ -8,58 +8,52 @@ import FoundationNetworking
 
 // MARK: - GeminiClient
 
-/// Google Gemini API クライアント。
+/// Client for Google's Gemini generative language API.
 ///
-/// Gemini モデルを使用して型安全な構造化出力を生成する。
-/// モデル選択は `GeminiModel` 型に制約されており、
-/// 他のプロバイダーのモデルを誤って指定できない。
+/// Structured generation sends the return type's JSON schema as Gemini's `responseSchema` and
+/// decodes the reply back into that type. The model parameter is typed as `GeminiModel`, so a
+/// model belonging to another provider cannot be passed by mistake.
 ///
-/// ## 使用例
+/// ## Example
 ///
 /// ```swift
 /// let client = GeminiClient(apiKey: "...")
 ///
-/// @Structured("ユーザー情報")
+/// @Structured("User information")
 /// struct UserInfo {
-///     @StructuredField("ユーザー名")
+///     @StructuredField("Full name")
 ///     var name: String
-///     @StructuredField("年齢", .minimum(0))
+///     @StructuredField("Age in years", .minimum(0))
 ///     var age: Int
 /// }
 ///
-/// // 戻り値の型から自動的にスキーマが推論される
+/// // The schema is derived from the return type.
 /// let result: UserInfo = try await client.generate(
-///     input: "山田太郎さんは35歳です。",
-///     model: .flash25
+///     input: "Taro Yamada is 35 years old.",
+///     model: .flash35
 /// )
-/// print(result.name)  // "山田太郎"
-/// print(result.age)   // 35
 ///
-/// // トークン使用量を取得
+/// // Same call, with billed token counts attached.
 /// let resultWithUsage: GenerationResult<UserInfo> = try await client.generateWithUsage(
-///     input: "山田太郎さんは35歳です。",
-///     model: .flash3Preview
+///     input: "Taro Yamada is 35 years old.",
+///     model: .flash35
 /// )
 /// print("Input tokens: \(resultWithUsage.usage.inputTokens)")
 /// print("Output tokens: \(resultWithUsage.usage.outputTokens)")
 ///
-/// // マルチモーダル入力
-/// let result: ImageAnalysis = try await client.generate(
-///     input: LLMInput("この画像を分析してください", images: [imageContent]),
-///     model: .flash25
+/// // Multimodal input.
+/// let analysis: ImageAnalysis = try await client.generate(
+///     input: LLMInput("Describe this image", images: [imageContent]),
+///     model: .flash35
 /// )
 /// ```
 ///
-/// ## 対応モデル
-/// - `.flash35` - Gemini 3.5 Flash
-/// - `.pro31Preview` - Gemini 3.1 Pro（Preview）
-/// - `.flashLite31` - Gemini 3.1 Flash-Lite
-/// - `.flash3Preview` - Gemini 3 Flash（Preview）
-/// - `.pro25` - Gemini 2.5 Pro
-/// - `.flash25` - Gemini 2.5 Flash
-/// - `.flashLite25` - Gemini 2.5 Flash-Lite
+/// ## Models
 ///
-/// バージョン固定指定（`.pro25_version("...")` 等）も利用できる。
+/// `GeminiModel` carries both the current aliases (Gemini 3.x Flash, Flash-Lite, and Pro) and
+/// version-pinned cases such as `.flash35_version("...")`. The Gemini 2.5 cases are retired for
+/// new users and exist only so previously stored model ids still decode; filter on the model's
+/// `isRetired` flag before offering one as a choice.
 public struct GeminiClient: StructuredLLMClient {
     public typealias Model = GeminiModel
 
@@ -67,48 +61,55 @@ public struct GeminiClient: StructuredLLMClient {
 
     let baseProvider: GeminiProvider
 
-    /// メディア系(Imagen `:predict`, 画像 `:generateContent`)用の APIClient(baseURL=/v1beta/models)。
-    /// 認証は `x-goog-api-key` ヘッダー。
+    /// Transport for the image endpoints, rooted at the models base URL.
+    ///
+    /// Serves Imagen `:predict` and Gemini image `:generateContent`, and authenticates with the
+    /// `x-goog-api-key` header like the text endpoints do.
     package let mediaClient: APIClientImpl
 
-    /// Veo(動画)用の APIClient(baseURL=/v1beta)。operations は models/ の外にあるため別 base。
+    /// Transport for Veo video generation, rooted one path component above the models base URL.
+    ///
+    /// Veo returns a long-running operation whose status resource lives outside `models/`
+    /// (`/v1beta/{operationName}`), so polling needs this shorter base URL.
     package let veoClient: APIClientImpl
 
-    /// 明示プロンプトキャッシュ(`cachedContents`)のライフサイクル管理。
-    /// クライアント（≒セッション）単位でリソースを所有する
+    /// Lifecycle owner of the explicit prompt caches this client created.
+    ///
+    /// Gemini's `cachedContents` are server-side resources billed for storage, so they are owned
+    /// per client instance (in practice, per session) and released by ``releasePromptCaches()``.
     let contextCache: GeminiContextCacheStore
 
     // MARK: - Package Access (for extension by other modules)
 
-    /// API キー（パッケージ内の他モジュールからアクセス可能）
     package let apiKey: String
 
-    /// ベース URL（パッケージ内の他モジュールからアクセス可能）
     package let baseURL: String
 
-    /// URLSession（パッケージ内の他モジュールからアクセス可能）
     package let session: URLSession
 
-    /// リトライ設定（パッケージ内の他モジュールからアクセス可能）
     public let retryConfiguration: RetryConfiguration
 
-    /// リトライイベントハンドラー（パッケージ内の他モジュールからアクセス可能）
     public let retryEventHandler: RetryEventHandler?
 
-    /// デフォルトベース URL
     public static let defaultBaseURL = "https://generativelanguage.googleapis.com/v1beta/models"
 
     // MARK: - Initializers
 
-    /// API キーを指定して初期化
+    /// Creates a client that talks to the Gemini API with the given key.
+    ///
+    /// With retries enabled the non-streaming provider is wrapped in a retrying one. Gemini
+    /// publishes no rate-limit budget headers, so backoff is driven by `retry-after` alone when
+    /// the server sends it. Streaming calls are never retried.
     ///
     /// - Parameters:
-    ///   - apiKey: Google AI API キー
-    ///   - baseURL: カスタムベース URL（オプション）
-    ///   - session: カスタム URLSession（オプション）
-    ///   - retryConfiguration: リトライ設定（デフォルト: 有効）
-    ///   - retryEventHandler: リトライイベントハンドラー（オプション）
-    ///   - cacheEventHandler: プロンプトキャッシュのライフサイクルイベントハンドラー（オプション）
+    ///   - apiKey: Google AI API key, sent as the `x-goog-api-key` header.
+    ///   - baseURL: Overrides the models base URL; the media and cache transports are derived
+    ///     from it.
+    ///   - session: URLSession used for the transport and for downloading generated video.
+    ///   - retryConfiguration: Retry policy for non-streaming requests. Enabled by default.
+    ///   - retryEventHandler: Observes each retry attempt.
+    ///   - cacheEventHandler: Observes explicit prompt-cache lifecycle events such as creation,
+    ///     reuse, and fallback to inline sending.
     public init(
         apiKey: String,
         baseURL: String? = nil,
@@ -156,7 +157,8 @@ public struct GeminiClient: StructuredLLMClient {
             authTokenProvider: StaticTokenProvider(token: apiKey),
             keyStyle: .default
         )
-        // cachedContents は models/ の外 (/v1beta/cachedContents)。認証は key クエリパラメータ
+        // cachedContents sits outside models/ (/v1beta/cachedContents), so it needs the shorter
+        // base URL. Auth is the x-goog-api-key header, same as generateContent.
         self.contextCache = GeminiContextCacheStore(
             apiClient: APIClientImpl(
                 baseURL: mediaBaseURL.deletingLastPathComponentAsBase,
@@ -204,7 +206,7 @@ public struct GeminiClient: StructuredLLMClient {
         temperature: Double?,
         maxTokens: Int?
     ) async throws -> GenerationResult<T> {
-        // スキーマ情報を含むシステムプロンプトを構築
+        // Restate the schema description in the system prompt as well as sending responseSchema.
         let enhancedSystemPrompt = buildSystemPrompt(
             base: systemPrompt,
             schema: T.jsonSchema
@@ -225,7 +227,9 @@ public struct GeminiClient: StructuredLLMClient {
 
     // MARK: - Private Helpers
 
-    /// システムプロンプトにスキーマ情報を付加
+    /// Joins the caller's system prompt with the schema description, blank line separated.
+    ///
+    /// Returns an empty string when there is neither a base prompt nor a schema description.
     private func buildSystemPrompt(base: String?, schema: JSONSchema) -> String {
         var parts: [String] = []
 
@@ -233,7 +237,6 @@ public struct GeminiClient: StructuredLLMClient {
             parts.append(base)
         }
 
-        // スキーマの説明を追加
         if let description = schema.description {
             parts.append("出力形式: \(description)")
         }
@@ -241,13 +244,20 @@ public struct GeminiClient: StructuredLLMClient {
         return parts.isEmpty ? "" : parts.joined(separator: "\n\n")
     }
 
-    /// レスポンスをデコード
+    /// Decodes the first text block of a response into the requested structured type.
+    ///
+    /// Gemini honours `responseSchema` but still wraps the JSON in a markdown fence often enough
+    /// that the fence is stripped before decoding. Keys are matched with
+    /// `convertFromSnakeCase`, and the surviving JSON text is kept on the result as `rawText`.
+    ///
+    /// - Throws: `LLMError.emptyResponse` when no text block came back, `LLMError.invalidEncoding`
+    ///   when the text is not UTF-8, and `LLMError.decodingFailed` when it does not match the type.
     private func decodeResponse<T: StructuredProtocol>(_ response: LLMResponse, model: String) throws -> GenerationResult<T> {
         guard let text = response.content.first?.text else {
             throw LLMError.emptyResponse
         }
 
-        // マークダウンコードブロックからJSONを抽出
+        // Unwrap the markdown code fence Gemini sometimes adds around JSON output.
         let jsonText = extractJSON(from: text)
 
         guard let data = jsonText.data(using: .utf8) else {
@@ -271,26 +281,26 @@ public struct GeminiClient: StructuredLLMClient {
         }
     }
 
-    /// テキストからJSONを抽出
+    /// Strips a surrounding markdown code fence, if there is one.
     ///
-    /// マークダウンコードブロック（```json ... ``` または ``` ... ```）で
-    /// ラップされている場合は中身を抽出し、そうでなければそのまま返す。
+    /// Handles both a `json`-tagged fence and an untagged one, matching the closing fence from
+    /// the end so that fences inside the JSON do not truncate it. Text with no fence, or with an
+    /// unterminated one, is returned trimmed and otherwise unchanged.
     private func extractJSON(from text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // ```json で始まる場合
         if trimmed.hasPrefix("```json") {
-            let content = trimmed.dropFirst(7) // "```json" を除去
+            let content = trimmed.dropFirst(7) // Drop the opening "```json".
             if let endIndex = content.range(of: "```", options: .backwards) {
                 return String(content[content.startIndex..<endIndex.lowerBound])
                     .trimmingCharacters(in: .whitespacesAndNewlines)
             }
         }
 
-        // ``` で始まる場合（言語指定なし）
+        // Untagged fence, or one tagged with some other language.
         if trimmed.hasPrefix("```") {
-            let content = trimmed.dropFirst(3) // "```" を除去
-            // 最初の改行まで（言語名の可能性）をスキップ
+            let content = trimmed.dropFirst(3) // Drop the opening "```".
+            // Skip up to the first newline, which may hold a language tag.
             let afterLang: Substring
             if let newlineIndex = content.firstIndex(of: "\n") {
                 afterLang = content[content.index(after: newlineIndex)...]
@@ -303,7 +313,7 @@ public struct GeminiClient: StructuredLLMClient {
             }
         }
 
-        // コードブロックなし、そのまま返す
+        // No fence to strip.
         return trimmed
     }
 

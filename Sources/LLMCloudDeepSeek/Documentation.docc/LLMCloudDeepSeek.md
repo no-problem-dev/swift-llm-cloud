@@ -1,37 +1,40 @@
 # ``LLMCloudDeepSeek``
 
-DeepSeek モデルの Swift クライアント実装。
+DeepSeek client for structured output, chat, tool calls, and agent steps.
 
 ## Overview
 
-`LLMCloudDeepSeek` は DeepSeek API に対応した Swift クライアント。`DeepSeekClient` を通じて、構造化出力・チャット・ツールコール・エージェントステップの各機能を提供する。
+`DeepSeekClient` takes an API key and a `DeepSeekModel`. Model selection is typed, so a model from
+another provider will not compile against it.
 
-モデル選択は `DeepSeekModel` 型に制約されており、型安全なプロバイダー指定が保証される。内部的に `LLMCloudOpenAICompatible` の共有エンジンを使用しており、DeepSeek が `max_tokens` フィールドを要求する差異も自動的に処理される。
-
-### 基本的な使い方
+Underneath it is the shared Chat Completions engine from `LLMCloudOpenAICompatible`. The one vendor
+difference that matters is the maximum-output-tokens field: DeepSeek takes `max_tokens` and not
+`max_completion_tokens`, and the client sends the correct one without being asked.
 
 ```swift
 import LLMCloudDeepSeek
 
 let client = DeepSeekClient(apiKey: "sk-...")
 
-@Structured("分析結果")
+@Structured("A short analysis of a passage")
 struct Analysis {
-    @StructuredField("要約")
+    @StructuredField("One-paragraph summary")
     var summary: String
-    @StructuredField("キーワード")
+    @StructuredField("Key terms, most important first")
     var keywords: [String]
 }
 
-let result: Analysis = try await client.generate(
-    input: "Swift の async/await は並行処理を大幅に簡潔に記述できる機能です。",
+let analysis: Analysis = try await client.generate(
+    input: "Swift's async/await turns callback pyramids into straight-line code.",
     model: .v4Flash
 )
-print(result.summary)
 ```
+
+Retry and rate-limit handling come from `LLMCloudClient` and are configured with
+`RetryConfiguration` at construction, exactly as for the other providers.
 
 ## Topics
 
-### クライアント
+### Client
 
 - ``DeepSeekClient``

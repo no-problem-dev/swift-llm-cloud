@@ -3,7 +3,7 @@ import LLMClient
 // OpenAIClient+SpeechGeneration.swift
 // swift-llm-structured-outputs
 //
-// OpenAI クライアントの音声生成（TTS）機能拡張
+// Text-to-speech for the OpenAI client.
 
 import Foundation
 #if canImport(FoundationNetworking)
@@ -16,15 +16,21 @@ extension OpenAIClient: SpeechGenerationCapable {
     public typealias SpeechModel = OpenAITTSModel
     public typealias Voice = OpenAIVoice
 
-    /// 入力から音声を生成
+    /// Speaks the given text.
+    ///
+    /// This endpoint answers with the encoded audio itself rather than JSON, so the bytes are
+    /// taken from the raw body. The transcript on the result is the text that was submitted, not
+    /// a transcription of the audio.
     ///
     /// - Parameters:
-    ///   - input: LLM 入力（音声化するテキスト、最大 4096 文字）
-    ///   - model: 使用する TTS モデル
-    ///   - voice: 使用する声
-    ///   - speed: 再生速度（0.25〜4.0、デフォルト: 1.0）
-    ///   - format: 出力フォーマット（デフォルト: mp3）
-    /// - Returns: 生成された音声
+    ///   - input: Text to speak. OpenAI caps a single request at 4096 characters.
+    ///   - model: Text-to-speech model to run.
+    ///   - voice: Voice to speak in.
+    ///   - speed: Playback rate from 0.25 to 4.0. Defaults to 1.0.
+    ///   - format: Audio encoding. Defaults to MP3.
+    /// - Throws: `SpeechGenerationError` when the text is empty or too long, the speed is out
+    ///   of range, or the model does not offer the requested format. All four are checked before
+    ///   the request goes out.
     public func generateSpeech(
         input: LLMInput,
         model: OpenAITTSModel,
@@ -32,10 +38,9 @@ extension OpenAIClient: SpeechGenerationCapable {
         speed: Double?,
         format: AudioOutputFormat?
     ) async throws -> GeneratedAudio {
-        // テキストを取得
         let text = input.prompt.render()
 
-        // バリデーション
+        // Validate locally so an impossible request never reaches the API.
         if text.isEmpty {
             throw SpeechGenerationError.emptyText
         }

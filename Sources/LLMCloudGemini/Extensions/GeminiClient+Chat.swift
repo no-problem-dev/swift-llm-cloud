@@ -4,6 +4,11 @@ import LLMChat
 import Foundation
 
 extension GeminiClient: ChatCapableClient {
+    /// Continues a conversation and decodes the reply into a structured type.
+    ///
+    /// The response schema is adapted to Gemini's OpenAPI subset and sent with a JSON mime type,
+    /// so the reply is parsed directly rather than being stripped of a markdown fence first. This
+    /// path declares no tools, uses no prompt cache, and bypasses the retry layer.
     public func chat<T: StructuredProtocol>(
         messages: [LLMMessage],
         model: GeminiModel,

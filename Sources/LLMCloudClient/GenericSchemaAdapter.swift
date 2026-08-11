@@ -1,47 +1,69 @@
 import Foundation
 import LLMClient
 
-/// どの JSON Schema 制約をプロバイダがサポートするかを宣言する設定。
+/// Which JSON Schema keywords a provider's structured-output endpoint actually honors.
 ///
-/// 各プロバイダの API 仕様（2026-05 時点）に基づく。プロバイダは差分（この設定値）
-/// だけを供給し、再帰トラバースと制約除去ロジックは ``GenericSchemaAdapter`` に集約する。
+/// The schema a caller writes with `@Structured` is full JSON Schema, but no provider accepts
+/// all of it: each supports a different subset and rejects the request outright when an
+/// unsupported keyword appears. A provider contributes only this table of differences, and
+/// ``GenericSchemaAdapter`` does the recursive walk and the stripping.
 package struct SchemaCapabilities: Sendable {
+    /// How `minItems` on an array survives the trip to the provider.
     package enum MinItemsPolicy: Sendable {
-        /// 常に除去（OpenAI）。
+        /// Always strip it. OpenAI structured outputs reject it.
         case remove
-        /// 0/1 のみ許容、それ以外は除去（Anthropic は 0/1 のみ）。
+        /// Keep 0 and 1, strip anything larger. Anthropic accepts no other value.
         case keepIfAtMostOne
-        /// そのまま保持（Gemini）。
+        /// Send it through untouched. Gemini honors arbitrary values.
         case keep
     }
 
+    /// How the `format` annotation on a string survives.
     package enum FormatPolicy: Sendable {
+        /// Send every format through. Anthropic.
         case keepAll
+        /// Strip every format. OpenAI strict mode rejects the keyword.
         case removeAll
+        /// Keep only the listed formats and strip the rest. Gemini recognizes a fixed few.
         case whitelist(Set<String>)
     }
 
+    /// How `additionalProperties` is set on the schema sent to the provider.
     package enum AdditionalPropertiesPolicy: Sendable {
-        /// 元の値をそのまま（Anthropic）。
+        /// Send whatever the source schema said. Anthropic.
         case passthrough
-        /// 常に除去（Gemini）。
+        /// Drop the keyword entirely. Gemini does not accept it.
         case removeToNil
-        /// object には false を強制（OpenAI）。
+        /// Force false on every object. OpenAI strict mode requires it on all of them.
         case forceFalseOnObjects
     }
 
+    /// How the `required` list of an object is rewritten.
     package enum RequiredPolicy: Sendable {
+        /// Send the caller's list unchanged.
         case passthrough
-        /// object の全プロパティを required にする（OpenAI strict）。
+        /// List every property as required. OpenAI strict mode admits no optional property, so
+        /// optionality has to be expressed as nullability instead.
         case allPropertiesOnObjects
     }
 
     package var minItems: MinItemsPolicy
+
+    /// Whether `maxItems` is kept. False strips it.
     package var maxItems: Bool
+
+    /// Whether `minimum` and `maximum` are kept. False strips both.
     package var numericRange: Bool
+
+    /// Whether `exclusiveMinimum` and `exclusiveMaximum` are kept. False strips both.
     package var exclusiveRange: Bool
+
+    /// Whether `minLength` and `maxLength` are kept. False strips both.
     package var stringLength: Bool
+
+    /// Whether a `pattern` regex is kept. False strips it.
     package var pattern: Bool
+
     package var format: FormatPolicy
     package var additionalProperties: AdditionalPropertiesPolicy
     package var required: RequiredPolicy
@@ -68,21 +90,32 @@ package struct SchemaCapabilities: Sendable {
         self.required = required
     }
 
-    /// Anthropic Messages API（GA, constrained decoding）。
+    /// Anthropic Messages API with constrained decoding.
+    ///
+    /// Keeps `pattern` and every `format`, allows `minItems` of 0 or 1, passes
+    /// `additionalProperties` and `required` through untouched, and drops the numeric and
+    /// string-length bounds.
     package static let anthropic = SchemaCapabilities(
         minItems: .keepIfAtMostOne, maxItems: false, numericRange: false, exclusiveRange: false,
         stringLength: false, pattern: true, format: .keepAll,
         additionalProperties: .passthrough, required: .passthrough
     )
 
-    /// OpenAI Structured Outputs（strict mode）。
+    /// OpenAI structured outputs in strict mode, also used by the OpenAI-compatible vendors.
+    ///
+    /// The most restrictive of the three: every validation keyword is stripped, every object
+    /// gets `additionalProperties: false`, and every property is listed as required with the
+    /// originally optional ones turned nullable.
     package static let openAI = SchemaCapabilities(
         minItems: .remove, maxItems: false, numericRange: false, exclusiveRange: false,
         stringLength: false, pattern: false, format: .removeAll,
         additionalProperties: .forceFalseOnObjects, required: .allPropertiesOnObjects
     )
 
-    /// Google Gemini（responseSchema）。
+    /// Google Gemini structured responses.
+    ///
+    /// The only one that keeps array and numeric bounds, but it drops `additionalProperties`
+    /// entirely, rejects `pattern`, and recognizes only the three date and time formats.
     package static let gemini = SchemaCapabilities(
         minItems: .keep, maxItems: true, numericRange: true, exclusiveRange: false,
         stringLength: false, pattern: false, format: .whitelist(["date-time", "date", "time"]),
@@ -90,11 +123,20 @@ package struct SchemaCapabilities: Sendable {
     )
 }
 
-/// ``SchemaCapabilities`` 駆動の汎用スキーマアダプタ。
+/// Downgrades a JSON Schema to the subset one provider accepts, and records what it took out.
 ///
-/// 適合後スキーマ（API へ送る内容）はプロバイダ固有実装とバイト一致し、除去された制約は
-/// 同一集合として記録される（記録順のみ正規化）。各プロバイダの `*SchemaAdapter` は
-/// `GenericSchemaAdapter(capabilities: .xxx)` への委譲に縮退する。
+/// Walks the schema depth first, applying the provider's ``SchemaCapabilities`` at every node
+/// and collecting a ``RemovedConstraint`` for each keyword it had to drop, tagged with a dotted
+/// field path (`user.tags[]` for the element type of an array property). Each provider's own
+/// adapter is a one-line delegation to this type with its own capability table.
+///
+/// A dropped constraint is not silently lost: providers turn the recorded set into a
+/// natural-language block appended to the system prompt, so a `pattern` OpenAI will not enforce
+/// still reaches the model as an instruction. It becomes a request rather than a guarantee —
+/// the decoder no longer rejects output that violates it.
+///
+/// Only the order in which removals are recorded is normalized; the schema that goes on the
+/// wire and the set of removals match what the hand-written per-provider adapters produced.
 package struct GenericSchemaAdapter: ProviderSchemaAdapter {
     package let capabilities: SchemaCapabilities
 
@@ -102,20 +144,31 @@ package struct GenericSchemaAdapter: ProviderSchemaAdapter {
         self.capabilities = capabilities
     }
 
+    /// Adapts a schema and throws away the record of what was dropped.
+    ///
+    /// Use ``adaptWithConstraints(_:fieldPath:)`` instead when the dropped constraints should be
+    /// restated to the model in the system prompt.
     package func adapt(_ schema: JSONSchema) -> JSONSchema {
         adaptWithConstraints(schema, fieldPath: "").schema
     }
 
+    /// Adapts a schema and reports every constraint that had to be dropped.
+    ///
+    /// - Parameters:
+    ///   - schema: The schema as the caller declared it.
+    ///   - fieldPath: Path prefix for the paths reported on removed constraints. Pass an empty
+    ///     string at the root; nested calls extend it with `.property` and `[]`.
     package func adaptWithConstraints(_ schema: JSONSchema, fieldPath: String) -> SchemaAdaptationResult {
         adaptWithConstraints(schema, fieldPath: fieldPath, forceNullable: false)
     }
 
-    /// - Parameter forceNullable: 親が optional として扱うプロパティに対し null 許容を強制する
-    ///   （OpenAI strict の「全 required + optional は nullable」表現のため）。
+    /// - Parameter forceNullable: Marks the node nullable regardless of what the source schema
+    ///   said. Set for properties the parent treated as optional under a strict provider, where
+    ///   optionality can only be expressed as "required, but may be null".
     private func adaptWithConstraints(_ schema: JSONSchema, fieldPath: String, forceNullable: Bool) -> SchemaAdaptationResult {
         var removed: [RemovedConstraint] = []
 
-        // strict(全プロパティ required)では optional プロパティを nullable 化して required に含める。
+        // Under strict mode every property is required, so optional ones are turned nullable.
         let strictObjects: Bool
         if case .allPropertiesOnObjects = capabilities.required { strictObjects = true } else { strictObjects = false }
 
@@ -185,9 +238,9 @@ package struct GenericSchemaAdapter: ProviderSchemaAdapter {
             adaptedRequired = adaptedProperties.map { Array($0.keys).sorted() } ?? schema.required
         }
 
-        // strict モード(OpenAI/Groq)の object は、空でも `properties` を必ず持たねばならない。
-        // properties を欠くと「'required' present but 'properties' is missing」や
-        // additionalProperties:false の整合性で拒否される。引数なしツール等の空オブジェクト対策。
+        // An object under strict mode (OpenAI, Groq) must carry `properties` even when empty:
+        // omitting it is rejected with "'required' present but 'properties' is missing", or by
+        // the consistency check on additionalProperties:false. Hit by no-argument tools.
         var finalProperties = adaptedProperties
         if schema.type == .object, finalProperties == nil, strictObjects || adaptedRequired != nil {
             finalProperties = [:]
@@ -227,7 +280,7 @@ package struct GenericSchemaAdapter: ProviderSchemaAdapter {
         var constraints: [RemovedConstraint] = []
         for (key, value) in properties {
             let path = parentPath.isEmpty ? key : "\(parentPath).\(key)"
-            // strict で元々 optional(required 外)のプロパティは null 許容にして全 required に含める。
+            // Under strict mode a property left out of `required` becomes nullable and required.
             let forceNullable = optionalAsNullable && !originalRequired.contains(key)
             let result = adaptWithConstraints(value, fieldPath: path, forceNullable: forceNullable)
             adapted[key] = result.schema

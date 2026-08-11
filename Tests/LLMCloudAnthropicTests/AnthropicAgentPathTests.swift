@@ -57,7 +57,8 @@ struct AnthropicAgentPathTests {
         #expect(response.stopReason == .toolUse)
 
         let req = try #require(mock.recordedRequests.first)
-        // 構造化出力は GA。beta ヘッダーは送らない。
+        // Anthropic structured output is generally available, so no anthropic-beta header is sent.
+        // Sending a stale beta name is an error response, not a silently ignored header.
         #expect(req.headers["anthropic-beta"] == nil)
         let sent = String(decoding: try #require(req.body), as: UTF8.self)
         #expect(sent.contains("\"thinking\""))

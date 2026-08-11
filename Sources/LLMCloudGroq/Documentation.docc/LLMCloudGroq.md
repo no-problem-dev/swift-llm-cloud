@@ -1,38 +1,45 @@
 # ``LLMCloudGroq``
 
-Groq ホステッドモデルの Swift クライアント実装。
+Client for open models hosted on Groq, where the draw is latency rather than capability.
 
 ## Overview
 
-`LLMCloudGroq` は Groq の推論インフラ上で動作するモデル（Llama、Qwen など）に対応した Swift クライアント。`GroqClient` を通じて、構造化出力・チャット・ツールコール・エージェントステップの各機能を提供する。
+`GroqClient` takes an API key and a `GroqModel` naming an open-weights model — Llama, Qwen, and
+others — served on Groq's inference hardware. Model selection is typed, so a model from another
+provider will not compile against it.
 
-モデル選択は `GroqModel` 型に制約されており、型安全なプロバイダー指定が保証される。Groq は高速推論に特化したインフラを提供するため、低レイテンシーが求められるユースケースに適している。内部的に `LLMCloudOpenAICompatible` の共有エンジンを使用している。
+Groq runs the same weights everyone else can run, so the reason to pick it is time to first token,
+not quality. It suits interactive paths and high-volume classification; it is a poor trade when the
+task needs a frontier model.
 
-### 基本的な使い方
+Underneath it is the shared Chat Completions engine from `LLMCloudOpenAICompatible`. Groq takes
+`max_completion_tokens` rather than `max_tokens`, and the client sends the correct field.
 
 ```swift
 import LLMCloudGroq
 
 let client = GroqClient(apiKey: "gsk_...")
 
-@Structured("抽出結果")
+@Structured("Named entities pulled from a sentence")
 struct Extraction {
-    @StructuredField("人名")
+    @StructuredField("People mentioned")
     var names: [String]
-    @StructuredField("地名")
+    @StructuredField("Places mentioned")
     var places: [String]
 }
 
 let result: Extraction = try await client.generate(
-    input: "田中さんと鈴木さんは東京から大阪へ出張しました。",
+    input: "Tanaka and Suzuki travelled from Tokyo to Osaka for the meeting.",
     model: .llama3_3_70b
 )
-print(result.names)   // ["田中", "鈴木"]
-print(result.places)  // ["東京", "大阪"]
 ```
+
+Groq meters requests as well as tokens, so a tight loop of small prompts can hit the request
+ceiling long before the token ceiling. Rate-limit headers are parsed into `RateLimitInfo` and the
+retry policy waits on the window they describe.
 
 ## Topics
 
-### クライアント
+### Client
 
 - ``GroqClient``

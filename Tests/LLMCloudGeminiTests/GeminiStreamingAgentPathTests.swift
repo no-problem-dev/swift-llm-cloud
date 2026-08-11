@@ -62,7 +62,8 @@ struct GeminiStreamingAgentPathTests {
         #expect(response.content.count == 1)
         if case .text(let t) = response.content[0] { #expect(t == "こんにちは") } else { Issue.record("not text") }
         #expect(response.stopReason == .endTurn)
-        // usage は累積値の上書き（最後のチャンクの値を採用）
+        // Gemini repeats cumulative usage on every chunk rather than sending increments, so the
+        // last value wins. Summing across chunks would triple-count the prompt here.
         #expect(response.usage.inputTokens == 5)
         #expect(response.usage.outputTokens == 4)
 

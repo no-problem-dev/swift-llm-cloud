@@ -8,21 +8,28 @@ import FoundationNetworking
 
 // MARK: - Gemini API Group
 
-/// Google Gemini API のグループ定義
+/// Contract group for the Gemini text generation endpoints.
 ///
-/// - Auth: `x-goog-api-key` ヘッダー
-/// - basePath は空文字列（baseURL にモデルベースパスを含む）
-/// - Custom Error Decoding: LLMError + RateLimitAwareError
+/// Authentication is the `x-goog-api-key` header. The base path is empty because the models path
+/// is already part of the base URL. Error decoding is custom: cache failures become
+/// ``GeminiCachedContentError``, throttling and server errors are wrapped so the retry layer can
+/// see the response, and everything else maps to the shared error type.
 enum GeminiAPI: APIContractGroup {
     static let basePath: String = ""
-    // Google 現行推奨は x-goog-api-key ヘッダー（query param の key は URL ログ漏洩リスクで非推奨）。
+    // Google now recommends the x-goog-api-key header; passing the key as a query parameter risks
+    // leaking it into URL logs.
     static let auth: AuthScheme = .apiKey(headerName: "x-goog-api-key")
     static let endpoints: [EndpointDescriptor] = []
     static let commonHeaders: [String: String] = [:]
 
     // MARK: - Custom Error Decoding
 
-    /// Gemini 固有のエラーデコード
+    /// Turns a Gemini error response into the most specific error type available.
+    ///
+    /// A 429 or 5xx is wrapped in a rate-limit-aware error carrying `retry-after` when the server
+    /// sent it, which is the only budget signal Gemini publishes. Cache-specific failures are
+    /// classified from the message text first, because their status codes are indistinguishable
+    /// from ordinary bad requests and missing resources.
     static func decodeError(
         statusCode: Int,
         data: Data,
@@ -41,7 +48,8 @@ enum GeminiAPI: APIContractGroup {
 
         let errorResponse = try? JSONDecoder().decode(GeminiErrorResponse.self, from: data)
 
-        // cachedContents 参照に固有のエラー（失効など）は専用型で返し、回復戦略に接続する
+        // Cache-specific failures (an expired resource, for one) get their own type so the
+        // caller's recovery can act on them.
         if let message = errorResponse?.error.message,
            let cacheError = GeminiCacheErrorClassifier.classify(statusCode: statusCode, message: message) {
             return cacheError
@@ -75,9 +83,7 @@ enum GeminiAPI: APIContractGroup {
 // MARK: - Generate Content Endpoint
 
 extension GeminiAPI {
-    /// コンテンツ生成エンドポイント（非ストリーミング）
-    ///
-    /// URL: `{baseURL}/{modelId}:generateContent?key={apiKey}`
+    /// `POST {baseURL}/{modelId}:generateContent` — one complete, non-streaming generation.
     struct GenerateContent: APIContract, APIInput {
         typealias Group = GeminiAPI
         typealias Input = Self
@@ -86,9 +92,7 @@ extension GeminiAPI {
         static let method: APIMethod = .post
         static let subPath: String = "/:modelId:generateContent"
 
-        /// モデル ID
         let modelId: String
-        /// リクエストボディ
         let request: GeminiRequestBody
 
         var pathParameters: [String: String] {
@@ -110,9 +114,10 @@ extension GeminiAPI {
         }
     }
 
-    /// ストリーミング生成エンドポイント。
+    /// `POST {baseURL}/{modelId}:streamGenerateContent` — the same generation as server-sent events.
     ///
-    /// URL: `{baseURL}/{modelId}:streamGenerateContent?key={apiKey}&alt=sse`
+    /// The `alt=sse` query parameter is what selects SSE framing; without it Gemini streams a
+    /// JSON array instead. Each event's payload is a whole response body, not a delta.
     struct StreamGenerateContent: APIContract, APIInput {
         typealias Group = GeminiAPI
         typealias Input = Self

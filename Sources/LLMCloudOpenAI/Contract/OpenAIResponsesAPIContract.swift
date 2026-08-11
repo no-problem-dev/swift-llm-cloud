@@ -8,13 +8,15 @@ import FoundationNetworking
 
 // MARK: - OpenAI Responses API Group
 
-/// OpenAI `/v1/responses` API のグループ定義。
+/// Contract group for the OpenAI Responses API.
 ///
-/// - Auth: `Authorization: Bearer`
-/// - basePath は空（エンドポイント URL に完全パスを含む）
-/// - キー変換なし(`.default`): リクエスト/レスポンス共に明示的 CodingKeys を持つため
-///   convertToSnakeCase/convertFromSnakeCase を適用してはならない。
-/// - Custom Error Decoding: LLMError + RateLimitAwareError(x-ratelimit-* ヘッダー)
+/// - Auth: `Authorization: Bearer`.
+/// - The base path is empty, because the endpoint URL already carries the full path.
+/// - Key conversion must stay off. Both the request and the response types spell out their own
+///   coding keys, so snake-case conversion would rewrite keys that are already correct.
+/// - Errors are decoded here rather than surfacing as HTTP failures: 429 and 5xx are wrapped in
+///   ``RateLimitAwareError`` carrying the retry hints read from the `retry-after` and
+///   `x-ratelimit-*` headers, so the retry runner can wait as long as OpenAI asked.
 enum OpenAIResponsesAPI: APIContractGroup {
     static let basePath: String = ""
     static let auth: AuthScheme = .bearer
@@ -54,7 +56,11 @@ enum OpenAIResponsesAPI: APIContractGroup {
 // MARK: - Create Response Endpoint
 
 extension OpenAIResponsesAPI {
-    /// `/v1/responses` 作成エンドポイント（非ストリーミング）。
+    /// `POST /v1/responses` — creates a response.
+    ///
+    /// The same contract serves both paths: the body decides which one runs. With `stream` unset
+    /// the client decodes a single response body; with `stream` true the client reads the reply
+    /// as an SSE event stream instead.
     struct CreateResponse: APIContract, APIInput {
         typealias Group = OpenAIResponsesAPI
         typealias Input = Self

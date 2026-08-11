@@ -1,54 +1,70 @@
 # ``LLMCloudAnthropic``
 
-Anthropic Claude API のクライアント実装。
+Anthropic Claude client built on the Messages API, with streaming, tool calls, and pre-flight token counting.
 
 ## Overview
 
-`LLMCloudAnthropic` は Anthropic Claude API のクライアント実装。`AnthropicClient` を通じて、構造化出力・チャット・ツールコール・エージェントステップ・トークンカウント・ストリーミングの各機能を提供する。
+`AnthropicClient` is a value type you construct with an API key and hand a model to. The model
+parameter is typed as `ClaudeModel`, so a model belonging to another provider will not compile.
 
-モデル選択は `ClaudeModel` 型に制約されており、型安全なプロバイダー指定が保証される。
+Everything the client can do — structured generation, multi-turn chat, tool calls, agent steps,
+streaming, and token counting — goes through Anthropic's native Messages API rather than an
+OpenAI-compatible shim, because three of those capabilities have no equivalent in the Chat
+Completions shape.
 
-### 構造化出力
+### What differs from the other providers
 
-`@Structured` マクロで定義した型をそのまま戻り値として指定できる。JSON Schema の生成、Anthropic の `output_config.format` への適合、レスポンスのデコードを自動で行う。
+**Token counting is a real request.** Anthropic exposes `/v1/messages/count_tokens`, so
+``AnthropicClient/tokenCounter`` returns the number Anthropic itself will bill, not a local
+estimate from a tokenizer guess. It costs a round trip and is rate limited separately.
+
+**Cached prompt tokens are reported apart from fresh ones.** Usage carries cache-creation and
+cache-read counters in addition to the input count. Adding them together double-counts; the
+normalizer in this module folds them into the shared shape correctly.
+
+**`max_tokens` is mandatory.** Anthropic rejects a request without it, where OpenAI defaults. The
+client supplies a value when you do not.
+
+### Structured output
+
+Annotate a type with `@Structured`, ask for it as the return type, and the client generates the
+JSON Schema, adapts it to Anthropic's output format, and decodes the response.
 
 ```swift
 import LLMCloudAnthropic
 
 let client = AnthropicClient(apiKey: "sk-ant-...")
 
-@Structured("ユーザー情報")
-struct UserInfo {
-    @StructuredField("ユーザー名")
-    var name: String
-    @StructuredField("年齢", .minimum(0))
-    var age: Int
+@Structured("A single step in a recipe")
+struct Step {
+    @StructuredField("What to do")
+    var instruction: String
+    @StructuredField("Minutes this step takes", .minimum(0))
+    var minutes: Int
 }
 
-let result: UserInfo = try await client.generate(
-    input: "山田太郎さんは35歳です。",
+let step: Step = try await client.generate(
+    input: "Simmer the sauce gently for about a quarter of an hour.",
     model: .sonnet
 )
-print(result.name)  // "山田太郎"
-print(result.age)   // 35
 ```
 
-### チャット
+### Chat
 
-複数ターンの会話を `chat()` で管理できる。返却される `ChatResponse` にはアシスタントのメッセージが含まれるため、次のターンへの追加が容易。
+`chat()` returns a `ChatResponse` that already contains the assistant message, so continuing a
+conversation is an append rather than a reconstruction.
 
 ```swift
-var messages: [LLMMessage] = [.user("Swift の async/await を説明してください")]
-let response: ChatResponse<Reply> = try await client.chat(
-    messages: messages,
-    model: .sonnet
-)
+var messages: [LLMMessage] = [.user("Explain actor reentrancy in Swift.")]
+
+let response: ChatResponse<Reply> = try await client.chat(messages: messages, model: .sonnet)
 messages.append(response.assistantMessage)
 ```
 
-### トークンカウント
+### Counting tokens before sending
 
-実際の送信前にトークン数を見積もれる。`tokenCounter` が返す `TokenCounting` port の `countInputTokens(modelID:systemPrompt:messages:tools:)` を呼ぶ。戻り値は入力トークン数（`Int`）。
+Ask Anthropic what a request will cost before paying for it. This is the only provider in the
+package where that number is authoritative.
 
 ```swift
 let inputTokens = try await client.tokenCounter.countInputTokens(
@@ -57,13 +73,14 @@ let inputTokens = try await client.tokenCounter.countInputTokens(
     messages: [.user("Hello")],
     tools: nil
 )
-print("Input tokens: \(inputTokens)")
 ```
 
 ## Topics
 
-### はじめに
+### Getting started
+
 - <doc:GettingStarted>
 
-### クライアント
+### Client
+
 - ``AnthropicClient``

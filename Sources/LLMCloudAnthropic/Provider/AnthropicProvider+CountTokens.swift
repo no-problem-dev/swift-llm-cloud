@@ -9,10 +9,14 @@ import LLMTool
 
 extension AnthropicProvider {
 
-    /// `/v1/messages/count_tokens` で system + tools + messages の入力トークン数を取得する。
+    /// Asks Anthropic how many input tokens a system prompt, tool set, and history come to.
     ///
-    /// send パスと同一の変換器（`AnthropicMessageConverter` / `ToolSet.toAnthropicToolDefs()`）を
-    /// 用いてボディを構築し、見積りと実リクエストの内容を一致させる。
+    /// This is a pre-flight network request to `/v1/messages/count_tokens`, tokenized by
+    /// Anthropic rather than approximated locally, so the number is the billed input count and
+    /// not a guess. Nothing is generated and no output count exists.
+    ///
+    /// The body is built with the same converters the send path uses, so what is counted is what
+    /// would be sent. Failures surface as the same error types a send would raise.
     func countTokens(
         model: String,
         systemPrompt: String?,
@@ -32,7 +36,7 @@ extension AnthropicProvider {
             tools: toolDefs
         )
 
-        // file_id 参照を使う場合のみ Files API beta を付与（send と同じ判定を再利用）。
+        // Same beta decision as the send path, so the count sees the request the send would make.
         let beta = Self.betaValues(for: messages)
         let endpoint = AnthropicAPI.CountTokens(beta: beta, request: body)
 
@@ -53,7 +57,9 @@ extension AnthropicProvider {
 
 // MARK: - AnthropicTokenCounter (adapter)
 
-/// `TokenCounting` port の Anthropic adapter。`AnthropicClient.tokenCounter` から取得する。
+/// Adapts Anthropic's count_tokens endpoint to the shared token counting interface.
+///
+/// Obtained from the client's token counter property; the provider it holds does not retry.
 struct AnthropicTokenCounter: TokenCounting {
     let provider: AnthropicProvider
 

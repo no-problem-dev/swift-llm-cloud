@@ -9,7 +9,7 @@ import LLMClient
 struct OpenAIImagePathTests {
     @Test("images/generations へ JSON POST し、b64_json を GeneratedImage にデコード")
     func generatesImage() async throws {
-        // "hello" の base64
+        // Stand-in for image bytes: the base64 of "hello", so the decoded Data is checkable.
         let b64 = Data("hello".utf8).base64EncodedString()
         let json = Data(#"{"created":1,"data":[{"b64_json":"\#(b64)","revised_prompt":"a cat"}]}"#.utf8)
         let mock = MockTransport { _ in

@@ -5,10 +5,12 @@ import LLMAgentStep
 import LLMChat
 import Foundation
 
-/// OpenAI 互換クライアントプロトコル
+/// What a vendor client has to supply to get the whole OpenAI-compatible feature set for free.
 ///
-/// このプロトコルに準拠することで、`StructuredLLMClient`、`ChatCapableClient`、
-/// `ToolCallableClient`、`AgentCapableClient` の全機能をデフォルト実装で取得できる。
+/// A conforming type only provides an engine and a model type; the default implementations below
+/// then satisfy `StructuredLLMClient`, `ChatCapableClient`, `ToolCallableClient`, and
+/// `AgentCapableClient` by forwarding to it. That is why the DeepSeek, Groq, Mistral, OpenRouter,
+/// and xAI clients are each barely more than a constructor.
 package protocol OpenAICompatibleClientProtocol:
     StructuredLLMClient,
     ChatCapableClient,
@@ -82,6 +84,10 @@ extension OpenAICompatibleClientProtocol {
 // MARK: - ToolCallableClient Default Implementation
 
 extension OpenAICompatibleClientProtocol {
+    /// Asks the model which tools to call, without running any of them.
+    ///
+    /// The cache policy is not forwarded: this wire format exposes no prompt-cache controls, so
+    /// whether a prefix is cached is entirely the vendor's decision.
     public func planToolCalls(
         messages: [LLMMessage],
         model: Model,
@@ -107,6 +113,11 @@ extension OpenAICompatibleClientProtocol {
 // MARK: - AgentCapableClient Default Implementation
 
 extension OpenAICompatibleClientProtocol {
+    /// Runs one agent turn against the vendor.
+    ///
+    /// Two arguments stop here rather than reaching the vendor: the thinking mode, which has no
+    /// counterpart in this wire format — reasoning effort is the equivalent knob — and the cache
+    /// policy, since there are no prompt-cache controls to apply it to.
     public func executeAgentStep(
         messages: [LLMMessage],
         model: Model,
@@ -119,7 +130,7 @@ extension OpenAICompatibleClientProtocol {
         maxTokens: Int?,
         cachePolicy: PromptCachePolicy
     ) async throws -> LLMResponse {
-        _ = thinkingMode // OpenAI 互換は thinking モード未対応（reasoning_effort で表現する）
+        _ = thinkingMode // No thinking mode on this wire format; reasoning effort is the knob here.
         return try await engine.executeAgentStep(
             messages: messages,
             modelId: model.id,

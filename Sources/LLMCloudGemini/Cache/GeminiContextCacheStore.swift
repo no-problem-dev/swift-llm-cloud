@@ -8,19 +8,25 @@ import FoundationNetworking
 
 // MARK: - Cache Events
 
-/// 明示キャッシュのライフサイクルイベント（観測用）
+/// Observable lifecycle events of the explicit prompt cache.
+///
+/// Caching never fails a request, so these events are the only way to see what it actually did:
+/// whether a prefix was cached, reused, or quietly sent inline instead.
 public enum GeminiCacheEvent: Sendable {
-    /// 新しいキャッシュリソースを作成した
+    /// A new cache resource was created; the token count is what the server says it covers.
     case created(name: String, tokenCount: Int?)
-    /// 既存のキャッシュリソースを再利用した
+    /// An existing cache resource was referenced again.
     case reused(name: String)
-    /// 期限を延長した
+    /// The expiry of an existing resource was pushed back.
     case extended(name: String, until: Date?)
-    /// キャッシュを使わず inline 送信にフォールバックした（恒久）
+    /// The prefix was sent inline instead of cached, with the reason it could not be cached.
+    ///
+    /// Also emitted when a delete fails during release, since that too leaves the caller without
+    /// the cache behaviour it asked for.
     case fallbackInline(reason: String)
-    /// 失効したキャッシュを再作成して回復した
+    /// An expired cache was recreated and the request continued.
     case recovered(name: String)
-    /// キャッシュリソースを削除した（ストレージ課金停止）
+    /// A cache resource was deleted and its storage billing stopped.
     case deleted(name: String)
 }
 
@@ -28,18 +34,21 @@ public typealias GeminiCacheEventHandler = @Sendable (GeminiCacheEvent) -> Void
 
 // MARK: - GeminiContextCacheStore
 
-/// `cachedContents` リソースのライフサイクル管理
+/// Owns the `cachedContents` resources created for one client.
 ///
-/// 安定プレフィックス（model + systemInstruction + tools + toolConfig）の
-/// content hash を identity として:
-/// - **冪等作成**: 同一プレフィックスへの並行 resolve は 1 つの作成に合流する
-/// - **期限管理**: 残量が閾値未満なら PATCH で延長（ttl は「今から」の相対）。
-///   失効済みとみなせる場合は再作成する
-/// - **恒久フォールバック**: 最小トークン未満（400）は記憶して以後 inline を返す
-/// - **解放**: `release()` で作成済みリソースを全削除しストレージ課金を止める
+/// Keyed by the content hash of the stable prefix (model, system instruction, tools, tool
+/// config), it provides:
+/// - **Idempotent creation.** Concurrent resolves of the same prefix join one creation instead of
+///   racing to create duplicates.
+/// - **Expiry management.** A resource close to expiry is extended by PATCH, and one judged
+///   already expired is recreated. Gemini TTLs are relative to the server's clock.
+/// - **Permanent fallback.** A prefix rejected for being under the minimum cacheable token count
+///   is remembered, and every later resolve for it returns inline without another API call.
+/// - **Release.** Deleting the resources stops storage billing, which continues for the remaining
+///   TTL otherwise.
 ///
-/// resolve は決して throw しない: キャッシュはあくまで最適化であり、
-/// 失敗したら inline 送信で動作を継続する（ただしイベントで可視化する）。
+/// Resolution never throws. The cache is an optimization, so any failure degrades to sending the
+/// prefix inline; the event handler is where that becomes visible.
 actor GeminiContextCacheStore {
     private let apiClient: APIClientImpl
     private let eventHandler: GeminiCacheEventHandler?
@@ -52,9 +61,12 @@ actor GeminiContextCacheStore {
         case inlineOnly(reason: String)
     }
 
-    /// 失効の安全マージン。サーバー側はローカル時計より早く失効しうる
+    /// Safety margin, in seconds, before the recorded expiry at which a cache is treated as gone.
+    ///
+    /// The server can expire a resource earlier than the local clock predicts, so the last minute
+    /// of a cache's life is not trusted.
     private static let expiryMargin: TimeInterval = 60
-    /// 残量がこの秒数を切ったら PATCH で延長する
+    /// Remaining lifetime, in seconds, below which the expiry is extended by PATCH.
     private static let extensionThreshold: TimeInterval = 300
 
     init(apiClient: APIClientImpl, eventHandler: GeminiCacheEventHandler?) {
@@ -64,9 +76,14 @@ actor GeminiContextCacheStore {
 
     // MARK: - Resolve
 
-    /// 安定プレフィックスをプロンプト文脈に解決する
+    /// Resolves a stable prefix to the prompt context a request should use.
     ///
-    /// キャッシュ可能なら `.cached`、不能なら `.inline` を返す。
+    /// Returns a cached reference when one exists or can be created, and the inline form
+    /// otherwise. Creating a cache costs one extra round trip the first time a prefix is seen.
+    ///
+    /// - Parameters:
+    ///   - prefix: The prefix to cache; its content hash is the cache identity.
+    ///   - ttl: Lifetime requested at creation, and reused when extending an existing resource.
     func resolve(prefix: GeminiStablePrefix, ttl: Duration) async -> GeminiPromptContext {
         let key = prefix.contentHash
 
@@ -81,7 +98,7 @@ actor GeminiContextCacheStore {
         case .active(let name, let expireDate):
             let remaining = (expireDate ?? .distantPast).timeIntervalSinceNow
             if remaining < Self.expiryMargin {
-                // 失効済みとみなして作り直す
+                // Treat it as already gone and build a replacement.
                 entries[key] = nil
                 return await runExclusively(key: key) { [self] in
                     await create(prefix: prefix, ttl: ttl, isRecovery: true)
@@ -100,14 +117,21 @@ actor GeminiContextCacheStore {
         }
     }
 
-    /// 失効が観測されたキャッシュを無効化する（generate 経路の 403/404 から呼ばれる）
+    /// Forgets the cache recorded for a prefix after the server reported it missing.
+    ///
+    /// Called from the generation paths when a request fails with a cache 403 or 404, so the next
+    /// resolve creates a replacement instead of referencing a name the server no longer knows.
+    /// A prefix already marked inline-only is left as it is.
     func invalidate(prefix: GeminiStablePrefix) {
         if case .active = entries[prefix.contentHash] {
             entries[prefix.contentHash] = nil
         }
     }
 
-    /// 作成済みリソースを全削除する（セッション終了時）
+    /// Deletes every cache resource this store created, ending their storage billing.
+    ///
+    /// Meant for the end of a session. Deletion failures are reported as fallback events rather
+    /// than thrown, because an undeletable resource still disappears on its own at TTL.
     func release() async {
         for (key, entry) in entries {
             guard case .active(let name, _) = entry else { continue }
@@ -118,7 +142,8 @@ actor GeminiContextCacheStore {
                 )
                 eventHandler?(.deleted(name: name))
             } catch {
-                // 失効済み等で消せなくても TTL で消えるため黙認してよいが、観測はする
+                // An undeletable resource (already expired, for instance) still goes away at TTL,
+                // so this is not worth failing on — but it is worth seeing.
                 eventHandler?(.fallbackInline(reason: "delete failed for \(name): \(error)"))
             }
         }
@@ -126,7 +151,10 @@ actor GeminiContextCacheStore {
 
     // MARK: - Private
 
-    /// 同一 key の並行 resolve を 1 つの操作に合流させる（actor reentrancy 対策）
+    /// Runs an operation for a key so that concurrent callers share its single result.
+    ///
+    /// The actor suspends at every await, so without this two resolves of the same prefix would
+    /// both see no entry and both create a cache.
     private func runExclusively(
         key: String,
         operation: @escaping @Sendable () async -> GeminiPromptContext
@@ -155,14 +183,16 @@ actor GeminiContextCacheStore {
             }
             return .cached(name: resource.name)
         } catch let error as GeminiCachedContentError {
-            // 最小トークン未満は恒久条件: 記憶して以後この prefix では作成を試みない
+            // Being under the minimum token count is permanent for this prefix: remember it and
+            // stop attempting creation.
             if case .belowMinimumTokenCount = error {
                 entries[key] = .inlineOnly(reason: "\(error)")
             }
             eventHandler?(.fallbackInline(reason: "\(error)"))
             return prefix.inlineContext
         } catch {
-            // 一時障害（レート制限・ネットワーク等）: 記憶せず今回だけ inline
+            // Transient failure (rate limit, network): send inline this once without recording
+            // anything, so the next request tries to create the cache again.
             eventHandler?(.fallbackInline(reason: "\(error)"))
             return prefix.inlineContext
         }
@@ -181,7 +211,8 @@ actor GeminiContextCacheStore {
         } catch let error as GeminiCachedContentError where error == .notFound {
             entries[key] = nil
         } catch {
-            // 延長失敗は致命的でない: 現在の期限まで使い続け、失効したら再作成で回復する
+            // A failed extension is not fatal: keep using the resource until its current expiry,
+            // and recover by recreating it once that passes.
         }
     }
 

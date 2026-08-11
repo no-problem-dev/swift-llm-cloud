@@ -8,55 +8,59 @@ import FoundationNetworking
 
 // MARK: - AnthropicClient
 
-/// Anthropic Claude API クライアント。
+/// Type-safe client for the Anthropic Claude Messages API.
 ///
-/// Claude モデルを使用して型安全な構造化出力を生成する。
-/// モデル選択は `ClaudeModel` 型に制約されており、
-/// 他のプロバイダーのモデルを誤って指定できない。
+/// The model parameter is typed as `ClaudeModel`, so a model belonging to another provider
+/// cannot be passed by mistake. Requests go to `POST /v1/messages`. Structured output is
+/// requested through Anthropic's generally available `output_config.format` (constrained
+/// decoding) rather than through prompt-only JSON coaxing.
 ///
-/// ## 使用例
+/// Anthropic requires `max_tokens` on every request — unlike OpenAI, it has no server-side
+/// default. When the caller passes `nil` this client sends 4096.
+///
+/// ## Example
 ///
 /// ```swift
 /// let client = AnthropicClient(apiKey: "sk-ant-...")
 ///
-/// @Structured("ユーザー情報")
+/// @Structured("User profile")
 /// struct UserInfo {
-///     @StructuredField("ユーザー名")
+///     @StructuredField("Display name")
 ///     var name: String
-///     @StructuredField("年齢", .minimum(0))
+///     @StructuredField("Age in years", .minimum(0))
 ///     var age: Int
 /// }
 ///
-/// // 戻り値の型から自動的にスキーマが推論される
+/// // The schema is derived from the return type.
 /// let result: UserInfo = try await client.generate(
-///     input: "山田太郎さんは35歳です。",
+///     input: "Taro Yamada is 35 years old.",
 ///     model: .sonnet
 /// )
-/// print(result.name)  // "山田太郎"
+/// print(result.name)  // "Taro Yamada"
 /// print(result.age)   // 35
 ///
-/// // トークン使用量を取得
+/// // The same call, with token accounting attached.
 /// let resultWithUsage: GenerationResult<UserInfo> = try await client.generateWithUsage(
-///     input: "山田太郎さんは35歳です。",
+///     input: "Taro Yamada is 35 years old.",
 ///     model: .sonnet
 /// )
 /// print("Input tokens: \(resultWithUsage.usage.inputTokens)")
 /// print("Output tokens: \(resultWithUsage.usage.outputTokens)")
 ///
-/// // マルチモーダル入力
-/// let result: ImageAnalysis = try await client.generate(
-///     input: LLMInput("この画像を分析してください", images: [imageContent]),
+/// // Multimodal input.
+/// let analysis: ImageAnalysis = try await client.generate(
+///     input: LLMInput("Analyze this image", images: [imageContent]),
 ///     model: .sonnet
 /// )
 /// ```
 ///
-/// ## 対応モデル
-/// - `.opus` - Claude Opus 4.8（最新 Opus への別名・最高性能）
-/// - `.sonnet` - Claude Sonnet 4.6（バランス型）
-/// - `.haiku` - Claude Haiku 4.5（高速・低コスト）
+/// ## Supported models
+/// - `.opus` — alias for the current flagship Opus (Claude Opus 4.8)
+/// - `.sonnet` — alias for the current Sonnet (Claude Sonnet 4.6), the balanced choice
+/// - `.haiku` — alias for the current Haiku (Claude Haiku 4.5), fastest and cheapest
 ///
-/// バージョン固定の別名（`.opus4_5`・`.sonnet4_5` 等）や、
-/// 明示バージョン指定（`.opus4_1_version("...")` 等）も利用できる。
+/// Version-pinned aliases (`.opus4_5`, `.sonnet4_5`, and so on) and explicitly dated versions
+/// (`.opus4_1_version("...")`) are also accepted.
 public struct AnthropicClient: StructuredLLMClient {
     public typealias Model = ClaudeModel
 
@@ -66,34 +70,41 @@ public struct AnthropicClient: StructuredLLMClient {
 
     // MARK: - Package Access (for extension by other modules)
 
-    /// API キー
     package let apiKey: String
 
-    /// エンドポイント URL
+    /// Full URL of the messages endpoint this client was configured with, kept for inspection.
+    ///
+    /// Requests are not built from this value: the initializer hands the caller-supplied URL to
+    /// the underlying provider as an API *base* URL, and the `/v1/messages` path is appended to
+    /// it. Pass a host root such as `https://proxy.example.com`, not a full messages URL.
     package let endpoint: URL
 
-    /// URLSession
     package let session: URLSession
 
-    /// リトライ設定
+    /// Retry behaviour wrapped around the provider.
+    ///
+    /// When enabled, retryable failures (429 and 5xx) are retried with exponential backoff, but
+    /// the wait Anthropic advertises wins over the computed backoff: `retry-after` first, then
+    /// `anthropic-ratelimit-requests-reset`, then `anthropic-ratelimit-tokens-reset`.
     public let retryConfiguration: RetryConfiguration
 
-    /// リトライイベントハンドラー
+    /// Called once per retry, just before sleeping, with the attempt number and the delay.
     public let retryEventHandler: RetryEventHandler?
 
-    /// デフォルトエンドポイント
     public static let defaultEndpoint = URL(string: "https://api.anthropic.com/v1/messages")!
 
     // MARK: - Initializers
 
-    /// API キーを指定して初期化
+    /// Creates a client for the given API key.
     ///
     /// - Parameters:
-    ///   - apiKey: Anthropic API キー
-    ///   - endpoint: カスタムエンドポイント（オプション）
-    ///   - session: カスタム URLSession（オプション）
-    ///   - retryConfiguration: リトライ設定（デフォルト: 有効）
-    ///   - retryEventHandler: リトライイベントハンドラー（オプション）
+    ///   - apiKey: Anthropic API key, sent in the `x-api-key` header.
+    ///   - endpoint: Base URL to send requests to; `/v1/messages` is appended to it. Defaults to
+    ///     the public Anthropic API.
+    ///   - session: Session backing the default transport.
+    ///   - retryConfiguration: Retry behaviour. Enabled by default, and honours the
+    ///     `anthropic-ratelimit-*` headers when deciding how long to wait.
+    ///   - retryEventHandler: Observer invoked before each retry sleep.
     public init(
         apiKey: String,
         endpoint: URL? = nil,
@@ -162,7 +173,7 @@ public struct AnthropicClient: StructuredLLMClient {
         temperature: Double?,
         maxTokens: Int?
     ) async throws -> GenerationResult<T> {
-        // スキーマ情報を含むシステムプロンプトを構築
+        // Fold the schema description into the system prompt on top of output_config.format.
         let enhancedSystemPrompt = buildSystemPrompt(
             base: systemPrompt,
             schema: T.jsonSchema
@@ -183,7 +194,11 @@ public struct AnthropicClient: StructuredLLMClient {
 
     // MARK: - Private Helpers
 
-    /// システムプロンプトにスキーマ情報を付加
+    /// Appends the schema's own description to the caller's system prompt.
+    ///
+    /// Only the description is restated in prose; the schema itself travels separately in
+    /// `output_config.format`, where Anthropic enforces it by constrained decoding. The prefix
+    /// added here is written in Japanese, so it shows up verbatim in the system prompt.
     private func buildSystemPrompt(base: String?, schema: JSONSchema) -> String {
         var parts: [String] = []
 
@@ -191,7 +206,6 @@ public struct AnthropicClient: StructuredLLMClient {
             parts.append(base)
         }
 
-        // スキーマの説明を追加
         if let description = schema.description {
             parts.append("出力形式: \(description)")
         }
@@ -199,7 +213,11 @@ public struct AnthropicClient: StructuredLLMClient {
         return parts.isEmpty ? "" : parts.joined(separator: "\n\n")
     }
 
-    /// レスポンスをデコード
+    /// Decodes the reply's leading text into the requested structured type.
+    ///
+    /// Only the first content block is read, so a reply whose leading block is a tool use rather
+    /// than text fails with `LLMError.emptyResponse`. JSON keys are matched with
+    /// `convertFromSnakeCase`, and a decode failure is wrapped in `LLMError.decodingFailed`.
     private func decodeResponse<T: StructuredProtocol>(_ response: LLMResponse, model: String) throws -> GenerationResult<T> {
         guard let text = response.content.first?.text else {
             throw LLMError.emptyResponse

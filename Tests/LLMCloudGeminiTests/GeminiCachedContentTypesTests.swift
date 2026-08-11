@@ -24,7 +24,7 @@ struct GeminiCachedContentTypesTests {
         String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
     }
 
-    // MARK: - GeminiRequestBody の排他不変条件
+    // MARK: - GeminiRequestBody: inline and cached contexts are mutually exclusive on the wire
 
     @Test("inline 文脈は systemInstruction/tools/toolConfig を含み cachedContent を含まない")
     func inlineContextEncoding() throws {
@@ -89,7 +89,7 @@ struct GeminiCachedContentTypesTests {
         let json = try encodeToString(body)
         #expect(json.contains("expireTime"))
         #expect(!json.contains("\"ttl\""))
-        #expect(json.contains("2026-")) // RFC3339 文字列
+        #expect(json.contains("2026-")) // encoded as an RFC 3339 string, not a numeric timestamp
     }
 
     @Test("PatchBody の updateMask は expiration の種別に一致")
@@ -129,7 +129,7 @@ struct GeminiCachedContentTypesTests {
         #expect(base.contentHash != noTools.contentHash)
     }
 
-    // MARK: - エラー分類
+    // MARK: - Cache error classification
 
     @Test("最小トークン未満の 400 を分類し実測値を抽出")
     func classifyBelowMinimum() {
@@ -140,8 +140,10 @@ struct GeminiCachedContentTypesTests {
 
     @Test("最小トークン未満（現行文言 too small / min_total_token_count）の分類")
     func classifyBelowMinimumCurrentWording() {
-        // 2026-06 実機観測の文言。これを invalidRequest に落とすと恒久 inline 記憶が効かず、
-        // 全 LLM 呼び出しでキャッシュ作成の再試行（無駄なラウンドトリップ）が発生する。
+        // Wording observed from the live API in June 2026. Gemini has two phrasings for the same
+        // permanent condition and the classifier has to match both. If this one falls through as a
+        // plain invalid request, the store never marks the prefix inline-only, so every later call
+        // retries cache creation and pays an extra round trip that can never succeed.
         let message = "Cached content is too small. total_token_count=575, min_total_token_count=1024"
         let error = GeminiCacheErrorClassifier.classify(statusCode: 400, message: message)
         #expect(error == .belowMinimumTokenCount(actual: 575, minimum: 1024))

@@ -7,39 +7,43 @@ import Foundation
 import FoundationNetworking
 #endif
 
-/// OpenAI 互換 API プロバイダー（共通実装）
+/// Single provider shared by every vendor that speaks the OpenAI Chat Completions wire format.
 ///
-/// APIClient + APIContract を使用して OpenAI 互換 API を呼び出す。
-/// 各プロバイダーのクライアントから使用される。
+/// DeepSeek, Groq, Mistral, OpenRouter, and xAI all run on this type; the vendor differences are
+/// injected rather than subclassed — the full endpoint URL, any extra headers, and whether the
+/// token cap goes out as `max_completion_tokens` or `max_tokens`. Every call goes through
+/// `APIClientImpl` and the `CreateChatCompletion` contract, so error decoding and rate-limit
+/// header handling are identical for all of them. This path is non-streaming only.
 package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol {
-    /// APIClient
     private let apiClient: APIClientImpl
 
-    /// プロバイダー名（エラーメッセージ用）
+    /// Vendor name reported in unsupported-media errors raised while converting messages.
     private let providerName: String
 
-    /// プロバイダー固有のカスタムヘッダー
+    /// Headers added to every request, such as OpenRouter's `X-Title` and `HTTP-Referer`.
     private let customHeaders: [String: String]
 
-    /// 最大トークン数の送信フィールド名（プロバイダーごとに分岐）
+    /// Which field name carries the token cap for this vendor.
     private let maxTokensParameter: OpenAICompatibleMaxTokensParameter
 
-    /// エンドポイント URL（レスポンスメタデータ構成用）
+    /// Full chat-completions URL, also used when synthesizing a response object for the retry layer.
     private let endpoint: URL
 
-    /// デフォルトの最大トークン数
+    /// Token cap sent when the caller's request does not specify one.
     private static let defaultMaxTokens = 4096
 
     // MARK: - Initializers
 
-    /// API キーを指定して初期化
+    /// Creates a provider that talks to one vendor's chat-completions endpoint.
     ///
     /// - Parameters:
-    ///   - apiKey: API キー
-    ///   - endpoint: 完全なエンドポイント URL
-    ///   - providerName: プロバイダー名
-    ///   - session: カスタム URLSession（オプション）
-    ///   - customHeaders: プロバイダー固有のカスタムヘッダー
+    ///   - apiKey: Sent as `Authorization: Bearer`.
+    ///   - endpoint: The complete URL, including the path — nothing is appended to it.
+    ///   - providerName: Vendor name used in unsupported-media error messages.
+    ///   - session: Session backing the default URLSession transport.
+    ///   - customHeaders: Headers added to every request.
+    ///   - maxTokensParameter: Field name for the token cap. Mistral, DeepSeek, and OpenRouter
+    ///     need `max_tokens`; the default suits Groq and xAI.
     package init(
         apiKey: String,
         endpoint: URL,
@@ -55,7 +59,7 @@ package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol 
         )
     }
 
-    /// Transport を注入する指定イニシャライザ（テストで MockTransport を差し込む）。
+    /// Designated initializer taking an injected transport, so tests can substitute a mock.
     package init(
         transport: any HTTPTransport & HTTPStreamingTransport,
         apiKey: String,
@@ -88,22 +92,32 @@ package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol 
     package func sendWithResponse(_ request: LLMRequest) async throws -> (LLMResponse, HTTPURLResponse) {
         let (output, statusCode, headers) = try await sendRaw(request)
         let llmResponse = OpenAICompatibleResponseConverter.toLLMResponse(output)
-        // HTTPURLResponse を構成（RetryableProvider 互換）
+        // Rebuild an HTTPURLResponse: the retry layer reads rate-limit headers off it.
         let httpResponse = HTTPURLResponse(
             url: endpoint, statusCode: statusCode, httpVersion: nil, headerFields: headers
         )!
         return (llmResponse, httpResponse)
     }
 
-    /// LLMRequest を contract(CreateChatCompletion)経由で送信し、生レスポンスボディを返す。
-    /// 全ての非ストリーミング呼び出し(send / chat / planToolCalls)が通る単一の HTTP 経路。
-    /// エラーは contract の decodeError(リッチ)と APIError マッピングで統一される。
+    /// Sends a request through the chat-completions contract and returns the undecorated body.
+    ///
+    /// This is the single HTTP path every non-streaming call takes — `send`, `chat`, and
+    /// `planToolCalls` all end up here — so vendor error bodies are decoded the same way and the
+    /// caller always gets the headers needed to read rate-limit state.
+    ///
+    /// - Returns: The decoded response body, the HTTP status code, and the response headers.
     package func sendRaw(_ request: LLMRequest) async throws -> (OpenAICompatibleResponseBody, Int, [String: String]) {
         try await sendBody(buildRequestBody(from: request))
     }
 
-    /// 構築済みのリクエストボディを contract 経由で送信する（tools 付き等、buildRequestBody で
-    /// 表現できないリクエストはこちらを使う）。
+    /// Sends an already-built body, for requests carrying more than the shared request can express.
+    ///
+    /// Tool definitions, `tool_choice`, and `reasoning_effort` come in this way. `LLMError` and
+    /// `RateLimitAwareError` raised by the contract's error decoder are rethrown untouched so the
+    /// retry layer still sees the rate-limit info; any other `APIError` is mapped to an `LLMError`,
+    /// and anything left is wrapped as `LLMError.networkError`.
+    ///
+    /// - Returns: The decoded response body, the HTTP status code, and the response headers.
     package func sendBody(_ body: OpenAICompatibleRequestBody) async throws -> (OpenAICompatibleResponseBody, Int, [String: String]) {
         let contract = OpenAICompatibleAPI.CreateChatCompletion(customHeaders: customHeaders, request: body)
         do {
@@ -122,6 +136,12 @@ package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol 
 
     // MARK: - Request Building
 
+    /// Builds the wire body, moving schema constraints the vendor drops into the system prompt.
+    ///
+    /// A response schema is sent as `response_format.json_schema` with `strict: true`, which forces
+    /// most JSON Schema keywords out of the schema. The adapter reports what it removed, and those
+    /// constraints are appended to the system prompt as instructions instead — otherwise a
+    /// `minimum` or `pattern` would silently stop being enforced.
     private func buildRequestBody(from request: LLMRequest) throws -> OpenAICompatibleRequestBody {
         var messages: [OpenAICompatibleMessage] = []
 
@@ -178,10 +198,6 @@ package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol 
 
 
     // MARK: - Error Mapping
-
-    /// APIError を LLMError にマッピング
 }
 
 // MARK: - Static Token Provider
-
-/// 固定トークンを提供する AuthTokenProvider

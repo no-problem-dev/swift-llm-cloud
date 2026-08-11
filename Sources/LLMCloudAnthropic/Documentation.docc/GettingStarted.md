@@ -1,22 +1,11 @@
 # Getting Started
 
-## Installation
+From an API key to a decoded Swift value, and then to the token bill.
 
-```swift
-// Package.swift
-dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-llm-cloud.git", from: "3.37.0")
-],
-targets: [
-    .target(name: "MyApp", dependencies: [
-        .product(name: "LLMCloudAnthropic", package: "swift-llm-cloud"),
-    ])
-]
-```
+## Create a client
 
-## Basic Usage
-
-### 1. クライアントを作成
+`AnthropicClient` is a `struct`. Constructing one performs no I/O and opens no connection, so it is
+cheap to hold as a stored property or to build per call.
 
 ```swift
 import LLMCloudAnthropic
@@ -24,48 +13,69 @@ import LLMCloudAnthropic
 let client = AnthropicClient(apiKey: "sk-ant-...")
 ```
 
-### 2. 出力型を定義
+Keep the key out of the binary. Anything compiled into the app ships to every user who can unzip
+it, so read it from the keychain or a server you control.
 
-`@Structured` と `@StructuredField` マクロで型を定義する。
+## Describe the output you want
+
+`@Structured` on the type and `@StructuredField` on each property generate a JSON Schema at compile
+time. The description strings are not decoration — they are sent to the model as the field
+documentation and are the main lever you have over what ends up in each field.
 
 ```swift
-@Structured("商品情報")
-struct Product {
-    @StructuredField("商品名")
-    var name: String
-    @StructuredField("価格（円）", .minimum(0))
-    var price: Int
-    @StructuredField("カテゴリ")
-    var category: String
+@Structured("A parsed shipping address")
+struct Address {
+    @StructuredField("Street and building number")
+    var street: String
+    @StructuredField("City name, without prefecture or state")
+    var city: String
+    @StructuredField("Postal code, digits only")
+    var postalCode: String
 }
 ```
 
-### 3. 生成を実行
+Constraints such as `.minimum(0)` are carried in the schema. Whether the model is bound by them is
+a property of the provider, not a guarantee of this package — validate on the way out when a bad
+value would be expensive.
+
+## Generate
+
+The return type drives the request. Annotate the binding and the client fills in the schema, sends
+the message, and decodes the reply.
 
 ```swift
-let product: Product = try await client.generate(
-    input: "iPhone 16 Pro は 159,800 円のスマートフォンです。",
+let address: Address = try await client.generate(
+    input: "Ship it to 1-2-3 Marunouchi, Chiyoda, 100-0005.",
     model: .sonnet
 )
-print(product.name)      // "iPhone 16 Pro"
-print(product.price)     // 159800
-print(product.category)  // "スマートフォン"
 ```
 
-### 4. トークン使用量を取得
+## Get the usage alongside the value
+
+`generate` throws away the token counts. `generateWithUsage` keeps them, which is what you want as
+soon as anyone asks what a feature costs.
 
 ```swift
-let result: GenerationResult<Product> = try await client.generateWithUsage(
-    input: "iPhone 16 Pro は 159,800 円のスマートフォンです。",
+let result: GenerationResult<Address> = try await client.generateWithUsage(
+    input: "Ship it to 1-2-3 Marunouchi, Chiyoda, 100-0005.",
     model: .sonnet
 )
-print("Input: \(result.usage.inputTokens), Output: \(result.usage.outputTokens)")
+print(result.usage.inputTokens, result.usage.outputTokens)
 ```
 
-### モデル一覧
+Input tokens include the schema and the system prompt, not just your text — a large `@Structured`
+type is a fixed cost paid on every call.
 
-| `ClaudeModel` | 説明 |
+## Choosing a model
+
+`ClaudeModel` has both floating aliases and pinned versions. The aliases follow Anthropic's current
+release; the pinned cases do not move under you.
+
+| Case | Use it for |
 |---|---|
-| `.opus` | Claude Opus — 最高性能 |
-| `.sonnet` | Claude Sonnet — バランス型（推奨） |
-| `.haiku` | Claude Haiku — 高速・低コスト |
+| `.opus` | Hard multi-step reasoning where a wrong answer costs more than the tokens |
+| `.sonnet` | The default: strong enough for most work, materially cheaper than Opus |
+| `.haiku` | High-volume or latency-sensitive paths — classification, extraction, routing |
+
+Pin a version (`.sonnet4_6`, `.opus4_8`, …) when output stability matters more than getting the
+newest weights, because an alias moving is indistinguishable from your prompt breaking.

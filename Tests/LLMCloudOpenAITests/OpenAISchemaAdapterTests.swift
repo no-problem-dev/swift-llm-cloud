@@ -3,7 +3,12 @@ import LLMClient
 import LLMCloudClient
 @testable import LLMCloudOpenAICompatible
 
-/// GenericSchemaAdapter(.openAI) が既存 OpenAISchemaAdapter と完全一致することを検証する。
+/// Pins the OpenAI schema adapter to the shared generic adapter under its OpenAI profile.
+///
+/// ``OpenAISchemaAdapter`` only selects the `.openAI` capability set, so the parity case catches
+/// that selection being rewired rather than two implementations drifting. The cases after it are
+/// what pin strict mode itself: every keyword except `enum` removed, every property listed in
+/// `required`, optionality expressed by nullability, and those invariants holding at every depth.
 @Suite("OpenAI schema adapter")
 struct OpenAISchemaAdapterTests {
     private let input = JSONSchema(
@@ -45,13 +50,13 @@ struct OpenAISchemaAdapterTests {
     func optionalBecomesNullable() {
         let result = GenericSchemaAdapter(capabilities: .openAI).adaptWithConstraints(input, fieldPath: "")
         let props = result.schema.properties
-        // required だった name は nullable にならない。
+        // name was required in the input, so it stays non-nullable.
         #expect(props?["name"]?.nullable == false)
-        // optional だった age / tags / kind は nullable 化。
+        // age, tags, and kind were optional, so nullability is how that survives.
         #expect(props?["age"]?.nullable == true)
         #expect(props?["tags"]?.nullable == true)
         #expect(props?["kind"]?.nullable == true)
-        // それでも全プロパティが required に含まれる（OpenAI strict 標準）。
+        // Every property is still listed in required — strict mode allows no other arrangement.
         #expect(result.schema.required == ["age", "kind", "name", "tags"])
     }
 
@@ -77,7 +82,11 @@ struct OpenAISchemaAdapterTests {
         assertStrictInvariant(adapted)
     }
 
-    /// 全 object ノードが ①additionalProperties:false ②properties 非 nil ③required=全キー を満たす。
+    /// Recursively checks that every object node satisfies OpenAI strict mode.
+    ///
+    /// The three invariants are `additionalProperties: false`, a non-nil `properties` map, and a
+    /// `required` array listing every key of that map. Array element schemas are walked too, so an
+    /// object nested inside an array is covered rather than skipped.
     private func assertStrictInvariant(_ schema: JSONSchema, path: String = "<root>") {
         if schema.type == .object {
             #expect(schema.additionalProperties == false, "\(path): additionalProperties must be false")

@@ -1,29 +1,38 @@
 import Foundation
 
-/// `/v1/responses` の SSE ストリーミングイベント。
+/// A named SSE event from the Responses API, reduced to what this client acts on.
 ///
-/// ワイヤの実態（公式 SDK のパーサと同じ扱い）:
-/// - `event:` 行には依存しない。`data:` の JSON をデコードし、中の `type` で分岐する
-/// - 正規の終端は `response.completed` / `response.failed` / `response.incomplete`。
-///   `[DONE]` センチネルには依存しない（届いたら無視する）
-/// - デルタは表示用で、ground truth は `response.completed` に入る完全な Response
-///   オブジェクト（output 配列 / usage / status）
+/// How the wire is actually read, matching what the official SDKs do:
 ///
-/// 消費に必要なイベントだけを解釈し、残り（`output_item.added` /
-/// `content_part.added` / `function_call_arguments.delta` 等）は `.ignored` に落とす。
-/// ツール引数のデルタも `.completed` の確定値から取るため個別解釈しない。
+/// - The `event:` line is ignored. The `data:` JSON is decoded and dispatched on its `type`
+///   field, which carries the same name.
+/// - The stream ends at `response.completed`, `response.failed`, or `response.incomplete`. The
+///   `[DONE]` sentinel is not relied on and is discarded if it arrives.
+/// - Deltas exist to be displayed as they arrive. The authoritative result is the complete
+///   Response — output items, usage, status — carried by `response.completed`.
+///
+/// Every other event, including `response.output_item.added`, `response.content_part.added`, and
+/// `response.function_call_arguments.delta`, is discarded. Tool-call arguments in particular are
+/// taken from the finished Response rather than accumulated from their deltas.
 package enum OpenAIResponsesStreamEvent {
-    /// `response.output_text.delta`
+    /// A chunk of visible text, from `response.output_text.delta`.
     case outputTextDelta(String)
-    /// `response.reasoning_summary_text.delta` / `response.reasoning_text.delta`
+    /// A chunk of reasoning text, from `response.reasoning_text.delta` or its summary variant
+    /// `response.reasoning_summary_text.delta`.
     case reasoningTextDelta(String)
-    /// `response.completed`（完全な Response 同梱）
+    /// The finished response, from `response.completed`, which embeds the full Response object.
     case completed(OpenAIResponsesResponseBody)
-    /// `response.failed` / `response.incomplete` / `error`
+    /// A terminal failure, from `response.failed`, `response.incomplete`, or a bare `error`
+    /// event. An incomplete response reports why it stopped, typically a token cap.
     case failed(message: String)
-    /// 解釈対象外のイベント・`[DONE]` センチネル
+    /// An event this client does not act on, or the `[DONE]` sentinel.
     case ignored
 
+    /// Classifies the payload of one SSE `data:` line.
+    ///
+    /// A payload that does not decode as JSON, or whose `type` is not one of the handled names,
+    /// becomes ``ignored`` rather than an error: an unfamiliar event must not abort a stream that
+    /// is otherwise proceeding normally.
     package init(data: String) {
         guard data != "[DONE]" else {
             self = .ignored
@@ -52,7 +61,8 @@ package enum OpenAIResponsesStreamEvent {
         }
     }
 
-    /// `data:` の JSON。イベント種別ごとに使うフィールドが違うため全て optional で受ける。
+    /// The decoded `data:` JSON. Every field but `type` is optional, because each event name
+    /// populates a different subset of them.
     private struct Payload: Decodable {
         let type: String
         let delta: String?
@@ -60,8 +70,10 @@ package enum OpenAIResponsesStreamEvent {
         let response: ResponseEnvelope?
     }
 
-    /// ライフサイクルイベントの `response` フィールド。完了時は完全な Response として、
-    /// 失敗時はエラー情報の運搬体として読む。
+    /// The `response` field of a lifecycle event.
+    ///
+    /// The same object serves both endings: on completion it is read as the full Response, and on
+    /// failure as the carrier of the error message or the reason the response was cut short.
     package struct ResponseEnvelope: Decodable {
         package let body: OpenAIResponsesResponseBody
         package let errorMessage: String?

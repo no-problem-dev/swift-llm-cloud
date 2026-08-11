@@ -3,8 +3,13 @@ import LLMClient
 import LLMCloudClient
 @testable import LLMCloudAnthropic
 
-/// GenericSchemaAdapter(.anthropic) が既存 AnthropicSchemaAdapter と完全一致することを
-/// 検証する（適合後スキーマは等価、除去制約は同一集合）。リグレッション防止のゴールデン。
+/// Pins the Anthropic schema adapter to the shared generic adapter under its Anthropic profile.
+///
+/// Both halves of the result are compared: the adapted schema, and the exact set of removed
+/// constraints, which the caller restates in the prompt so a dropped keyword does not silently
+/// become an unenforced requirement. ``AnthropicSchemaAdapter`` only selects the `.anthropic`
+/// capability set, so what this catches is that selection being rewired; the sibling cases below
+/// are what actually pin Anthropic's rules, such as keeping `pattern` and a `minItems` of 0 or 1.
 @Suite("Anthropic schema adapter")
 struct AnthropicSchemaAdapterTests {
     private let input = JSONSchema(

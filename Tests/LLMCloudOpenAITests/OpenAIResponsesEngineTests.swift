@@ -1,18 +1,25 @@
 import Foundation
 import Testing
-import APIClient   // HTTPTransport(MockTransport/HTTPResponse) を再公開
+import APIClient   // re-exports HTTPTransport, MockTransport, and HTTPResponse
 import LLMClient
 import LLMTool
 @testable import LLMCloudClient
 @testable import LLMCloudOpenAI
 
-/// `/v1/responses` を生 URLSession から contract(structured-data codec)経路へ統一した際の
-/// ゴールデンパリティ検証。レスポンスボディは手書き init(from:)（複数 keyed container・
-/// try? 型プローブ・StructuredValue）を持つため、structured-data デコードが Foundation
-/// JSONDecoder と等価であることをフィクスチャで保証する。
+/// Parity check for the Responses API after it moved off a raw URLSession onto the contract path.
+///
+/// The response body decodes through a hand-written `init(from:)` — several keyed containers,
+/// `try?` probes to discriminate the output item kinds, and `StructuredValue` for free-form
+/// fields. That is exactly the code a different decoder can interpret differently, so the fixture
+/// is decoded both ways and the results compared, with literal expectations alongside so that a
+/// bug present in both paths still fails.
 @Suite("OpenAI Responses engine unified path")
 struct OpenAIResponsesEngineTests {
-    /// reasoning + function_call(arguments は JSON 文字列) + message + 詳細 usage を含む現実的な応答。
+    /// A realistic response carrying all three output item kinds plus the detailed usage breakdown.
+    ///
+    /// The interesting parts are that a `function_call` delivers its `arguments` as a JSON string
+    /// rather than an object, and that usage splits cached input tokens and reasoning output tokens
+    /// into nested detail objects, both of which a decoder can quietly get wrong.
     private let fixture = Data(#"""
     {
       "id": "resp_1",
@@ -53,7 +60,7 @@ struct OpenAIResponsesEngineTests {
             maxTokens: 256)
     }
 
-    /// 比較しやすい正規化表現。
+    /// Flattens a response into comparable values, so a mismatch prints as readable strings.
     private func normalize(_ r: LLMResponse) -> (model: String, stop: String, blocks: [String], usage: [Int]) {
         let blocks = r.content.map { block -> String in
             switch block {
@@ -74,11 +81,11 @@ struct OpenAIResponsesEngineTests {
 
     @Test("structured-data 経路のデコードが Foundation JSONDecoder と等価(ゴールデンパリティ)")
     func goldenParity() async throws {
-        // OLD: 生 JSONDecoder（移行前の挙動）
+        // Pre-migration behaviour: decode the fixture with a plain Foundation JSONDecoder.
         let oldBody = try JSONDecoder().decode(OpenAIResponsesResponseBody.self, from: fixture)
         let expected = normalize(OpenAIResponsesConverter.toLLMResponse(oldBody))
 
-        // NEW: contract(structured-data) 経路
+        // Current behaviour: the same bytes through the contract's structured-data codec.
         let mock = MockTransport { _ in
             HTTPResponse(status: 200, headers: ["Content-Type": "application/json"], body: fixture)
         }
@@ -89,7 +96,7 @@ struct OpenAIResponsesEngineTests {
         #expect(actual.blocks == expected.blocks)
         #expect(actual.usage == expected.usage)
 
-        // 明示的な期待値（両経路が同じバグを共有しても検出できるように）
+        // Literal expectations, so a bug the two paths happen to share is still caught.
         #expect(actual.blocks == ["thinking:thinking hard", "tool:call_abc:lookup:{\"q\":\"x\"}", "text:final answer"])
         #expect(actual.usage == [10, 20, 7, 4])
         #expect(actual.stop == "toolUse")

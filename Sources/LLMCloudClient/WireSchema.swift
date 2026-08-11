@@ -3,21 +3,23 @@ import LLMClient
 import StructuredDataCore
 import JSONParsing
 
-/// プロバイダーのリクエストボディに JSON Schema を埋め込むためのラッパー。
+/// Carries a JSON Schema into a request body without letting the body's key strategy rename its
+/// keywords.
 ///
-/// 多くのプロバイダー（OpenAI 互換 / Anthropic）はボディを snake_case で直列化するが、
-/// JSON Schema のキーワード（`additionalProperties` / `minItems` / `maxLength` 等）は
-/// 仕様上 camelCase 固定であり、snake_case 化すると `additional_properties` のように壊れて
-/// 「`additionalProperties:false` must be set on every object」等で拒否される。
+/// Most providers, OpenAI-compatible and Anthropic alike, serialize their request bodies in
+/// snake_case. JSON Schema keywords are camelCase by specification, so a body-wide conversion
+/// turns `additionalProperties` into `additional_properties` and the provider rejects the
+/// request with errors such as "additionalProperties:false must be set on every object" — the
+/// keyword it is looking for is no longer there.
 ///
-/// `WireSchema` は埋め込み schema を事前に `StructuredValue` へ lower して保持する。
-/// swift-structured-data の `ValueEncoder` は `StructuredValue` をキー戦略変換せずそのまま
-/// 通すため、親ボディの key 戦略に関係なく JSON Schema キーワードが verbatim で出力される。
+/// This type lowers the schema to a `StructuredValue` at encode time. The `ValueEncoder` in
+/// swift-structured-data passes a `StructuredValue` through without applying a key strategy, so
+/// the keywords land on the wire verbatim no matter what the enclosing body does.
 ///
-/// 埋め込み schema フィールドは `JSONSchema` を直接持たず必ず `WireSchema` を経由させることで、
-/// 「どこか 1 箇所で passthrough を忘れる」事故を型レベルで防ぐ。
+/// Schema-bearing fields on request bodies hold this type rather than a bare `JSONSchema`, which
+/// makes the passthrough impossible to forget at one call site out of many.
 public struct WireSchema: Encodable, Sendable, Equatable {
-    /// 元の JSON Schema（意味的表現）。
+    /// The schema as declared, before lowering.
     public let schema: JSONSchema
 
     public init(_ schema: JSONSchema) {
@@ -29,8 +31,11 @@ public struct WireSchema: Encodable, Sendable, Equatable {
         try container.encode(Self.lowered(schema))
     }
 
-    /// JSONSchema を、キーワードを変換しない `StructuredValue` へ lower する。
-    /// Foundation の既定キー（= Swift プロパティ名 = JSON Schema キーワード）で直列化する。
+    /// Lowers a schema to a value whose keys are already the final keywords.
+    ///
+    /// Encodes through Foundation with its default key coding, where the Swift property names
+    /// are the JSON Schema keywords, then parses the bytes straight back into a
+    /// `StructuredValue`.
     static func lowered(_ schema: JSONSchema) throws -> StructuredValue {
         let data = try Foundation.JSONEncoder().encode(schema)
         return try JSONParser().parse(data)

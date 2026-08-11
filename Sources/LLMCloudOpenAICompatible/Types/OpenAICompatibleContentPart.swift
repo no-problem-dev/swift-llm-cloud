@@ -1,6 +1,11 @@
 import Foundation
 
-/// OpenAI 互換コンテンツパーツ（マルチモーダル用）
+/// One piece of a multipart message: text, an image, or audio.
+///
+/// Each case encodes as its own object with a `type` discriminator. An image travels under
+/// `image_url`, which takes either a real URL or a `data:` URI carrying base64 bytes, so inline
+/// images and hosted images use the same field. Audio travels under `input_audio` as base64 plus a
+/// format name.
 package enum OpenAICompatibleContentPart: Encodable, Sendable {
     case text(String)
     case imageUrl(url: String, detail: String?)

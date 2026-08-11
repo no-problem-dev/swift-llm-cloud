@@ -3,9 +3,10 @@ import LLMClient
 
 // MARK: - AnthropicUsageRaw
 
-/// Anthropic API の usage オブジェクトを構造的に表す軽量プロトコル。
+/// The shape of an Anthropic usage object, independent of which response type it arrived in.
 ///
-/// AnthropicUsage / AnthropicChatUsage / AnthropicToolUsage / AnthropicAgentUsage が準拠する。
+/// Every response variant that reports usage conforms, which is what lets one normalizer serve
+/// the plain send, chat, tool-calling, and agent paths.
 package protocol AnthropicUsageRaw {
     var inputTokens: Int { get }
     var outputTokens: Int { get }
@@ -15,17 +16,23 @@ package protocol AnthropicUsageRaw {
 
 // MARK: - AnthropicUsageNormalizer
 
-/// Anthropic API レスポンスの usage を `TokenUsage` のセマンティクス契約に正規化する。
+/// Normalizes Anthropic usage counters into the shared token-accounting shape.
 ///
-/// Anthropic の `input_tokens` は **キャッシュ breakpoint より後の fresh 分のみ** を表す。
-/// `cache_read_input_tokens` / `cache_creation_input_tokens` は別建てで返る。
+/// Anthropic's `input_tokens` counts only the fresh part of the prompt — the part after the
+/// cache breakpoint. Cache hits and cache writes come back separately as
+/// `cache_read_input_tokens` and `cache_creation_input_tokens` and are excluded from it.
 ///
-/// 一方 `TokenUsage.inputTokens` の契約は **キャッシュ込みの総入力トークン数** なので、
-/// ここで合算して正規化する。
+/// The shared `TokenUsage.inputTokens` contract is the opposite: total input including cached
+/// tokens. Summing the three fields here is what makes an Anthropic figure comparable with an
+/// OpenAI or Gemini one, which already report the cache-inclusive total.
 enum AnthropicUsageNormalizer {
 
-    /// 生フィールドから正規化済み `TokenUsage` を構築。
-    /// `cacheTier` はリクエスト時の TTL 指定に基づくため、必要なら呼び出し側で別途指定する。
+    /// Builds normalized usage from the raw counter fields.
+    ///
+    /// The cache tier cannot be inferred from a response — Anthropic does not report which TTL
+    /// was used — so it is taken from the request when the caller knows it. Otherwise any cache
+    /// activity is assumed to be the five-minute tier, which under-reports cost for prompts
+    /// cached with the one-hour TTL.
     static func normalize(
         rawInputTokens: Int,
         outputTokens: Int,
@@ -37,7 +44,7 @@ enum AnthropicUsageNormalizer {
         let creation = cacheCreationTokens ?? 0
         let normalizedInput = rawInputTokens + read + creation
 
-        // tier の自動推定: 明示指定がなければ cache が使われていれば .short と仮定。
+        // No explicit tier: assume the five-minute one whenever any cache counter is non-zero.
         let resolvedTier: CacheTier? = cacheTier
             ?? ((read > 0 || creation > 0) ? .short : nil)
 
@@ -51,7 +58,7 @@ enum AnthropicUsageNormalizer {
         )
     }
 
-    /// AnthropicUsageRaw 準拠の usage から正規化。
+    /// Normalizes usage taken straight off any Anthropic response.
     package static func normalize(
         _ raw: any AnthropicUsageRaw,
         cacheTier: CacheTier? = nil

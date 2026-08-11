@@ -9,18 +9,24 @@ import FoundationNetworking
 
 // MARK: - Stable Prefix
 
-/// 明示キャッシュの対象となる「安定プレフィックス」
+/// The part of a request that can be cached explicitly, because it does not change between turns.
 ///
-/// model + systemInstruction + tools + toolConfig の組。
-/// この 4 つが同一なら同じ `cachedContents` リソースを再利用できる
-/// （キャッシュはモデル文字列にも固定されるため model を identity に含める）。
+/// Groups the model id with the system instruction, tools, and tool config. Two requests sharing
+/// all four can share one `cachedContents` resource. The model belongs in the identity because a
+/// Gemini cache is bound to the exact model string it was created with, including a pinned
+/// version suffix, and is unusable from any other model.
 struct GeminiStablePrefix: Sendable {
     let model: String
     let systemInstruction: GeminiContent?
     let tools: [GeminiTool]?
     let toolConfig: GeminiToolConfig?
 
-    /// 正準 JSON（sortedKeys）の SHA-256。冪等なキャッシュ作成の identity
+    /// SHA-256 of the canonical JSON encoding, used as the cache identity.
+    ///
+    /// Keys are sorted so that two structurally identical prefixes hash alike regardless of
+    /// encoding order, which is what makes cache creation idempotent. If encoding fails the
+    /// literal `"encoding-failed"` is returned, which collapses every unencodable prefix onto one
+    /// key rather than crashing.
     var contentHash: String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -40,12 +46,15 @@ struct GeminiStablePrefix: Sendable {
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    /// このプレフィックスを inline 送信する文脈（キャッシュ不使用・フォールバック先）
+    /// The same prefix sent in the request body instead of cached, used as the fallback path.
     var inlineContext: GeminiPromptContext {
         .inline(systemInstruction: systemInstruction, tools: tools, toolConfig: toolConfig)
     }
 
-    /// このプレフィックスからキャッシュ作成ボディを構築
+    /// Builds the creation body for this prefix, qualifying the model id as `models/{id}`.
+    ///
+    /// No `contents` are cached, only the prefix parts, so the conversation itself is still sent
+    /// with every request.
     func makeCreateBody(expiration: GeminiCacheExpiration, displayName: String? = nil) -> GeminiCachedContentCreateBody {
         GeminiCachedContentCreateBody(
             model: "models/\(model)",
@@ -61,11 +70,17 @@ struct GeminiStablePrefix: Sendable {
 
 // MARK: - Expiration
 
-/// キャッシュの有効期限。API 仕様で `ttl` と `expireTime` は union（どちらか一方）
+/// When a cache resource expires, expressed the way the API allows.
+///
+/// Gemini treats `ttl` and `expireTime` as a union: sending both is invalid, which the enum makes
+/// unrepresentable.
 enum GeminiCacheExpiration: Sendable, Hashable {
-    /// 今からの生存期間。`"3600s"` 形式にエンコードされる
+    /// Lifetime counted from now, encoded in the `"3600s"` form Gemini expects.
+    ///
+    /// A TTL is always relative to the moment the server receives it, so reusing the same value
+    /// on a later PATCH extends the resource rather than restoring an original deadline.
     case ttl(Duration)
-    /// 絶対期限（RFC 3339）
+    /// Absolute deadline, encoded as RFC 3339.
     case expireTime(Date)
 }
 
@@ -81,7 +96,7 @@ extension GeminiCacheExpiration {
     }
 }
 
-/// Gemini API の RFC 3339 タイムスタンプ変換
+/// RFC 3339 timestamp conversion for the Gemini wire format.
 enum GeminiRFC3339 {
     static func format(_ date: Date) -> String {
         let formatter = ISO8601DateFormatter()
@@ -89,7 +104,7 @@ enum GeminiRFC3339 {
         return formatter.string(from: date)
     }
 
-    /// fractional seconds あり/なし両対応でパース
+    /// Parses a timestamp with or without fractional seconds, since Gemini sends both forms.
     static func parse(_ string: String) -> Date? {
         let withFraction = ISO8601DateFormatter()
         withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -102,10 +117,12 @@ enum GeminiRFC3339 {
 
 // MARK: - Bodies
 
-/// `POST /v1beta/cachedContents` のリクエストボディ
+/// Body for creating a cache resource.
 ///
-/// 作成後は expiration 以外すべて不変（変更するには新しいキャッシュを作る）。
-/// 更新用の `GeminiCachedContentPatchBody` とは意図的に別型。
+/// Everything except the expiration is frozen at creation: changing the model, system
+/// instruction, tools, or tool config means creating a new cache. Updates therefore use a
+/// deliberately separate type, ``GeminiCachedContentPatchBody``, that can express nothing else.
+/// Creation fails with a 400 when the prefix is below the model's minimum cacheable token count.
 struct GeminiCachedContentCreateBody: Encodable, Sendable {
     let model: String
     let contents: [GeminiContent]?
@@ -133,7 +150,7 @@ struct GeminiCachedContentCreateBody: Encodable, Sendable {
     }
 }
 
-/// `PATCH /v1beta/cachedContents/{id}` のリクエストボディ（期限のみ可変）
+/// Body for updating a cache resource; the expiration is the only mutable field.
 struct GeminiCachedContentPatchBody: Encodable, Sendable {
     let expiration: GeminiCacheExpiration
 
@@ -147,7 +164,7 @@ struct GeminiCachedContentPatchBody: Encodable, Sendable {
         try container.encodeIfPresent(expiration.expireTimeString, forKey: .expireTime)
     }
 
-    /// PATCH の updateMask（API リファレンスで必須宣言）
+    /// Field mask naming the single field being patched, which the API requires on every PATCH.
     var updateMask: String {
         switch expiration {
         case .ttl: return "ttl"
@@ -158,9 +175,11 @@ struct GeminiCachedContentPatchBody: Encodable, Sendable {
 
 // MARK: - Resource
 
-/// `cachedContents` リソース（API レスポンス）
+/// A cache resource as the API returns it.
 ///
-/// contents/systemInstruction/tools/toolConfig は input-only のためレスポンスに含まれない。
+/// The cached material itself never comes back: contents, system instruction, tools, and tool
+/// config are input-only. What is readable is the identity, the expiry, and the token count that
+/// says how much of the prompt the cache covers.
 struct GeminiCachedContentResource: Decodable, Sendable {
     let name: String
     let model: String
@@ -174,7 +193,7 @@ struct GeminiCachedContentResource: Decodable, Sendable {
         let totalTokenCount: Int?
     }
 
-    /// `cachedContents/{id}` の id 部分（パスパラメータ用）
+    /// The id portion of the `cachedContents/{id}` name, for use as a path parameter.
     var resourceId: String {
         name.split(separator: "/").last.map(String.init) ?? name
     }
@@ -184,7 +203,7 @@ struct GeminiCachedContentResource: Decodable, Sendable {
     }
 }
 
-/// `GET /v1beta/cachedContents` のレスポンス
+/// One page of the cache listing, along with the token for the next page if there is one.
 struct GeminiCachedContentListResponse: Decodable, Sendable {
     let cachedContents: [GeminiCachedContentResource]?
     let nextPageToken: String?
@@ -192,26 +211,38 @@ struct GeminiCachedContentListResponse: Decodable, Sendable {
 
 // MARK: - Error Classification
 
-/// cachedContents 操作・参照に固有のエラー
+/// Failures specific to creating or referencing a cache resource.
 ///
-/// API はこれらを汎用の 400/403/404 + メッセージ文字列でしか表現しないため、
-/// メッセージを分類して回復戦略（inline フォールバック / 再作成）に接続する。
+/// Gemini reports both as a plain 400, 403, or 404 with prose in the message, so the message is
+/// classified into these cases and each is wired to its own recovery: fall back to inline, or
+/// recreate the cache.
 public enum GeminiCachedContentError: Error, Sendable, Equatable {
-    /// プレフィックスが最小キャッシュトークン数未満（400）。inline フォールバックで回復
+    /// The prefix is shorter than the model's minimum cacheable token count, reported as a 400.
+    ///
+    /// A permanent property of that prefix, not a transient failure: retrying the same content
+    /// fails identically, so recovery is to send it inline instead. The counts are parsed out of
+    /// the message and may be missing.
     case belowMinimumTokenCount(actual: Int?, minimum: Int?)
-    /// 参照したキャッシュが失効・削除済み（403/404）。再作成で回復
+    /// The referenced cache has expired or been deleted, reported as a 403 or 404.
+    ///
+    /// Recovered by creating a fresh cache and retrying once.
     case notFound
 }
 
+/// Turns Gemini's prose error messages into the cache-specific error cases.
 enum GeminiCacheErrorClassifier {
-    /// エラーレスポンスを cachedContents 固有エラーに分類する。該当しなければ nil
+    /// Classifies an error response, returning nil when it is not cache-specific.
+    ///
+    /// Matching is on message text because the status code alone cannot distinguish these from
+    /// any other bad request or missing resource. The token counts are read as the first two
+    /// integers in the message, so their presence depends on the wording the server used.
     static func classify(statusCode: Int, message: String) -> GeminiCachedContentError? {
         switch statusCode {
         case 400:
-            // 文言は時期で揺れる:
-            //   旧 "The cached content is of 151 tokens. The minimum token count to start caching is 1024."
-            //   現 "Cached content is too small. total_token_count=575, min_total_token_count=1024"
-            // どちらも「最小キャッシュトークン数未満」という同一の恒久条件として分類する。
+            // The wording has changed over time:
+            //   older: "The cached content is of 151 tokens. The minimum token count to start caching is 1024."
+            //   newer: "Cached content is too small. total_token_count=575, min_total_token_count=1024"
+            // Both mean the same permanent condition, so both classify as below-minimum.
             let lowered = message.lowercased()
             guard lowered.contains("minimum token count") || lowered.contains("min_total_token_count") else { return nil }
             let numbers = extractIntegers(from: message)
@@ -231,9 +262,12 @@ enum GeminiCacheErrorClassifier {
 
 // MARK: - API Contracts
 
-/// `cachedContents` リソースの CRUD エンドポイント群
+/// CRUD endpoints for cache resources.
 ///
-/// baseURL は `/v1beta`（`/models` の外）。認証は generateContent と同じ `x-goog-api-key` ヘッダー。
+/// These live at `/v1beta/cachedContents`, outside `/models`, so they need a base URL one
+/// component shorter than generateContent's. Authentication is the same `x-goog-api-key` header.
+/// Error decoding routes cache-specific failures to ``GeminiCachedContentError`` before falling
+/// back to the shared error mapping.
 enum GeminiCacheAPI: APIContractGroup {
     static let basePath: String = ""
     static let auth: AuthScheme = .apiKey(headerName: "x-goog-api-key")
@@ -262,7 +296,7 @@ enum GeminiCacheAPI: APIContractGroup {
 }
 
 extension GeminiCacheAPI {
-    /// `POST /v1beta/cachedContents` — キャッシュ作成
+    /// `POST /v1beta/cachedContents` — creates a cache resource and starts storage billing.
     struct Create: APIContract, APIInput {
         typealias Group = GeminiCacheAPI
         typealias Input = Self
@@ -287,7 +321,7 @@ extension GeminiCacheAPI {
         }
     }
 
-    /// `GET /v1beta/cachedContents/{id}` — キャッシュ取得
+    /// `GET /v1beta/cachedContents/{id}` — reads one cache resource's metadata.
     struct Get: APIContract, APIInput {
         typealias Group = GeminiCacheAPI
         typealias Input = Self
@@ -310,7 +344,7 @@ extension GeminiCacheAPI {
         }
     }
 
-    /// `GET /v1beta/cachedContents` — キャッシュ一覧
+    /// `GET /v1beta/cachedContents` — lists the caches on the API key, page by page.
     struct List: APIContract, APIInput {
         typealias Group = GeminiCacheAPI
         typealias Input = Self
@@ -339,7 +373,7 @@ extension GeminiCacheAPI {
         }
     }
 
-    /// `PATCH /v1beta/cachedContents/{id}` — 期限の更新（ttl は「今から」の相対）
+    /// `PATCH /v1beta/cachedContents/{id}` — moves the expiry; a TTL counts from the server's now.
     struct Update: APIContract, APIInput {
         typealias Group = GeminiCacheAPI
         typealias Input = Self
@@ -368,7 +402,7 @@ extension GeminiCacheAPI {
         }
     }
 
-    /// `DELETE /v1beta/cachedContents/{id}` — キャッシュ削除（ストレージ課金停止）
+    /// `DELETE /v1beta/cachedContents/{id}` — deletes a cache and stops its storage billing.
     struct Delete: APIContract, APIInput {
         typealias Group = GeminiCacheAPI
         typealias Input = Self

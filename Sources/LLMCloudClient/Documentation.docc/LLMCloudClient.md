@@ -1,58 +1,68 @@
 # ``LLMCloudClient``
 
-swift-llm-cloud の全プロバイダーが共有するリトライ・レート制限・スキーマ変換のインフラストラクチャ層。
+Retry, rate limiting, and schema conversion shared by every provider in swift-llm-cloud.
 
 ## Overview
 
-`LLMCloudClient` は swift-llm-cloud の全プロバイダーが共有するインフラストラクチャ層。リトライ・バックオフ、レート制限ヘッダーの解析、JSON Schema のワイヤ変換を担い、各プロバイダーはこのモジュールをベースに実装される。
+swift-llm-cloud gives Anthropic Claude, OpenAI GPT, Google Gemini, and five OpenAI-compatible
+vendors a single Swift interface. `LLMCloudClient` is the layer underneath all of them: it decides
+when a failed request is worth retrying and how long to wait, reads the rate-limit headers each
+vendor spells differently, and rewrites a `@Structured` JSON Schema into the subset the target
+provider will accept.
 
-通常、アプリ側が `LLMCloudClient` を直接インポートする必要はない。`LLMCloudAnthropic`、`LLMCloudOpenAI`、`LLMCloudGemini` などのプロバイダーモジュールが内部で依存しており、共通型（`RetryConfiguration`、`RateLimitInfo` など）は `@_exported import LLMClient` 経由で再公開される。
+Apps normally do not import it. Provider modules depend on it, and the common types
+(`RetryConfiguration`, `RateLimitInfo`, and the rest) reach you through `@_exported import LLMClient`
+when you import a provider. Import it by name when you want to supply your own `RetryPolicy`.
 
-### パッケージの全体構成
+### Retry
 
-swift-llm-cloud は `LLMCloudClient` を中核とした複数モジュールで構成されている。
+`RetryPolicy` is the abstraction. Two implementations ship: `ExponentialBackoffPolicy`, which
+doubles the wait after each attempt and adds jitter, and `NoRetryPolicy`, which fails immediately.
+`RetryConfiguration` selects one and is injected when the provider is constructed.
 
-**プロバイダーモジュール**は各 LLM API への接続実装を提供する。`LLMCloudAnthropic` は Anthropic Claude API（構造化出力・ストリーミング・トークンカウント対応）、`LLMCloudOpenAI` は OpenAI GPT API（Chat Completions + Responses API の自動ルーティング・画像/音声/動画生成対応）、`LLMCloudGemini` は Google Gemini API（明示的プロンプトキャッシュ・マルチモーダル・動画生成対応）をそれぞれ担当する。
-
-**OpenAI 互換プロバイダー**は `LLMCloudOpenAICompatible` が提供する共有エンジンを通じて実装される。`LLMCloudDeepSeek`（DeepSeek-V4 Flash/Pro）、`LLMCloudXAI`（xAI Grok）、`LLMCloudGroq`（Groq ホステッドの Llama/Qwen 等）、`LLMCloudMistral`（Mistral AI）、`LLMCloudOpenRouter`（複数プロバイダーのモデルに単一インターフェースでアクセス）が含まれる。
-
-**アンブレラターゲット** `LLMCloud` は `LLMCloudClient`・`LLMCloudAnthropic`・`LLMCloudOpenAI`・`LLMCloudGemini` を 1 つの `import` で利用できるように再公開する。
-
-**表示資産** `LLMCloudBranding` は各プロバイダーのブランドロゴ（`ProviderLogos.xcassets` 同梱）と SwiftUI ビューを提供する。他のターゲットへの依存はなく、純粋な UI 層として分離されている。
-
-### リトライ
-
-リトライポリシーは `RetryPolicy` プロトコルで抽象化されている。標準実装として `ExponentialBackoffPolicy`（指数バックオフ＋ジッター）と `NoRetryPolicy`（即失敗）が提供される。`RetryConfiguration` はポリシーのファクトリとして機能し、プロバイダーの初期化時に注入する。
+The part worth knowing: when the response carried a rate-limit hint, that hint wins. The policy
+returns the server-suggested wait rather than its own computed backoff, so a `429` is honoured on
+the provider's schedule instead of a guess.
 
 ```swift
 import LLMCloudAnthropic
 
-// 指数バックオフ（デフォルト: 最大5回、1〜60秒）
 let client = AnthropicClient(
     apiKey: "sk-ant-...",
     retryConfiguration: .default
 )
 
-// アグレッシブ設定（最大10回）
-let retryClient = AnthropicClient(
+let aggressive = AnthropicClient(
     apiKey: "sk-ant-...",
     retryConfiguration: .aggressive,
     retryEventHandler: { event in
-        print("Retry \(event.attempt)/\(event.maxRetries): \(event.reason) — wait \(event.delaySeconds)s")
+        print("Retry \(event.attempt)/\(event.maxRetries): \(event.reason) — waiting \(event.delaySeconds)s")
     }
 )
 ```
 
-### レート制限
+### Rate limiting
 
-`RateLimitInfo` は HTTP レスポンスヘッダーから抽出したレート制限情報を保持する。`suggestedWaitTime` を参照することで、プロバイダーが推奨する待機時間を取得できる。この値はリトライポリシーの遅延計算に自動的に使用される。
+`RateLimitInfo` holds what could be recovered from the response headers. Vendors do not agree on
+header names or on whether they report remaining requests, remaining tokens, or both, so fields are
+optional and a missing value means "the provider did not tell us", not zero. `suggestedWaitTime`
+feeds the retry delay calculation automatically.
+
+### Schema conversion
+
+Providers accept different subsets of JSON Schema. `WireSchema` is the neutral representation, and
+each provider's adapter downgrades it — dropping keywords the vendor rejects, or restructuring for
+strict mode. A constraint that survives is enforced by the model; one that gets dropped is not, so
+validate on the way out if it matters.
 
 ## Topics
 
-### はじめに
+### Getting started
+
 - <doc:GettingStarted>
 
-### リトライ
+### Retry
+
 - ``RetryPolicy``
 - ``ExponentialBackoffPolicy``
 - ``NoRetryPolicy``
@@ -62,10 +72,12 @@ let retryClient = AnthropicClient(
 - ``RetryRunner``
 - ``RetryEvent``
 
-### レート制限
+### Rate limiting
+
 - ``RateLimitInfo``
 - ``RateLimitInfoExtractable``
 - ``RateLimitAwareError``
 
-### スキーマ
+### Schema
+
 - ``WireSchema``

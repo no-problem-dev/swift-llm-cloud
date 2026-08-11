@@ -3,10 +3,13 @@ import LLMClient
 import Testing
 @testable import LLMCloudOpenAI
 
-/// Responses API への画像入力の変換。
+/// How image content is converted into Responses API input items.
 ///
-/// 形は実 API に投げて確かめたもの:
+/// The shape was confirmed against the live API rather than read off the docs:
 /// `{"role":"user","content":[{"type":"input_text",...},{"type":"input_image","image_url":"data:..."}]}`
+///
+/// Note that the Responses API names its parts `input_text` and `input_image`, not the
+/// `text` / `image_url` used by Chat Completions.
 @Suite("OpenAI Responses image input")
 struct OpenAIImageInputTests {
     private let png = Data([0x89, 0x50, 0x4E, 0x47])
@@ -34,7 +37,8 @@ struct OpenAIImageInputTests {
         #expect(parts[1]["image_url"] as? String == "data:image/png;base64,\(png.base64EncodedString())")
     }
 
-    /// テキストだけなら配列にしない。**既存の挙動を変えない**。
+    /// A text-only message keeps `content` as a bare string instead of being wrapped in a part
+    /// array, which is what it produced before image support existed.
     @Test("テキストだけのメッセージは文字列のまま")
     func textOnlyStaysString() throws {
         let json = try encode(try OpenAIResponsesConverter.toInputItems([
@@ -65,7 +69,8 @@ struct OpenAIImageInputTests {
         #expect(parts[0]["file_id"] as? String == "file-123")
     }
 
-    /// 画像は**それが付いていた発言**に残る。別メッセージに切り離さない。
+    /// Images stay in the turn they were attached to; they are never split into their own message,
+    /// which would detach them from the text that refers to them.
     @Test("複数の画像とテキストが 1 つのメッセージにまとまる")
     func multipleImagesStayInOneMessage() throws {
         let json = try encode(try OpenAIResponsesConverter.toInputItems([
@@ -80,7 +85,8 @@ struct OpenAIImageInputTests {
         #expect(parts.count == 3)
     }
 
-    /// 画像のあとにツール呼び出しが来ても、画像が消えない。
+    /// A tool call has to become its own `function_call` item, and the split must not drop the
+    /// image that preceded it.
     @Test("画像のあとの toolUse でメッセージが分かれる")
     func imageThenToolUseSplits() throws {
         let json = try encode(try OpenAIResponsesConverter.toInputItems([
@@ -95,7 +101,8 @@ struct OpenAIImageInputTests {
         #expect(json[1]["type"] as? String == "function_call")
     }
 
-    /// 画像以外のメディアは Responses API に相当するものが無い。
+    /// The Responses API has no input part for audio, video, or documents, so those throw rather
+    /// than being silently dropped from the request.
     @Test("audio / video / document は今も未対応として弾く")
     func otherMediaStillThrows() {
         let audio = LLMMessage(role: .user, contents: [

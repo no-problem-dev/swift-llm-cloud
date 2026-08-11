@@ -5,36 +5,39 @@ import FoundationNetworking
 
 // MARK: - RateLimitInfo
 
-/// API レート制限情報。
+/// What a provider's rate-limit headers said on one response.
 ///
-/// HTTP レスポンスヘッダーから抽出されたレート制限情報を保持する。
-/// リトライ待機時間の算出に使用する。
+/// Providers meter requests and tokens as two separate budgets and report them under different
+/// header names, so every field is optional and most providers populate only some of them.
+/// Anthropic sends the full set under `anthropic-ratelimit-*`, OpenAI-compatible vendors under
+/// `x-ratelimit-*`, and Gemini sends nothing beyond `Retry-After`. See
+/// `RateLimitHeaderExtraction` for the per-provider mapping.
 public struct RateLimitInfo: Sendable {
-    /// サーバーが指定したリトライ待機時間（秒）。
+    /// Seconds the provider asked the client to wait, from `Retry-After`.
     public let retryAfter: TimeInterval?
-    /// 残りリクエスト数。
+
+    /// Requests left in the current request-count window, not a token figure.
     public let remainingRequests: Int?
-    /// リクエスト制限がリセットされるまでの時間（秒）。
+
+    /// Seconds until the request-count window refills.
+    ///
+    /// Providers publish this as an absolute timestamp or a duration string depending on the
+    /// vendor; it is normalized to seconds from now on extraction.
     public let requestsResetIn: TimeInterval?
-    /// 残りトークン数。
+
+    /// Tokens left in the current token window, counting prompt plus completion tokens against
+    /// the provider's per-window budget.
     public let remainingTokens: Int?
-    /// トークン制限がリセットされるまでの時間（秒）。
+
+    /// Seconds until the token window refills.
     public let tokensResetIn: TimeInterval?
 
-    /// 情報なしの空インスタンス。
+    /// A response that carried no rate-limit headers at all.
     public static let empty = RateLimitInfo(
         retryAfter: nil, remainingRequests: nil, requestsResetIn: nil,
         remainingTokens: nil, tokensResetIn: nil
     )
 
-    /// 新しいレート制限情報を作成する。
-    ///
-    /// - Parameters:
-    ///   - retryAfter: サーバーが指定したリトライ待機時間（秒）。
-    ///   - remainingRequests: 残りリクエスト数。
-    ///   - requestsResetIn: リクエスト制限がリセットされるまでの時間（秒）。
-    ///   - remainingTokens: 残りトークン数。
-    ///   - tokensResetIn: トークン制限がリセットされるまでの時間（秒）。
     public init(
         retryAfter: TimeInterval?,
         remainingRequests: Int?,
@@ -49,9 +52,13 @@ public struct RateLimitInfo: Sendable {
         self.tokensResetIn = tokensResetIn
     }
 
-    /// 推奨される待機時間（秒）。
+    /// How long the provider implies the client should wait, in seconds.
     ///
-    /// `retryAfter`、`requestsResetIn`、`tokensResetIn` の順で最初に利用可能な値を返す。
+    /// The first non-nil of ``retryAfter``, ``requestsResetIn``, and ``tokensResetIn``, in that
+    /// order: an explicit instruction beats a window that is about to refill. Nil when the
+    /// response carried none of the three, which is the signal for a policy to fall back to its
+    /// own backoff. ``ExponentialBackoffPolicy`` treats a positive value here as authoritative
+    /// and does not cap it.
     public var suggestedWaitTime: TimeInterval? {
         retryAfter ?? requestsResetIn ?? tokensResetIn
     }
@@ -59,13 +66,16 @@ public struct RateLimitInfo: Sendable {
 
 // MARK: - RateLimitInfoExtractable Protocol
 
-/// HTTP レスポンスからレート制限情報を抽出するプロトコル。
+/// Reads one provider's rate-limit headers off a response.
 ///
-/// プロバイダー固有のレスポンスヘッダーからレート制限情報を解析する。
+/// Conformers are caseless enums, one per provider, that forward to a
+/// `RateLimitHeaderExtraction` describing that provider's header names and reset encoding.
 public protocol RateLimitInfoExtractable {
-    /// HTTP レスポンスからレート制限情報を抽出する。
+    /// Reads whatever rate-limit headers the response carries.
     ///
-    /// - Parameter response: レート制限ヘッダーを含む HTTP レスポンス。
-    /// - Returns: 抽出されたレート制限情報。
+    /// Returns an all-nil ``RateLimitInfo`` rather than nil when none are present, so callers do
+    /// not have to distinguish "no headers" from "headers that parsed to nothing".
+    ///
+    /// - Parameter response: The response to read, successful or not.
     static func extractRateLimitInfo(from response: HTTPURLResponse) -> RateLimitInfo
 }

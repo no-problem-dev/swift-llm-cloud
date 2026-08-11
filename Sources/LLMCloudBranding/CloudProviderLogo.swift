@@ -1,10 +1,11 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
-/// プロバイダー / モデルファミリーのブランドロゴを表示するビュー。
+/// Draws a vendor's logo at a square size.
 ///
-/// `ProviderLogos.xcassets`（このパッケージに同梱）から brand のロゴを描画する。
-/// アセットが無い brand は SF Symbols へフォールバックする。
+/// Reads the artwork from the asset catalog bundled with this package, falling back to an SF
+/// Symbol for a brand that has none. The logo is fitted, not filled, so it keeps its proportions
+/// inside the square, and it carries the vendor name as its accessibility label.
 public struct CloudProviderLogo: View {
     public let brand: CloudProviderBrand
     public var size: CGFloat

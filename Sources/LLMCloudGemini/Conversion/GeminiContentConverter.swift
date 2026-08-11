@@ -4,7 +4,19 @@ import LLMCloudClient
 import StructuredDataCore
 import JSONParsing
 
+/// Translates provider-neutral messages into Gemini turns.
 enum GeminiContentConverter {
+    /// Converts one message into the turns Gemini expects, which may be two rather than one.
+    ///
+    /// Gemini has only the `user` and `model` roles, and it requires tool results to arrive as
+    /// `functionResponse` parts in a user turn. A message that mixes ordinary content with tool
+    /// results therefore splits: the content keeps the message's own role, and the results follow
+    /// as a separate user turn.
+    ///
+    /// Two details are specific to Gemini. Tool results are matched to their call by function
+    /// name, not by id, so the call id is dropped here — instead it is read for the thought
+    /// signature that has to ride back with a thinking model's `functionCall`. And thinking blocks
+    /// are not replayed at all: the signature is the only reasoning state Gemini wants back.
     static func convert(_ message: LLMMessage) -> [GeminiContent] {
         let role = message.role == .user ? "user" : "model"
         var parts: [GeminiPart] = []
@@ -40,6 +52,10 @@ enum GeminiContentConverter {
         return contents
     }
 
+    /// Wraps a media attachment as either inline base64 data or a file reference.
+    ///
+    /// Raw bytes become inline data; a URL or an uploaded file id becomes a file reference. Gemini
+    /// treats both the same way once the part is built.
     static func mediaPart<T: MediaType>(source: MediaSource, mimeType: T) -> GeminiPart? {
         source.fold(
             base64: { GeminiPart(inlineData: GeminiInlineData(mimeType: mimeType.mimeType, data: $0.base64EncodedString())) },

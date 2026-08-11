@@ -17,7 +17,7 @@ struct AnthropicUsageNormalizerTests {
         #expect(usage.outputTokens == 200)
         #expect(usage.cacheReadTokens == 9_000)
         #expect(usage.cacheCreationTokens == 1_000)
-        #expect(usage.cacheTier == .short)  // cache 使用時の自動推定
+        #expect(usage.cacheTier == .short)  // inferred: any cache activity without an explicit tier means the 5-minute tier
     }
 
     @Test("cache がない場合は cacheTier も nil")

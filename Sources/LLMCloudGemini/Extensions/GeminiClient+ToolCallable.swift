@@ -4,6 +4,12 @@ import LLMTool
 import Foundation
 
 extension GeminiClient: ToolCallableClient {
+    /// Asks the model which tools to call, without running them.
+    ///
+    /// Gemini attaches no ids to its function calls, so each returned call gets one minted here,
+    /// with the part's thought signature folded into it for the next turn. Tool results are later
+    /// matched back by function name. A cache the server no longer has is recovered once inside
+    /// this call; unlike the agent path, there is no retry policy around it.
     public func planToolCalls(
         messages: [LLMMessage],
         model: GeminiModel,

@@ -3,7 +3,7 @@ import LLMClient
 // GeminiClient+VideoGeneration.swift
 // swift-llm-structured-outputs
 //
-// Gemini クライアントの動画生成機能拡張（Veo）
+// Video generation through Veo.
 
 import Foundation
 #if canImport(FoundationNetworking)
@@ -15,10 +15,16 @@ import FoundationNetworking
 extension GeminiClient: VideoGenerationCapable {
     public typealias VideoModel = GeminiVideoModel
 
-    /// 動画生成ジョブを開始
+    /// Starts a Veo video generation job and returns it in the queued state.
     ///
-    /// Veo API を使用して動画生成を開始する。
-    /// 動画生成は非同期で処理されるため、ジョブ ID を返す。
+    /// Veo is a long-running operation: this call returns as soon as the job is accepted, with
+    /// the operation name as the job id, and the video only becomes available after polling with
+    /// ``checkVideoStatus(_:)``. The request is validated against the model's capabilities before
+    /// it is sent, and unset parameters default to four seconds, 16:9, and 720p.
+    ///
+    /// - Throws: `VideoGenerationError` when the duration, aspect ratio, or resolution is one the
+    ///   model does not offer, including the combination of 1080p with any duration other than
+    ///   eight seconds.
     public func startVideoGeneration(
         input: LLMInput,
         model: GeminiVideoModel,
@@ -26,9 +32,8 @@ extension GeminiClient: VideoGenerationCapable {
         aspectRatio: VideoAspectRatio?,
         resolution: VideoResolution?
     ) async throws -> VideoGenerationJob {
-        // プロンプトテキストを取得
         let prompt = input.prompt.render()
-        // バリデーション
+        // Reject unsupported combinations locally rather than paying for a failed job.
         let actualDuration = duration ?? 4
         if !model.supportedDurations.contains(actualDuration) {
             throw VideoGenerationError.durationExceedsLimit(
@@ -47,7 +52,7 @@ extension GeminiClient: VideoGenerationCapable {
             throw VideoGenerationError.unsupportedResolution(actualResolution, model: model.displayName)
         }
 
-        // 1080p は 8 秒の動画のみ
+        // Veo only produces 1080p at a length of exactly 8 seconds.
         if actualResolution == .fhd1080p && actualDuration != 8 {
             throw VideoGenerationError.unsupportedResolution(actualResolution, model: "\(model.displayName) (1080p requires 8 seconds)")
         }
@@ -65,7 +70,7 @@ extension GeminiClient: VideoGenerationCapable {
             GeminiMediaAPI.VeoGenerate(modelId: model.id, request: body)
         ).output
 
-        // 設定を作成
+        // Keep the resolved parameters on the job; polling responses do not repeat them.
         let configuration = VideoGenerationConfiguration(
             duration: actualDuration,
             resolution: actualResolution,
@@ -83,7 +88,12 @@ extension GeminiClient: VideoGenerationCapable {
         )
     }
 
-    /// 動画生成ジョブのステータスを確認
+    /// Polls a job once and returns it with its status brought up to date.
+    ///
+    /// A finished operation is completed only if it actually carries a video; an operation that
+    /// reports done with neither an error nor a video is treated as failed. The progress value is
+    /// a placeholder rather than a measurement, since Veo reports no percentage: it is 1.0 when
+    /// complete and 0.5 while running.
     public func checkVideoStatus(_ job: VideoGenerationJob) async throws -> VideoGenerationJob {
         let operationResponse = try await veoClient.executeWithResponse(
             GeminiMediaAPI.VeoOperationStatus(operationName: job.id)
@@ -101,7 +111,7 @@ extension GeminiClient: VideoGenerationCapable {
                 status = .completed
                 videoURL = URL(string: uri)
             } else if let base64 = operationResponse.getVideoBase64() {
-                // Base64 データがある場合は data URL として扱う
+                // Inline bytes are wrapped in a data URL so the job carries a single URL field.
                 status = .completed
                 videoURL = URL(string: "data:video/mp4;base64,\(base64)")
             } else {
@@ -120,7 +130,16 @@ extension GeminiClient: VideoGenerationCapable {
         )
     }
 
-    /// 生成された動画を取得
+    /// Downloads the finished video's bytes.
+    ///
+    /// Veo hands back a reference rather than data, in one of several forms, so the fetch depends
+    /// on what the operation returned: a direct download URL, a File API path that needs a
+    /// metadata lookup first, or an inline data URL. The API key is attached to every request,
+    /// because these URLs are not public.
+    ///
+    /// - Throws: `VideoGenerationError.jobNotCompleted` when called before polling reported
+    ///   completion, and `VideoGenerationError.generationFailed` when the reference cannot be
+    ///   resolved or the download fails. A `gs://` reference is not supported.
     public func getGeneratedVideo(_ job: VideoGenerationJob) async throws -> GeneratedVideo {
         guard job.status == .completed else {
             throw VideoGenerationError.jobNotCompleted(status: job.status)
@@ -133,9 +152,9 @@ extension GeminiClient: VideoGenerationCapable {
         let videoData: Data
         let urlString = videoURL.absoluteString
 
-        // URI の形式によって処理を分岐
+        // Branch on the shape of the reference.
         if urlString.contains(":download") || urlString.contains("alt=media") {
-            // 既にダウンロード URL の場合は直接ダウンロード
+            // Already a download URL; fetch it directly.
             var downloadRequest = URLRequest(url: videoURL)
             downloadRequest.httpMethod = "GET"
             downloadRequest.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
@@ -147,10 +166,10 @@ extension GeminiClient: VideoGenerationCapable {
             }
             videoData = data
         } else if urlString.hasPrefix("gs://") || urlString.contains("files/") {
-            // Gemini Files API 経由でダウンロード（ファイル参照の場合）
+            // A File API reference: resolve it to a download URL first.
             videoData = try await downloadViaFilesAPI(uri: urlString)
         } else if urlString.hasPrefix("data:") {
-            // Base64 data URL
+            // The bytes are already here, base64 encoded in the URL.
             if let base64Start = urlString.range(of: "base64,"),
                let data = Data(base64Encoded: String(urlString[base64Start.upperBound...])) {
                 videoData = data
@@ -158,7 +177,7 @@ extension GeminiClient: VideoGenerationCapable {
                 throw VideoGenerationError.generationFailed("Invalid base64 data URL")
             }
         } else {
-            // 通常の HTTP(S) URL
+            // A plain HTTP(S) URL.
             let (data, _) = try await session.data(from: videoURL)
             videoData = data
         }
@@ -174,33 +193,37 @@ extension GeminiClient: VideoGenerationCapable {
         )
     }
 
-    /// Gemini Files API 経由で動画をダウンロード
+    /// Resolves a File API reference to a download URL and fetches the bytes.
+    ///
+    /// Two requests: `files.get` for the metadata, which is where the usable `downloadUri` lives,
+    /// then the download itself. Error messages quote the raw response, because a failure here is
+    /// usually a reference in a form this does not recognize.
     private func downloadViaFilesAPI(uri: String) async throws -> Data {
-        // URI から file name を抽出
-        // 形式: "files/abc123" または "gs://bucket/path/file.mp4" または完全な URL
+        // Pull the file name out of the reference, which arrives as "files/abc123",
+        // "gs://bucket/path/file.mp4", or a full API URL.
         let fileName: String
 
         if uri.hasPrefix("https://generativelanguage.googleapis.com/") {
-            // 完全な API URL の場合、files/ 以降を抽出
+            // Full API URL: keep everything from "files/" onward.
             if let range = uri.range(of: "files/") {
                 fileName = String(uri[range.lowerBound...])
             } else {
                 throw VideoGenerationError.generationFailed("Cannot extract file name from URL: \(uri)")
             }
         } else if uri.hasPrefix("gs://") {
-            // GCS URI の場合
+            // Cloud Storage references need GCS credentials, which this client does not hold.
             throw VideoGenerationError.generationFailed("GCS URI direct download not supported: \(uri)")
         } else if uri.hasPrefix("files/") {
-            // files/xxx 形式
+            // Already a bare resource name.
             fileName = uri
         } else if let range = uri.range(of: "files/") {
-            // 何らかのパスに files/ が含まれている場合
+            // Some other path that still embeds a resource name.
             fileName = String(uri[range.lowerBound...])
         } else {
             throw VideoGenerationError.generationFailed("Unknown URI format: \(uri)")
         }
 
-        // 1. files.get でファイル情報を取得（downloadUri を含む）
+        // 1. files.get for the metadata, which carries the downloadUri.
         let fileInfoURLString = "https://generativelanguage.googleapis.com/v1beta/\(fileName)"
         guard let fileInfoURL = URL(string: fileInfoURLString) else {
             throw VideoGenerationError.generationFailed("Invalid file info URL: \(fileInfoURLString)")
@@ -222,7 +245,7 @@ extension GeminiClient: VideoGenerationCapable {
             )
         }
 
-        // downloadUri を抽出
+        // Pick the downloadUri out of the metadata.
         struct FileInfo: Decodable {
             let name: String?
             let displayName: String?
@@ -243,14 +266,14 @@ extension GeminiClient: VideoGenerationCapable {
             throw VideoGenerationError.generationFailed("No download URI in file info. Raw JSON: \(rawFileInfoJSON.prefix(1000))")
         }
 
-        // 2. downloadUri から動画をダウンロード
+        // 2. Fetch the video from that URI.
         guard let downloadURL = URL(string: downloadUri) else {
             throw VideoGenerationError.generationFailed("Invalid download URI: \(downloadUri)")
         }
 
         var downloadRequest = URLRequest(url: downloadURL)
         downloadRequest.httpMethod = "GET"
-        // downloadUri にはすでに認証情報が含まれている場合もあるが、念のためヘッダーも付ける
+        // The downloadUri sometimes carries its own credentials; send the key header regardless.
         downloadRequest.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
 
         let (videoData, downloadResponse) = try await session.data(for: downloadRequest)

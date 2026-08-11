@@ -1,19 +1,17 @@
 import Foundation
 
-/// OpenAI 互換 API における最大生成トークン数の指定フィールド名。
+/// Which field name a vendor wants the output token cap under.
 ///
-/// 「OpenAI 互換」はリクエスト/レスポンスの形の契約であって、フィールド集合まで
-/// 完全一致するわけではない。最大トークン指定は実プロバイダーで分岐する:
-///
-/// - `max_completion_tokens`: OpenAI / Groq / xAI(Grok-4 reasoning)。
-///   これらは `max_tokens` を deprecated 扱いにしている。
-/// - `max_tokens`: Mistral / DeepSeek / OpenRouter。Mistral は `max_completion_tokens`
-///   を送ると `422 Extra inputs are not permitted` を返す。
-///
-/// プロバイダーごとにどちらを送るかを明示するための型。
+/// Being OpenAI-compatible is a promise about the shape of requests and responses, not about the
+/// exact set of fields, and the token cap is where that promise runs out. OpenAI, Groq, and xAI
+/// have deprecated `max_tokens` in favour of `max_completion_tokens`. Mistral, DeepSeek, and
+/// OpenRouter accept only `max_tokens` — sending `max_completion_tokens` to Mistral is rejected
+/// outright with `422 Extra inputs are not permitted`, so this cannot be papered over by sending
+/// both. Each vendor's client picks its case at construction and the request body encodes the cap
+/// under whichever name is chosen.
 public enum OpenAICompatibleMaxTokensParameter: String, Sendable {
-    /// `max_completion_tokens`（OpenAI / Groq / xAI）
+    /// Wanted by OpenAI, Groq, and xAI. This is the default for clients that do not say otherwise.
     case maxCompletionTokens = "max_completion_tokens"
-    /// `max_tokens`（Mistral / DeepSeek / OpenRouter）
+    /// Required by Mistral, DeepSeek, and OpenRouter.
     case maxTokens = "max_tokens"
 }

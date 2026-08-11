@@ -10,7 +10,7 @@ import LLMTool
 @Suite("Anthropic count_tokens adapter")
 struct AnthropicCountTokensTests {
 
-    // MARK: - T3-1: エンドポイント + デコード
+    // MARK: - Endpoint and response decoding
 
     @Test("/v1/messages/count_tokens を叩き input_tokens をデコード")
     func countsViaEndpoint() async throws {
@@ -30,7 +30,11 @@ struct AnthropicCountTokensTests {
         #expect(req.headers["x-api-key"] == "k")
     }
 
-    // MARK: - T3-2: count payload == send payload（content の再利用）
+    // MARK: - The counted payload must match what send would put on the wire
+    //
+    // A count is only useful if it measures the same bytes the real request carries, so messages,
+    // system prompt, and tools all go through the same converters. The envelope differs, though:
+    // count_tokens takes neither max_tokens nor stream.
 
     @Test("ボディは count_tokens 専用 envelope（max_tokens / stream を持たない）")
     func bodyOmitsCreateMessageEnvelope() async throws {
@@ -48,7 +52,7 @@ struct AnthropicCountTokensTests {
         let body = String(decoding: try #require(req.body), as: UTF8.self)
         #expect(body.contains("\"messages\""))
         #expect(body.contains("\"system\""))
-        #expect(!body.contains("max_tokens"))   // count_tokens は max_tokens を受け付けない
+        #expect(!body.contains("max_tokens"))   // count_tokens rejects max_tokens as an unknown field
         #expect(!body.contains("\"stream\""))
     }
 

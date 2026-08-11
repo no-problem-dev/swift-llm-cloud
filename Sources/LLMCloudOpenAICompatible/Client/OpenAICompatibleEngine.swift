@@ -9,40 +9,43 @@ import Foundation
 import FoundationNetworking
 #endif
 
-/// OpenAI 互換 API の全ロジックを集約するエンジン
+/// Every OpenAI-compatible capability in one value, so each vendor client is a thin shell over it.
 ///
-/// 各 OpenAI 互換クライアントは、このエンジンのインスタンスを保持して
-/// プロトコルのデフォルト実装から呼び出す。
+/// The DeepSeek, Groq, Mistral, OpenRouter, and xAI clients each hold one engine and conform to
+/// ``OpenAICompatibleClientProtocol``, whose default implementations forward straight here. What
+/// differs between those vendors is only the endpoint, the extra headers, and the field name used
+/// for the token cap.
 package struct OpenAICompatibleEngine: Sendable {
-    /// 内部プロバイダー（RetryableProvider でラップ済み）
+    /// The provider handed to callers, retry-wrapped when the retry configuration is enabled.
+    ///
+    /// `generateWithUsage` sends through this one, so it is the only entry point that gets the
+    /// full retry treatment including rate-limit-header-aware backoff.
     package let provider: any LLMProvider
 
-    /// contract 経由の直接送信用。chat/planToolCalls は単発送信、
-    /// executeAgentStep は RetryRunner でラップしてリトライする。
+    /// The provider without the retry wrapper.
+    ///
+    /// `chat` and `planToolCalls` send through it exactly once and are not retried at all;
+    /// `executeAgentStep` wraps it in a `RetryRunner` that applies the same policy
+    /// `RetryableProvider` would.
     let baseProvider: OpenAICompatibleProvider
 
-    /// API キー
     package let apiKey: String
 
-    /// エンドポイント URL
     package let endpoint: URL
 
-    /// URLSession
     package let session: URLSession
 
-    /// プロバイダー名（エラーメッセージ用）
+    /// Vendor name reported in unsupported-media errors raised while converting messages.
     package let providerName: String
 
-    /// カスタム HTTP ヘッダー
+    /// Headers added to every request, such as OpenRouter's `X-Title` and `HTTP-Referer`.
     package let customHeaders: [String: String]
 
-    /// 最大トークン数の送信フィールド名（プロバイダーごとに分岐）
+    /// Which field name carries the token cap for this vendor.
     package let maxTokensParameter: OpenAICompatibleMaxTokensParameter
 
-    /// リトライ設定
     package let retryConfiguration: RetryConfiguration
 
-    /// リトライイベントハンドラー
     package let retryEventHandler: RetryEventHandler?
 
     private static let defaultMaxTokens = 4096
@@ -66,7 +69,7 @@ package struct OpenAICompatibleEngine: Sendable {
         )
     }
 
-    /// Transport を注入する指定イニシャライザ（テストで MockTransport を差し込む）。
+    /// Designated initializer taking an injected transport, so tests can substitute a mock.
     package init(
         transport: any HTTPTransport & HTTPStreamingTransport,
         apiKey: String,
@@ -162,9 +165,9 @@ package struct OpenAICompatibleEngine: Sendable {
         temperature: Double?,
         maxTokens: Int?
     ) async throws -> ChatResponse<T> {
-        // 全ての送信を api-client(contract)経由に統一（生 URLSession を撤廃）。
-        // buildRequestBody が schema 適合・制約プロンプト合成・max_completion_tokens を
-        // 一貫処理し、エラーは contract の decodeError がリッチにマッピングする。
+        // Goes through the contract like every other send, so schema adaptation, the constraint
+        // prompt, and the vendor's token-cap field name are decided in one place and errors arrive
+        // as decoded vendor messages. This send is not retried.
         let request = LLMRequest(
             model: .custom(modelId),
             messages: messages,
@@ -179,6 +182,11 @@ package struct OpenAICompatibleEngine: Sendable {
 
     // MARK: - ToolCallableClient
 
+    /// Asks the model which tools to call, without running any of them.
+    ///
+    /// The vendor returns tool arguments as a JSON string rather than an object, so they are passed
+    /// on as raw UTF-8 data for the caller to decode. Any tool call whose type is not `function`
+    /// is dropped during conversion and never reaches the caller. This send is not retried.
     package func planToolCalls(
         messages: [LLMMessage],
         modelId: String,
@@ -212,13 +220,19 @@ package struct OpenAICompatibleEngine: Sendable {
             tools: tools.toOpenAIToolDefs(),
             toolChoice: toolChoice.map { mapToolChoice($0) }
         )
-        // 生 URLSession を撤廃し contract 経由に統一（ボディは既に max_completion_tokens）。
+        // The body already carries the vendor's token-cap field name. This send is not retried.
         let (output, _, _) = try await baseProvider.sendBody(body)
         return OpenAICompatibleResponseConverter.toToolCallResponse(output)
     }
 
     // MARK: - AgentCapableClient
 
+    /// Runs one agent turn, with tools, an optional strict response schema, and a reasoning effort.
+    ///
+    /// When the tool set is empty, neither `tools` nor `tool_choice` is put in the body; when tools
+    /// are present and the caller expressed no preference, `tool_choice` goes out as `auto`.
+    /// Temperature is never sent on this path. Retries run through `RetryRunner` rather than the
+    /// wrapped provider, but under the same policy.
     package func executeAgentStep(
         messages: [LLMMessage],
         modelId: String,
@@ -271,8 +285,8 @@ package struct OpenAICompatibleEngine: Sendable {
             reasoningEffort: reasoningEffort?.rawValue
         )
 
-        // 生 URLSession + AgentRetryHelper を撤廃し contract 経由に統一。
-        // リトライはドメイン認識の RetryRunner に集約（RetryableProvider と同一実装）。
+        // Retries come from RetryRunner, the same domain-aware policy RetryableProvider applies,
+        // rather than from a helper specific to the agent path.
         let output = try await RetryRunner.run(
             policy: retryConfiguration.policy,
             eventHandler: retryEventHandler
@@ -284,6 +298,8 @@ package struct OpenAICompatibleEngine: Sendable {
 
     // MARK: - Private Helpers
 
+    /// Appends the schema description to the caller's prompt, restating in prose what the strict
+    /// schema already encodes.
     private func buildSystemPrompt(base: String?, schema: JSONSchema) -> String {
         var parts: [String] = []
 

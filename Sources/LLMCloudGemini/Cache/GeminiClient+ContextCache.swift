@@ -4,7 +4,11 @@ import LLMClient
 extension GeminiClient: PromptCacheReleasing {}
 
 extension GeminiClient {
-    /// キャッシュ方針に従って安定プレフィックスをプロンプト文脈に解決する
+    /// Turns a stable prefix into a prompt context according to the caller's cache policy.
+    ///
+    /// An implicit policy always sends the prefix inline: Gemini may still cache it automatically,
+    /// but no `cachedContents` resource is created and nothing is billed for storage. An explicit
+    /// policy goes through the cache store, which may still answer with the inline form.
     func resolvePromptContext(
         prefix: GeminiStablePrefix,
         cachePolicy: PromptCachePolicy
@@ -17,10 +21,13 @@ extension GeminiClient {
         }
     }
 
-    /// キャッシュ失効（403/404 "CachedContent not found"）を再作成 + 1 回リトライで回復して送信する
+    /// Sends a request body, recovering once from a cache that the server no longer has.
     ///
-    /// サーバー側はローカルの期限管理より早くリソースを失効させることがあるため、
-    /// 生成時の失効は想定内のイベントとして扱う。
+    /// The server can drop a cache resource earlier than local expiry tracking expects, so a 403
+    /// or 404 naming `CachedContent` is an expected outcome rather than an error: the entry is
+    /// invalidated, a replacement is resolved, and the same contents are sent again. The retry
+    /// happens only for a request that actually referenced a cache under an explicit policy;
+    /// anything else rethrows, and there is never more than one retry.
     func sendBodyRecoveringCacheLoss(
         _ body: GeminiRequestBody,
         prefix: GeminiStablePrefix,
@@ -43,9 +50,10 @@ extension GeminiClient {
         }
     }
 
-    /// このクライアントが作成した明示キャッシュリソースを全削除する（ストレージ課金停止）
+    /// Deletes the explicit cache resources this client created, ending their storage billing.
     ///
-    /// セッション終了時に呼ぶ。呼ばなくても TTL で消えるが、残り時間分の課金が発生する。
+    /// Call it when a session ends. Skipping it is safe but not free: the resources survive until
+    /// their TTL runs out and are billed for storage the whole time.
     public func releasePromptCaches() async {
         await contextCache.release()
     }

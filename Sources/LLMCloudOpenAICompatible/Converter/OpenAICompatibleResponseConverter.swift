@@ -3,10 +3,16 @@ import LLMClient
 import LLMTool
 import LLMChat
 
-/// OpenAI 互換レスポンス → 各種レスポンス型への変換
+/// Turns a chat completion body into whichever shared response type the caller asked for.
 package enum OpenAICompatibleResponseConverter {
 
-    /// OpenAI 互換レスポンスを LLMResponse に変換
+    /// Converts a completion into the general response type.
+    ///
+    /// Only the first choice is read; anything the model produced under a higher `n` is discarded.
+    /// A tool call survives only if its type is `function` and its argument string is valid UTF-8,
+    /// so a malformed call disappears rather than surfacing as an error. An empty choice list is
+    /// not an error either: it yields a response with no content but with usage still filled in,
+    /// since the tokens were billed regardless.
     package static func toLLMResponse(_ response: OpenAICompatibleResponseBody) -> LLMResponse {
         guard let choice = response.choices.first else {
             return LLMResponse(
@@ -44,7 +50,11 @@ package enum OpenAICompatibleResponseConverter {
         )
     }
 
-    /// OpenAI 互換レスポンスを ToolCallResponse に変換
+    /// Converts a completion into the tool-call response type.
+    ///
+    /// Arguments stay as the raw bytes of the vendor's JSON string, unparsed, so the caller decides
+    /// how to read them. Calls of any other type than `function`, and calls whose argument string
+    /// is not valid UTF-8, are dropped. Text the model produced alongside its tool calls is kept.
     package static func toToolCallResponse(_ response: OpenAICompatibleResponseBody) -> ToolCallResponse {
         guard let choice = response.choices.first else {
             return ToolCallResponse(
@@ -80,7 +90,15 @@ package enum OpenAICompatibleResponseConverter {
         )
     }
 
-    /// OpenAI 互換レスポンスを ChatResponse に変換
+    /// Decodes the completion text into the caller's type and packages it as a chat response.
+    ///
+    /// The raw text is kept alongside the decoded value, which is what makes a decoding failure
+    /// diagnosable. Keys are matched from snake_case. A completion with no choices, or a first
+    /// choice with no text, throws an empty-response error rather than returning an empty value.
+    ///
+    /// - Throws: `LLMError.emptyResponse` when there is no text, `invalidEncoding` when it is not
+    ///   valid UTF-8, and `decodingFailed` when the text does not match the expected shape — which
+    ///   is what a model ignoring the schema looks like from here.
     package static func toChatResponse<T: StructuredProtocol>(
         _ response: OpenAICompatibleResponseBody
     ) throws -> ChatResponse<T> {
@@ -113,7 +131,14 @@ package enum OpenAICompatibleResponseConverter {
         )
     }
 
-    /// OpenAI 互換レスポンスを GenerationResult に変換
+    /// Decodes an already-converted response into the caller's type.
+    ///
+    /// Unlike the chat path this starts from the shared response type, so it reads only the first
+    /// content block and ignores any tool calls that came with it.
+    ///
+    /// - Throws: `LLMError.emptyResponse` when the first block holds no text, `invalidEncoding`
+    ///   when that text is not valid UTF-8, and `decodingFailed` when it does not match the
+    ///   expected shape.
     package static func toGenerationResult<T: StructuredProtocol>(
         _ response: LLMResponse,
         model: String
@@ -143,7 +168,15 @@ package enum OpenAICompatibleResponseConverter {
         }
     }
 
-    /// OpenAI 互換 Usage → TokenUsage 変換
+    /// Normalizes vendor token counters into the shared accounting shape.
+    ///
+    /// These vendors fold cached prompt tokens into the prompt count and report the cached figure
+    /// only as a breakdown, so the input count is passed through untouched and the cached figure is
+    /// recorded beside it — adding the two would double-count. Nothing is reported for cache
+    /// writes, because caching here is implicit and never billed as a separate write.
+    ///
+    /// The cache tier is inferred, not reported: any cache hit at all is recorded as the short
+    /// tier, since the wire format has no field distinguishing tiers.
     package static func toTokenUsage(_ usage: OpenAICompatibleUsage) -> TokenUsage {
         let cachedTokens = usage.promptTokensDetails?.cachedTokens
         return TokenUsage(

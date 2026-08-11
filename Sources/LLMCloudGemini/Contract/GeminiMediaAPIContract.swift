@@ -3,9 +3,13 @@ import Foundation
 import LLMClient
 import LLMCloudClient
 
-/// Gemini のメディア系エンドポイント(Imagen `:predict`, Gemini Image `:generateContent`,
-/// Veo files API)グループ。認証は `x-goog-api-key` ヘッダー、baseURL は `/v1beta/models`。
-/// キー変換なし(`.default`): Gemini はリクエスト/レスポンスとも camelCase。
+/// Contract group for the image and video endpoints.
+///
+/// Covers Imagen `:predict`, Gemini image `:generateContent`, and the Veo long-running operation
+/// endpoints. Authentication is the `x-goog-api-key` header and the base URL is `/v1beta/models`,
+/// except for Veo operations, which sit outside `models/` and are called with a shorter base URL.
+/// No key conversion is applied, because Gemini is camelCase in both directions. Errors map
+/// straight to the shared error type; there is no cache classification on this path.
 enum GeminiMediaAPI: APIContractGroup {
     static let basePath: String = ""
     static let auth: AuthScheme = .apiKey(headerName: "x-goog-api-key")
@@ -36,7 +40,7 @@ enum GeminiMediaAPI: APIContractGroup {
 }
 
 extension GeminiMediaAPI {
-    /// `POST /v1beta/models/{modelId}:predict` — Imagen 画像生成。
+    /// `POST /v1beta/models/{modelId}:predict` — Imagen image generation, up to several at once.
     struct ImagenPredict: APIContract, APIInput {
         typealias Group = GeminiMediaAPI
         typealias Input = Self
@@ -50,7 +54,10 @@ extension GeminiMediaAPI {
         static func decode(pathParameters: [String: String], queryParameters: [String: String], body: Data?, decoder: any APIBodyDecoder) throws -> Self { fatalError("Client-only contract") }
     }
 
-    /// `POST /v1beta/models/{modelId}:generateContent` — Gemini Image 生成。
+    /// `POST /v1beta/models/{modelId}:generateContent` — image generation by a Gemini image model.
+    ///
+    /// Images come back as inline base64 parts of a normal generation response, so the request
+    /// has to ask for both text and image response modalities.
     struct GenerateImageContent: APIContract, APIInput {
         typealias Group = GeminiMediaAPI
         typealias Input = Self
@@ -104,10 +111,13 @@ struct GeminiImageResponseBody: Decodable, Sendable {
     struct InlineData: Decodable, Sendable { let mimeType: String?; let data: String? }
 }
 
-// MARK: - Veo (動画) — baseURL は /v1beta(operations は models/ の外)
+// MARK: - Veo (video) — base URL is /v1beta, since operations live outside models/
 
 extension GeminiMediaAPI {
-    /// `POST /v1beta/models/{modelId}:predictLongRunning` — Veo 動画生成ジョブを開始。
+    /// `POST /v1beta/models/{modelId}:predictLongRunning` — starts a Veo video generation job.
+    ///
+    /// Returns an operation name immediately, not a video: generation takes minutes and the
+    /// result is collected by polling the operation.
     struct VeoGenerate: APIContract, APIInput {
         typealias Group = GeminiMediaAPI
         typealias Input = Self
@@ -121,7 +131,10 @@ extension GeminiMediaAPI {
         static func decode(pathParameters: [String: String], queryParameters: [String: String], body: Data?, decoder: any APIBodyDecoder) throws -> Self { fatalError("Client-only contract") }
     }
 
-    /// `GET /v1beta/{operationName}` — 長時間オペレーションのステータス。
+    /// `GET /v1beta/{operationName}` — polls a long-running operation for completion.
+    ///
+    /// The operation name from the start call is the whole path, so it is substituted as one path
+    /// parameter rather than appended to a models path.
     struct VeoOperationStatus: APIContract, APIInput {
         typealias Group = GeminiMediaAPI
         typealias Input = Self
@@ -147,6 +160,12 @@ struct VeoRequestBody: Encodable, Sendable {
     }
 }
 
+/// State of a Veo operation, returned both when starting one and when polling it.
+///
+/// Only `name` is guaranteed. While the job runs, `done` is absent or false and there is no
+/// result; once it finishes, either `error` or `response` is filled in. The result has been
+/// delivered under several different key layouts, so all of the known ones are decoded and the
+/// accessors look through them in turn.
 struct VeoOperationResponseBody: Decodable, Sendable {
     let name: String
     let done: Bool?
@@ -166,6 +185,10 @@ struct VeoOperationResponseBody: Decodable, Sendable {
     struct Video: Decodable, Sendable { let gcsUri: String?; let bytesBase64Encoded: String?; let mimeType: String? }
     struct GeneratedVideoItem: Decodable, Sendable { let uri: String?; let encoding: String? }
 
+    /// The first video reference present, whichever result layout the operation used.
+    ///
+    /// The value may be an HTTPS download URL, a File API path, or a `gs://` URI, so the caller
+    /// still has to decide how to fetch it.
     func getVideoURL() -> String? {
         if let uri = response?.generateVideoResponse?.generatedSamples?.first?.video?.uri { return uri }
         if let gcsUri = response?.videos?.first?.gcsUri { return gcsUri }
@@ -173,6 +196,7 @@ struct VeoOperationResponseBody: Decodable, Sendable {
         return nil
     }
 
+    /// Inline video bytes, for the result layout that embeds the video instead of linking to it.
     func getVideoBase64() -> String? {
         response?.videos?.first?.bytesBase64Encoded
     }

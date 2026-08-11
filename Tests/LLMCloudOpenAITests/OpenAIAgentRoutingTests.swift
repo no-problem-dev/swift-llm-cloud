@@ -5,16 +5,18 @@ import LLMTool
 import Testing
 @testable import LLMCloudOpenAI
 
-/// `executeAgentStep` がどちらのエンドポイントへ行くか。
+/// Which OpenAI endpoint an agent step is routed to, and why the choice cannot depend on effort.
 ///
-/// reasoning モデルに function tools を渡すと Chat Completions は拒否する:
+/// Chat Completions refuses function tools on a reasoning model:
 ///
 /// > Function tools with reasoning_effort are not supported for gpt-5.6-luna
 /// > in /v1/chat/completions. To use function tools, use /v1/responses
 ///
-/// **`reasoning_effort` を送っていなくても拒否される。** 既定で reasoning する
-/// ため。以前は effort の有無で振り分けていて、指定なしの呼び出し
-/// (A2UI の副エージェント)が Chat Completions に落ちて毎回失敗していた。
+/// The refusal happens even when no `reasoning_effort` was sent, because those models reason by
+/// default. Routing used to branch on whether an effort was supplied, so any call that left it
+/// unset landed on Chat Completions and failed every time. The model's reasoning capability plus
+/// the presence of tools is what decides, and ``routedURL(model:tools:effort:)`` reads the decision
+/// off the URL the mock transport actually received.
 @Suite("OpenAI agent step routing")
 struct OpenAIAgentRoutingTests {
     private func transport() -> MockTransport {
@@ -37,7 +39,10 @@ struct OpenAIAgentRoutingTests {
         return ToolSet(tools: [render])
     }
 
-    /// 叩かれた URL を返す。
+    /// Runs one agent step and returns the URL the request was sent to.
+    ///
+    /// The call is deliberately `try?`: routing is decided before the response is parsed, so a
+    /// decode failure on the canned body must not hide which endpoint was chosen.
     private func routedURL(
         model: GPTModel,
         tools: ToolSet,
@@ -60,7 +65,7 @@ struct OpenAIAgentRoutingTests {
         return try #require(mock.recordedRequests.first?.url.absoluteString)
     }
 
-    /// これが今回の再発防止。effort を渡さなくても /v1/responses へ行く。
+    /// The regression this suite exists for: no effort supplied still routes to `/v1/responses`.
     @Test("reasoning モデル + tools は effort 無しでも /v1/responses")
     func reasoningModelWithToolsUsesResponses() async throws {
         let url = try await routedURL(model: .gpt5_6Luna, tools: toolSet, effort: nil)
@@ -73,14 +78,14 @@ struct OpenAIAgentRoutingTests {
         #expect(url.contains("/responses"))
     }
 
-    /// tools が無ければ Chat Completions で困らない。
+    /// Without tools there is nothing for Chat Completions to refuse, so it stays there.
     @Test("tools が無ければ Chat Completions のまま")
     func noToolsStaysOnChatCompletions() async throws {
         let url = try await routedURL(model: .gpt5_6Luna, tools: ToolSet(tools: []), effort: nil)
         #expect(url.contains("/chat/completions"))
     }
 
-    /// reasoning しないモデルは従来どおり。
+    /// A non-reasoning model is unaffected: tools on Chat Completions are fine there.
     @Test("非 reasoning モデルは tools ありでも Chat Completions")
     func nonReasoningModelStaysOnChatCompletions() async throws {
         let url = try await routedURL(model: .gpt4o, tools: toolSet, effort: nil)

@@ -1,29 +1,36 @@
 # ``LLMCloud``
 
-swift-llm-cloud の主要モジュールをまとめてインポートするアンブレラライブラリ。
+Umbrella module that re-exports the shared infrastructure and the three natively implemented providers.
 
 ## Overview
 
-`LLMCloud` は `LLMCloudClient`、`LLMCloudAnthropic`、`LLMCloudOpenAI`、`LLMCloudGemini` の 4 モジュールを `@_exported import` で再公開するアンブレラターゲット。
-
-複数のプロバイダーを 1 つの `import` 文でまとめて利用したい場合に使用する。特定のプロバイダーのみ使用する場合は、そのプロバイダーのモジュール（`LLMCloudAnthropic` など）を直接インポートした方がコンパイル時間を短縮できる。
+`LLMCloud` declares no symbols of its own. It is a single `@_exported import` of `LLMCloudClient`,
+`LLMCloudAnthropic`, `LLMCloudOpenAI`, and `LLMCloudGemini`, so one import statement brings all
+three clients into scope.
 
 ```swift
 import LLMCloud
 
-// AnthropicClient、OpenAIClient、GeminiClient がすべて利用可能
 let anthropic = AnthropicClient(apiKey: "sk-ant-...")
 let openai = OpenAIClient(apiKey: "sk-...")
 let gemini = GeminiClient(apiKey: "AIza...")
 ```
 
-### 再公開されるモジュール
+Use it when you are comparing providers or writing a sample. In an app that ships one provider,
+import that provider's module instead — the umbrella compiles all four.
 
-- `LLMCloudClient` — リトライ・レート制限・WireSchema などの共有インフラ
-- `LLMCloudAnthropic` — Anthropic Claude クライアント
-- `LLMCloudOpenAI` — OpenAI GPT クライアント（Responses API 対応）
-- `LLMCloudGemini` — Google Gemini クライアント（コンテキストキャッシュ対応）
+### What it does not include
 
-DeepSeek・xAI・Groq・Mistral・OpenRouter を使用する場合は、それぞれのモジュール（`LLMCloudDeepSeek`、`LLMCloudXAI`、`LLMCloudGroq`、`LLMCloudMistral`、`LLMCloudOpenRouter`）を直接インポートする。`LLMCloud` はこれらを含まない。
+DeepSeek, xAI, Groq, Mistral, and OpenRouter are not re-exported. They are built on the
+OpenAI-compatible engine rather than a native API, and pulling them in would make the umbrella the
+whole package. Import `LLMCloudDeepSeek`, `LLMCloudXAI`, `LLMCloudGroq`, `LLMCloudMistral`, or
+`LLMCloudOpenRouter` directly.
+
+`LLMCloudBranding` is also excluded: it is a SwiftUI presentation module with no client code and no
+dependency on the rest of the package.
 
 ## Topics
+
+### Package structure
+
+- <doc:ModuleArchitecture>

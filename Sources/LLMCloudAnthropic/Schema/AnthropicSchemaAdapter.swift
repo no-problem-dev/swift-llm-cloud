@@ -2,9 +2,13 @@ import Foundation
 import LLMClient
 import LLMCloudClient
 
-/// Anthropic API 用のスキーマ適合。挙動は ``GenericSchemaAdapter`` の `.anthropic`
-/// 設定に集約（minItems<=1 のみ保持・pattern/format/additionalProperties 保持・
-/// 数値/長さ/maxItems を除去）。
+/// Trims a JSON Schema to what Anthropic's constrained decoding can enforce.
+///
+/// The behaviour lives in the shared `.anthropic` capability set. Anthropic keeps more than
+/// OpenAI does: `pattern`, every `format`, and `additionalProperties` as written, and `minItems`
+/// when it is 0 or 1. Numeric ranges, string lengths, and `maxItems` are removed, and larger
+/// `minItems` values with them. Removed constraints are reported back to the caller so they can
+/// be restated in the prompt instead of vanishing.
 struct AnthropicSchemaAdapter: ProviderSchemaAdapter {
     private let base = GenericSchemaAdapter(capabilities: .anthropic)
     init() {}

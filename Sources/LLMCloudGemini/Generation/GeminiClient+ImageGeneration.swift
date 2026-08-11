@@ -3,8 +3,8 @@ import LLMClient
 // GeminiClient+ImageGeneration.swift
 // swift-llm-structured-outputs
 //
-// Gemini クライアントの画像生成機能拡張
-// Imagen モデルと Gemini Image モデルの両方をサポート
+// Image generation for both Imagen models and Gemini image models, which use different
+// endpoints and response shapes.
 
 import Foundation
 #if canImport(FoundationNetworking)
@@ -16,16 +16,17 @@ import FoundationNetworking
 extension GeminiClient: ImageGenerationCapable {
     public typealias ImageModel = GeminiImageModel
 
-    /// 画像を生成
+    /// Generates a single image.
     ///
     /// - Parameters:
-    ///   - input: LLM 入力（プロンプトテキスト）
-    ///   - model: 使用する画像生成モデル
-    ///   - size: 出力画像のサイズ
-    ///   - quality: 画像品質（Gemini では未使用）
-    ///   - format: 出力フォーマット（Gemini は PNG のみ対応）
-    ///   - n: 生成する画像の数
-    /// - Returns: 生成された画像
+    ///   - input: Prompt; only its text is used, as neither image endpoint accepts attachments.
+    ///   - model: Image model, which decides whether the Imagen or Gemini endpoint is called.
+    ///   - size: Output size, defaulting to 1024 square. Sent to Imagen as an aspect ratio, since
+    ///     that is all Imagen takes.
+    ///   - quality: Ignored; Gemini exposes no quality setting.
+    ///   - format: Must be PNG, the only format either endpoint returns.
+    ///   - n: Ignored here; exactly one image is returned.
+    /// - Throws: `LLMError.emptyResponse` when the model returned no image at all.
     public func generateImage(
         input: LLMInput,
         model: GeminiImageModel,
@@ -48,16 +49,22 @@ extension GeminiClient: ImageGenerationCapable {
         return image
     }
 
-    /// 複数の画像を生成
+    /// Generates several images from one prompt.
+    ///
+    /// Imagen models produce up to `n` images in one `:predict` call. Gemini image models generate
+    /// through `:generateContent` instead, which takes no sample count, so they return whatever
+    /// image parts the response happens to contain regardless of `n`.
     ///
     /// - Parameters:
-    ///   - input: LLM 入力（プロンプトテキスト）
-    ///   - model: 使用する画像生成モデル
-    ///   - size: 出力画像のサイズ
-    ///   - quality: 画像品質（Gemini では未使用）
-    ///   - format: 出力フォーマット（Gemini は PNG のみ対応）
-    ///   - n: 生成する画像の数
-    /// - Returns: 生成された画像の配列
+    ///   - input: Prompt; only its text is used.
+    ///   - model: Image model, which decides which endpoint is called.
+    ///   - size: Output size, defaulting to 1024 square. Imagen receives it as an aspect ratio.
+    ///   - quality: Ignored; Gemini exposes no quality setting.
+    ///   - format: Must be PNG, the only format either endpoint returns.
+    ///   - n: Number of images requested, honoured only by Imagen models.
+    /// - Throws: `ImageGenerationError` when `n` is above the model's limit or the size or format
+    ///   is unsupported, and `GeneratedMediaError.invalidBase64Data` when a returned image cannot
+    ///   be decoded.
     public func generateImages(
         input: LLMInput,
         model: GeminiImageModel,
@@ -66,9 +73,8 @@ extension GeminiClient: ImageGenerationCapable {
         format: ImageOutputFormat?,
         n: Int
     ) async throws -> [GeneratedImage] {
-        // プロンプトテキストを取得
         let prompt = input.prompt.render()
-        // バリデーション
+        // Reject what the model cannot do before spending a request on it.
         if n > model.maxImages {
             throw ImageGenerationError.exceedsMaxImages(requested: n, maximum: model.maxImages)
         }
@@ -78,13 +84,13 @@ extension GeminiClient: ImageGenerationCapable {
             throw ImageGenerationError.unsupportedSize(actualSize, model: model.displayName)
         }
 
-        // Gemini は PNG のみ対応
+        // Both endpoints return PNG and nothing else.
         let actualFormat: ImageOutputFormat = .png
         if let requestedFormat = format, requestedFormat != .png {
             throw ImageGenerationError.unsupportedFormat(requestedFormat, model: model.displayName)
         }
 
-        // モデルタイプに応じて処理を分岐
+        // Imagen and Gemini image models speak different endpoints.
         if model.isImagenModel {
             return try await generateWithImagen(
                 prompt: prompt,
@@ -104,6 +110,10 @@ extension GeminiClient: ImageGenerationCapable {
 
     // MARK: - Imagen API
 
+    /// Generates through Imagen's predict endpoint, which returns base64 images directly.
+    ///
+    /// Imagen takes an aspect ratio rather than pixel dimensions, and a sample count for batching.
+    /// Person generation is requested at the adult-only setting.
     private func generateWithImagen(
         prompt: String,
         model: GeminiImageModel,
@@ -134,6 +144,11 @@ extension GeminiClient: ImageGenerationCapable {
 
     // MARK: - Gemini Image API (generateContent)
 
+    /// Generates through a Gemini image model, which answers on the ordinary generation endpoint.
+    ///
+    /// The request asks for text and image response modalities and the images come back as inline
+    /// base64 parts of the candidates. There is no way to ask for a specific count or size here,
+    /// and any text part is discarded.
     private func generateWithGeminiImage(
         prompt: String,
         model: GeminiImageModel,

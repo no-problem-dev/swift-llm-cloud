@@ -8,11 +8,18 @@ import Foundation
 // MARK: - AnthropicClient + AgentCapableClient
 
 extension AnthropicClient: AgentCapableClient {
-    /// エージェントステップを実行
+    /// Runs one agent turn and returns the complete reply.
     ///
-    /// Anthropic Claude API を使用してエージェントステップを実行する。
-    /// ツールコールと構造化出力の両方をサポートする。
-    /// リトライ設定に基づいて、レート制限やサーバーエラー時に自動リトライを行う。
+    /// Tool definitions and a response schema can be combined in the same request: tools become
+    /// Anthropic tool definitions, and the schema becomes an `output_config.format` for
+    /// constrained decoding. Thinking blocks already in the history are replayed with their
+    /// signatures, which Anthropic requires when a conversation continues after reasoning.
+    ///
+    /// This path does not request extended thinking — both `thinkingMode` and `reasoningEffort`
+    /// are ignored here, and no thinking budget is sent. Use the streaming form for reasoning.
+    ///
+    /// Rate-limited and server-error responses are retried according to the client's retry
+    /// configuration, waiting as long as the `anthropic-ratelimit-*` headers ask for.
     public func executeAgentStep(
         messages: [LLMMessage],
         model: ClaudeModel,
@@ -49,7 +56,8 @@ extension AnthropicClient: AgentCapableClient {
             cachePolicy: cachePolicy
         )
 
-        // 構造化出力は GA（output_config.format）。Files API(file_id)と extended-cache-ttl は必要時のみ beta を付与。
+        // Structured output needs no beta flag. Only file_id references and the one-hour cache
+        // TTL do, and only when the request actually uses them.
         let beta = AnthropicProvider.betaValues(for: messages) + body.cacheBetaValues
         let response = try await RetryRunner.run(
             policy: retryConfiguration.policy,
@@ -60,6 +68,12 @@ extension AnthropicClient: AgentCapableClient {
         return Self.agentResponseToLLM(response)
     }
 
+    /// Converts a reply into the neutral response shape, keeping thinking blocks.
+    ///
+    /// Unlike the plain send path, reasoning survives here with its signature so the caller can
+    /// replay it on the next turn. A tool use whose arguments fail to re-encode is dropped
+    /// rather than failing the turn, which can leave an agent loop with fewer calls than
+    /// Anthropic actually requested.
     private static func agentResponseToLLM(_ response: AnthropicResponseBody) -> LLMResponse {
         let contentBlocks: [LLMResponse.ContentBlock] = response.content.compactMap { block in
             switch AnthropicBlockType(rawValue: block.type) {
@@ -85,26 +99,34 @@ extension AnthropicClient: AgentCapableClient {
 
     // MARK: - Private Constants
 
-    /// デフォルトの最大トークン数（non-thinking 用）
+    /// Output limit sent for a turn without extended thinking, since Anthropic requires one.
     private static let defaultMaxTokens = 4096
 
-    /// Extended Thinking 有効時のデフォルト最大トークン数
+    /// Larger output limit used when extended thinking is on, since reasoning is billed as output.
     private static let defaultMaxTokensWithThinking = 16384
 
-    /// Extended Thinking 有効時のデフォルト思考バジェットトークン数
+    /// Share of the output budget reserved for reasoning when extended thinking is on.
     ///
-    /// `defaultMaxTokensWithThinking` (16384) のうち 10240 を思考に割り当て、
-    /// 残り 6144 を出力用に確保する。
+    /// Anthropic counts the thinking budget inside `max_tokens`, so with the default 16384 this
+    /// leaves 6144 for the visible answer. A caller-supplied `max_tokens` clamps the budget to
+    /// one token below it, because Anthropic rejects a budget equal to the limit.
     private static let defaultThinkingBudgetTokens = 10240
 
     // MARK: - Private Helpers
 
     // MARK: - Streaming Agent Step
 
-    /// エージェントステップをストリーミング実行
+    /// Runs one agent turn, streaming reasoning and text as they are produced.
     ///
-    /// thinking が有効な場合、SSE ストリーミングで thinking_delta/text_delta をリアルタイムに返す。
-    /// thinking が無効な場合は既存の `executeAgentStep()` にフォールバックする。
+    /// With extended thinking on, `thinking_delta` and `text_delta` events are forwarded as they
+    /// arrive and a final assembled response is yielded at the end. Tool arguments are not
+    /// streamed: their `input_json_delta` fragments are only valid JSON once concatenated, so
+    /// tool calls appear whole in the final response.
+    ///
+    /// Extended thinking is dropped for models that do not support it — Haiku, and the Opus 4.7
+    /// and 4.8 generations — in which case this falls back to a single non-streaming request and
+    /// emits one completed event. Note that a model with no thinking support therefore streams
+    /// nothing at all, even though the call signature promises a stream.
     public func streamAgentStep(
         messages: [LLMMessage],
         model: ClaudeModel,
@@ -117,9 +139,9 @@ extension AnthropicClient: AgentCapableClient {
         maxTokens: Int?,
         cachePolicy: PromptCachePolicy
     ) -> AsyncThrowingStream<StreamingAgentEvent, Error> {
-        _ = reasoningEffort // Anthropic 側では Extended Thinking が思考量制御の主役
+        _ = reasoningEffort // On Anthropic the thinking budget, not an effort knob, governs reasoning.
 
-        // 非対応モデル（Haiku 等）は自動で thinking 無効にフォールバック
+        // Models without extended thinking support silently drop to the non-thinking path.
         let effectiveThinkingMode: ThinkingMode
         if thinkingMode == .adaptive && !model.supportsExtendedThinking {
             effectiveThinkingMode = .disabled
@@ -127,7 +149,8 @@ extension AnthropicClient: AgentCapableClient {
             effectiveThinkingMode = thinkingMode
         }
 
-        // thinking 無効時はデフォルト実装（非ストリーミング）にフォールバック
+        // Without thinking there is nothing to stream incrementally: run one blocking request
+        // and hand back its result as a single completed event.
         guard effectiveThinkingMode == .adaptive else {
             return makeCancellableStream { continuation in
                 Task {
@@ -174,7 +197,11 @@ extension AnthropicClient: AgentCapableClient {
         }
     }
 
-    /// ストリーミングリクエストを実行
+    /// Issues the streaming request and drives the accumulator that reassembles it.
+    ///
+    /// The final response is emitted from `message_stop`; if the stream ends without one, a
+    /// response is still built from whatever accumulated, so a truncated stream yields partial
+    /// content rather than nothing. Unlike the non-streaming path, this request is not retried.
     private func executeStreamingAgentStep(
         messages: [LLMMessage],
         model: ClaudeModel,
@@ -210,7 +237,8 @@ extension AnthropicClient: AgentCapableClient {
             thinking: AnthropicThinkingConfig(type: "enabled", budgetTokens: effectiveBudget),
             cachePolicy: cachePolicy
         )
-        // 構造化出力は GA（output_config.format）。Files API(file_id)と extended-cache-ttl は必要時のみ beta を付与。
+        // Structured output needs no beta flag. Only file_id references and the one-hour cache
+        // TTL do, and only when the request actually uses them.
         let beta = AnthropicProvider.betaValues(for: messages) + body.cacheBetaValues
 
         var accumulator = AnthropicStreamAccumulator()
@@ -237,7 +265,17 @@ extension AnthropicClient: AgentCapableClient {
 
 // MARK: - AnthropicStreamAccumulator
 
-/// SSE イベントからストリーミングデルタと完全レスポンスを生成するアキュムレータ
+/// Reassembles a streamed Anthropic message from its server-sent events.
+///
+/// It holds the state the events themselves do not repeat: the id and name of the tool-use block
+/// currently open, the thinking signature being built, and the usage counters, which arrive
+/// split between `message_start` (input and cache) and `message_delta` (final output).
+///
+/// Text and thinking are emitted as deltas the moment they arrive. Tool arguments are not:
+/// Anthropic sends them as `input_json_delta` fragments that are pieces of one JSON document, so
+/// nothing is parseable until `content_block_stop` closes the block. The concatenated string is
+/// handed on as-is without a parse check, which means a stream cut mid-block produces a tool
+/// call carrying truncated JSON.
 private struct AnthropicStreamAccumulator {
     enum Action {
         case yieldDelta(StreamDelta)
@@ -261,6 +299,10 @@ private struct AnthropicStreamAccumulator {
     private var stopReason: String?
     private var completed = false
 
+    /// Folds one event into the accumulated state and returns whatever should be emitted now.
+    ///
+    /// Most events emit nothing. Events this client does not model are ignored, so an unknown
+    /// event name is skipped rather than treated as a failure.
     mutating func processEvent(_ event: SSEEvent) -> [Action] {
         switch event.event.flatMap(AnthropicSSE.EventName.init) {
         case .messageStart:
@@ -282,7 +324,11 @@ private struct AnthropicStreamAccumulator {
         }
     }
 
-    /// ストリーム終了後にまだレスポンスが返されていない場合に最終レスポンスを構築
+    /// Builds a response for a stream that ended without a `message_stop` event.
+    ///
+    /// Returns `nil` when the stop event already produced one, so a normal stream does not emit
+    /// its result twice. After an early end the usage is whatever had arrived, meaning the
+    /// output token count is short of the real one.
     func buildFinalResponse() -> LLMResponse? {
         guard !completed else { return nil }
         return buildResponse()
@@ -321,6 +367,11 @@ private struct AnthropicStreamAccumulator {
         return []
     }
 
+    /// Routes one delta by its own `type` field to the buffer it belongs to.
+    ///
+    /// Text and thinking are both buffered and emitted immediately. A signature delta only
+    /// accumulates, since a partial signature is useless on its own, and `input_json_delta`
+    /// fragments only accumulate because a fragment of a JSON document cannot be parsed.
     private mutating func processContentBlockDelta(_ data: String) -> [Action] {
         guard let delta = AnthropicSSE.decode(AnthropicSSE.ContentBlockDelta.self, from: data)?.delta else { return [] }
 
@@ -349,15 +400,19 @@ private struct AnthropicStreamAccumulator {
         return []
     }
 
+    /// Seals whichever block was open, moving its buffer into the finished list.
+    ///
+    /// The event does not say which block it closes, so both candidates are checked. A thinking
+    /// block that produced only a signature and no prose is discarded.
     private mutating func processContentBlockStop() -> [Action] {
-        // thinking ブロック完了
+        // Thinking block finished.
         if !currentThinkingText.isEmpty {
             thinkingTexts.append((text: currentThinkingText, signature: currentThinkingSignature))
             currentThinkingText = ""
             currentThinkingSignature = nil
         }
 
-        // tool_use ブロック完了
+        // Tool use finished: the fragments collected so far are the whole argument document.
         if let id = currentToolId, let name = currentToolName {
             toolUseBlocks.append((id: id, name: name, inputJSON: currentToolInput))
             currentToolId = nil
@@ -368,6 +423,10 @@ private struct AnthropicStreamAccumulator {
         return []
     }
 
+    /// Takes the stop reason and the final output token count off the closing delta.
+    ///
+    /// This event does not repeat the input or cache counters from `message_start`, and a
+    /// missing output count leaves the previous value in place rather than resetting it to zero.
     private mutating func processMessageDelta(_ data: String) -> [Action] {
         guard let event = AnthropicSSE.decode(AnthropicSSE.MessageDelta.self, from: data) else { return [] }
         stopReason = event.delta?.stopReason
@@ -383,6 +442,10 @@ private struct AnthropicStreamAccumulator {
         return []
     }
 
+    /// Converts an in-band error event into a failure that ends the stream.
+    ///
+    /// Anthropic reports mid-stream failures inside a body that already returned HTTP 200, so
+    /// there is no status code to carry; zero stands in for one.
     private mutating func processError(_ data: String) -> [Action] {
         let message = AnthropicSSE.decode(AnthropicSSE.ErrorEvent.self, from: data)?.error.message
         return [.error(.serverError(0, message ?? "Unknown streaming error"))]
@@ -390,20 +453,23 @@ private struct AnthropicStreamAccumulator {
 
     // MARK: - Response Building
 
+    /// Assembles the buffered blocks into a response, or `nil` if nothing was collected.
+    ///
+    /// Blocks are ordered thinking, then text, then tool uses, and all text deltas are merged
+    /// into one block regardless of how many the stream actually contained. Tool arguments are
+    /// passed through as the raw accumulated bytes without validation. Usage is normalized so
+    /// the cache counters are folded into the input total.
     private func buildResponse() -> LLMResponse? {
         var contentBlocks: [LLMResponse.ContentBlock] = []
 
-        // thinking ブロック
         for thinking in thinkingTexts {
             contentBlocks.append(.thinking(text: thinking.text, signature: thinking.signature))
         }
 
-        // テキストブロック
         if !textContent.isEmpty {
             contentBlocks.append(.text(textContent))
         }
 
-        // tool_use ブロック
         for tool in toolUseBlocks {
             let inputData = tool.inputJSON.data(using: .utf8) ?? Data()
             contentBlocks.append(.toolUse(id: tool.id, name: tool.name, input: inputData))

@@ -1,12 +1,16 @@
 import Foundation
 
-/// クラウド LLM プロバイダー / モデルファミリーのブランド identity。
+/// A vendor an app can show a name and a logo for.
 ///
-/// ロゴアセット（`ProviderLogos.xcassets`）とプロバイダーの表示名を 1 箇所に束ねる。
-/// アプリ側はプロバイダー / モデルをこの brand に解決し、`CloudProviderLogo` で描画する。
-/// クラウドへの依存（`swift-llm-cloud`）を 1 ターゲットに閉じ込めるための公開 identity でもある。
+/// Covers more than the providers this package can talk to: a model reached through OpenRouter
+/// is served by one vendor but built by another, and an app usually wants to show the one that
+/// built it. So model families such as Llama and Qwen get their own cases alongside the API
+/// vendors, plus the Brave search backend and on-device inference.
+///
+/// The names and assets live here so an app can display a provider without importing the client
+/// modules. Resolve a provider or model to a case, then draw it with ``CloudProviderLogo``.
 public enum CloudProviderBrand: String, CaseIterable, Identifiable, Sendable, Hashable, Codable {
-    // クラウドプロバイダー（API 提供元）
+    // Cloud providers (API vendors)
     case anthropic
     case openai
     case google
@@ -15,20 +19,23 @@ public enum CloudProviderBrand: String, CaseIterable, Identifiable, Sendable, Ha
     case groq
     case mistral
     case openRouter
-    // モデルファミリー / 周辺（OpenRouter 経由などで現れるベンダー）
+    // Model families and adjacent vendors, which surface through OpenRouter and the like
     case meta
     case qwen
     case microsoft
     case ibm
     case huggingface
-    // 検索プロバイダー（researcher / visualizer の web 検索）
+    // Search backend used by the researcher and visualizer web search
     case brave
-    // オンデバイス（MLX 等）
+    // On-device inference, such as MLX
     case local
 
     public var id: String { rawValue }
 
-    /// 人間向け表示名。
+    /// The vendor's name as it should appear in the interface.
+    ///
+    /// Spelled the way each vendor spells it, so casing is deliberate. Not localized, except for
+    /// on-device inference, which has no vendor to name and reads as Japanese UI text.
     public var displayName: String {
         switch self {
         case .anthropic: "Anthropic"
@@ -49,7 +56,9 @@ public enum CloudProviderBrand: String, CaseIterable, Identifiable, Sendable, Ha
         }
     }
 
-    /// `ProviderLogos.xcassets` 内のロゴ画像名。
+    /// Name of the logo image in the asset catalog this package ships.
+    ///
+    /// Load it from `Bundle.module`, not the main bundle — or let ``CloudProviderLogo`` do it.
     public var logoAssetName: String {
         switch self {
         case .anthropic: "claude-logo"
@@ -70,10 +79,13 @@ public enum CloudProviderBrand: String, CaseIterable, Identifiable, Sendable, Ha
         }
     }
 
-    /// アセットが無く SF Symbols へフォールバックするか（現状は全 brand にアセットあり）。
+    /// Whether the brand has to fall back to an SF Symbol instead of a shipped logo.
+    ///
+    /// False for every brand: the asset catalog covers all of them. It stays as a hook so a
+    /// brand added without artwork can still render.
     public var usesSystemImage: Bool { false }
 
-    /// アセットが無い場合に使う SF Symbols 名。
+    /// SF Symbol to draw when no logo asset is available.
     public var systemImageName: String {
         switch self {
         case .local: "desktopcomputer"
@@ -81,8 +93,15 @@ public enum CloudProviderBrand: String, CaseIterable, Identifiable, Sendable, Ha
         }
     }
 
-    /// モデルファミリー名（`ModelProfile.modelFamily` 等）からブランドを推定する。
-    /// プロバイダー非依存の表示側が、モデル ID/ファミリーだけからロゴを引くために使う。
+    /// Resolves a model family name to the brand that built it.
+    ///
+    /// Lets a view that only knows which model is selected draw the right logo, without knowing
+    /// which provider is serving it. Matching is case-insensitive and covers both the family
+    /// name and the vendor name, so `"claude"` and `"anthropic"` both land on the same brand.
+    /// Several families map to one brand — Mistral's Codestral and Devstral among them.
+    ///
+    /// Returns nil for an unrecognized family, and several brands have no family that reaches
+    /// them at all — OpenRouter, Hugging Face, Brave, and on-device among them.
     public static func from(modelFamily family: String) -> CloudProviderBrand? {
         switch family.lowercased() {
         case "claude", "anthropic": .anthropic

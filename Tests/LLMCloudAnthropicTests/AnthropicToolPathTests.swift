@@ -63,7 +63,8 @@ struct AnthropicToolPathTests {
         let mock = MockTransport { _ in
             HTTPResponse(status: 200, headers: ["Content-Type": "application/json"], body: toolUseJSON)
         }
-        // .object 工場はデフォルトで additionalProperties:false を付ける（camelCase キーワード）。
+        // The .object factory adds additionalProperties: false by default, so the tool's schema
+        // carries the camelCase keyword this test is watching.
         let tool = SchemaKeywordTool()
         _ = try await client(mock).planToolCalls(
             messages: [LLMMessage(role: .user, content: "hi")],
@@ -75,7 +76,10 @@ struct AnthropicToolPathTests {
     }
 }
 
-/// additionalProperties を含む object スキーマを持つテスト用ツール。
+/// A tool whose input schema carries the additionalProperties keyword.
+///
+/// That keyword is what a snake_case key strategy would rewrite on its way to the wire, which
+/// Anthropic then rejects as an invalid `input_schema`.
 private struct SchemaKeywordTool: Tool {
     var toolName: String { "lookup" }
     var toolDescription: String { "look up" }

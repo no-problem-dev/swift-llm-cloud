@@ -3,10 +3,13 @@ import Testing
 import LLMClient
 @testable import LLMCloudOpenAICompatible
 
-/// MessageContent → ワイヤ JSON 変換のゴールデンテスト。
+/// Golden test pinning the exact JSON an OpenAI-compatible vendor receives for each content kind.
 ///
-/// `JSONEncoder` のキー順を `.sortedKeys` で固定し、入力コンテンツに対する
-/// 生成 JSON を期待文字列と比較する characterization テスト（HTTP 不要）。
+/// Encoding uses `.sortedKeys` so key order is stable and the comparison can be a literal string.
+/// No HTTP is involved, so a diff here means the message shape itself changed: a base64 image
+/// becoming a data URL, a file reference riding in `url` as a `file_id`, audio reaching
+/// `input_audio`. Media the vendor cannot take must throw rather than be dropped, so a silent drop
+/// shows up here as an unexpected success. Every vendor on this engine shares the conversion.
 @Suite("OpenAICompatible wire golden")
 struct OpenAICompatibleWireGoldenTests {
     private func encode(_ messages: [OpenAICompatibleMessage]) throws -> String {

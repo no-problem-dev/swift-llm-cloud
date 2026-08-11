@@ -1,32 +1,25 @@
 # Getting Started
 
-## Installation
+Replacing the retry behaviour that every provider inherits.
 
-`LLMCloudClient` は swift-llm-cloud の内部モジュール。通常は上位のプロバイダーモジュール（`LLMCloudAnthropic` 等）への依存を追加することで自動的に含まれる。
+## Overview
 
-```swift
-// Package.swift
-dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-llm-cloud.git", from: "3.37.0")
-],
-targets: [
-    .target(name: "MyApp", dependencies: [
-        .product(name: "LLMCloudAnthropic", package: "swift-llm-cloud"),
-    ])
-]
-```
+`LLMCloudClient` arrives transitively with any provider module, so there is nothing to add to
+`Package.swift` for it. The reason to import it by name is to change how failures are handled.
 
-## Basic Usage
+## Writing a custom retry policy
 
-`LLMCloudClient` を直接使う主なユースケースは **カスタムリトライポリシー** の実装。
+Conform to `RetryPolicy` and inject it through the provider's `retryConfiguration`. The two methods
+are asked in order: `shouldRetry(error:attempt:)` decides whether there is another attempt at all,
+and `delay(for:error:rateLimitInfo:)` decides how long to wait before it.
 
-### カスタムリトライポリシーの実装
-
-`RetryPolicy` プロトコルに準拠した独自ポリシーを定義し、プロバイダーへ注入できる。
+`rateLimitInfo` is non-`nil` only when the failing response carried headers the extractor
+recognised. Honour its `suggestedWaitTime` before your own arithmetic — it is the provider telling
+you when the window reopens, and ignoring it earns another `429`.
 
 ```swift
-import LLMCloudClient
 import LLMCloudAnthropic
+import LLMCloudClient
 
 struct LinearBackoffPolicy: RetryPolicy {
     let maxRetries: Int = 3
@@ -42,9 +35,15 @@ struct LinearBackoffPolicy: RetryPolicy {
 }
 ```
 
-### リトライイベントの監視
+`LLMError.isRetryable` is the shared judgement about which failures are transient: rate limiting,
+5xx, timeouts, and transport errors. Authentication failures, malformed requests, blocked content,
+and decoding failures are not retried, because repeating them changes nothing.
 
-`RetryEventHandler` を渡すと各リトライ試行を監視できる。
+## Observing retries
+
+Retries are otherwise invisible — a call that succeeded on the third attempt looks exactly like one
+that succeeded immediately. Pass a `retryEventHandler` to see them, which is the cheapest way to
+find out that a workload is quietly spending most of its wall time waiting on a rate limit.
 
 ```swift
 let client = AnthropicClient(
@@ -55,3 +54,5 @@ let client = AnthropicClient(
     }
 )
 ```
+
+The handler is called before the wait, not after, so timestamps mark when the decision was taken.

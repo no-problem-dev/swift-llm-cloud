@@ -3,7 +3,13 @@ import LLMClient
 import LLMCloudClient
 @testable import LLMCloudGemini
 
-/// GenericSchemaAdapter(.gemini) が既存 GeminiSchemaAdapter と完全一致することを検証する。
+/// Pins the Gemini schema adapter to the shared generic adapter under its Gemini capability set.
+///
+/// ``GeminiSchemaAdapter`` only selects that capability set, so what this catches is the selection
+/// being rewired to a different profile; it will not notice a change inside the shared adapter,
+/// since both sides move together. Both halves of the result are compared: the adapted schema, and
+/// the removed-constraint list that the caller restates in the system prompt so a keyword Gemini
+/// rejects is not silently dropped from the requirements.
 @Suite("Gemini schema adapter")
 struct GeminiSchemaAdapterTests {
     private let input = JSONSchema(

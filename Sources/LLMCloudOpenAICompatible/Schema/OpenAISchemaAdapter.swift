@@ -2,12 +2,22 @@ import Foundation
 import LLMClient
 import LLMCloudClient
 
-/// OpenAI Structured Outputs(strict mode)用のスキーマ適合。挙動は ``GenericSchemaAdapter``
-/// の `.openAI` 設定に集約（enum のみ保持・additionalProperties=false 強制・object の
-/// required を全プロパティ化・他の数値/長さ/配列/pattern/format 制約を全除去）。
+/// Reduces a schema to what OpenAI structured outputs accept in strict mode.
 ///
-/// 2025-05 の "improvements" 告知に反し、2026-05 時点の公式仕様でも上記制約は strict mode で
-/// 非サポートのため、全除去が正しい。
+/// Strict mode is narrow, and the reduction follows it exactly: every object gets
+/// `additionalProperties: false`, every property is listed in `required` — an optional property is
+/// expressed by making it nullable instead — and the keywords strict mode does not support are
+/// removed outright: numeric ranges, string lengths, array counts, `pattern`, and `format`.
+/// Enumerations are the one constraint that survives. The rules themselves live in
+/// ``GenericSchemaAdapter`` under its OpenAI capability set; this type only selects them.
+///
+/// Removing a keyword does not silently discard the requirement: the caller receives the list of
+/// what was dropped and folds it back into the system prompt as instructions.
+///
+/// Every vendor on this engine gets the same reduction, because it happens while the request is
+/// being built rather than per vendor. OpenAI announced wider keyword support in May 2025, but the
+/// published strict-mode specification still lists these keywords as unsupported, so removing all
+/// of them remains correct.
 package struct OpenAISchemaAdapter: ProviderSchemaAdapter {
     private let base = GenericSchemaAdapter(capabilities: .openAI)
     package init() {}

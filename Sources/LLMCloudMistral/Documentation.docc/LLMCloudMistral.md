@@ -1,38 +1,40 @@
 # ``LLMCloudMistral``
 
-Mistral AI モデルの Swift クライアント実装。
+Mistral AI client for structured output, chat, tool calls, and agent steps.
 
 ## Overview
 
-`LLMCloudMistral` は Mistral AI の API に対応した Swift クライアント。`MistralClient` を通じて、構造化出力・チャット・ツールコール・エージェントステップの各機能を提供する。
+`MistralClient` takes an API key and a `MistralModel`. Model selection is typed, so a model from
+another provider will not compile against it.
 
-モデル選択は `MistralModel` 型に制約されており、型安全なプロバイダー指定が保証される。Mistral は `max_completion_tokens` を拒否し `max_tokens` のみを受け付けるため、この差異は内部で自動的に処理される。内部的に `LLMCloudOpenAICompatible` の共有エンジンを使用している。
-
-### 基本的な使い方
+Underneath it is the shared Chat Completions engine from `LLMCloudOpenAICompatible`. Mistral is the
+strictest vendor in the package about unknown fields: sending `max_completion_tokens` returns
+`422 Extra inputs are not permitted` rather than being ignored, so the client sends `max_tokens`.
 
 ```swift
 import LLMCloudMistral
 
 let client = MistralClient(apiKey: "...")
 
-@Structured("翻訳結果")
+@Structured("A translated string with its detected source language")
 struct Translation {
-    @StructuredField("翻訳テキスト")
+    @StructuredField("The translated text")
     var text: String
-    @StructuredField("言語")
+    @StructuredField("Source language, in English")
     var language: String
 }
 
 let result: Translation = try await client.generate(
-    input: "次の日本語をフランス語に翻訳してください: 「ありがとうございます」",
+    input: "Translate to French: \"thank you very much\"",
     model: .large
 )
-print(result.text)      // "Merci beaucoup"
-print(result.language)  // "フランス語"
 ```
+
+Retry and rate-limit handling come from `LLMCloudClient` and are configured with
+`RetryConfiguration` at construction.
 
 ## Topics
 
-### クライアント
+### Client
 
 - ``MistralClient``

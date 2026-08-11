@@ -3,8 +3,13 @@ import Testing
 import LLMCloudClient
 @testable import LLMCloudAnthropic
 
-/// 共有 RateLimitHeaderExtraction(.anthropic) が既存 AnthropicRateLimitExtractor と
-/// 一致することを検証するゴールデン。
+/// Pins which headers are read off an Anthropic 429 and how their reset values are interpreted.
+///
+/// Anthropic reports resets as absolute RFC 3339 timestamps, so extraction converts them into a
+/// remaining duration; the assertions compare with a tolerance because that duration is measured
+/// against the wall clock. ``AnthropicRateLimitExtractor`` is a thin call into the shared
+/// `.anthropic` profile, so the parity check guards that wiring and the header names rather than
+/// two independent implementations.
 @Suite("Anthropic rate-limit extraction")
 struct AnthropicRateLimitTests {
     private func response(_ headers: [String: String]) -> HTTPURLResponse {

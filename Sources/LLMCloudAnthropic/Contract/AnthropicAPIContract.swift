@@ -8,11 +8,13 @@ import FoundationNetworking
 
 // MARK: - Anthropic API Group
 
-/// Anthropic Messages API のグループ定義
+/// Contract group for the Anthropic Messages API.
 ///
-/// - Auth: `x-api-key` ヘッダー
-/// - Common Headers: `anthropic-version: 2023-06-01`
-/// - Custom Error Decoding: LLMError + RateLimitAwareError
+/// - Auth: the API key travels in the `x-api-key` header, not as a bearer token.
+/// - Common headers: `anthropic-version: 2023-06-01` on every request.
+/// - Error decoding: HTTP failures become `LLMError`, and the rate-limited and server-error
+///   cases are wrapped in `RateLimitAwareError` so the retry runner can read Anthropic's
+///   advertised wait instead of guessing.
 enum AnthropicAPI: APIContractGroup {
     static let basePath: String = "/v1/messages"
     static let auth: AuthScheme = .apiKey(headerName: "x-api-key")
@@ -33,10 +35,13 @@ enum AnthropicAPI: APIContractGroup {
 
     // MARK: - Custom Error Decoding
 
-    /// Anthropic 固有のエラーデコード
+    /// Turns a failed Anthropic response into a typed error, carrying rate limit state along.
     ///
-    /// ステータスコードに基づいて LLMError を生成し、
-    /// レート制限ヘッダーから RateLimitInfo を抽出して RateLimitAwareError を構成する。
+    /// The status code selects the `LLMError` case, and the response body supplies Anthropic's
+    /// own message for 400 and 404. For 429 and 5xx the error is wrapped in a
+    /// `RateLimitAwareError` holding the `retry-after` and `anthropic-ratelimit-*` values, which
+    /// is what lets a retry wait exactly as long as Anthropic asked rather than backing off
+    /// blindly. Every status code maps to some error, so the result is never `nil`.
     static func decodeError(
         statusCode: Int,
         data: Data,
@@ -71,8 +76,15 @@ enum AnthropicAPI: APIContractGroup {
 
     // MARK: - Rate Limit Extraction
 
+    /// Reads Anthropic's rate limit headers off a failed response.
+    ///
+    /// Anthropic reports both a request budget and a token budget, under
+    /// `anthropic-ratelimit-requests-*` and `anthropic-ratelimit-tokens-*`. The `-reset` headers
+    /// are RFC 3339 absolute timestamps, not durations, so they are converted to seconds from
+    /// now and clamped at zero. `Retry-After`, when present, is already a plain second count and
+    /// takes precedence over both resets when a wait is chosen.
     private static func extractRateLimitInfo(from headers: [String: String]) -> RateLimitInfo {
-        // ヘッダーキーは case-insensitive で取得
+        // Header lookup is case-insensitive: try the spelling as given, then all-lowercase.
         func header(_ name: String) -> String? {
             headers[name] ?? headers[name.lowercased()]
         }
@@ -100,6 +112,10 @@ enum AnthropicAPI: APIContractGroup {
         )
     }
 
+    /// Converts an RFC 3339 reset timestamp into seconds remaining from now, never negative.
+    ///
+    /// Both the fractional-seconds and whole-second spellings are accepted; anything else
+    /// yields `nil` so the caller falls back to another signal.
     private static func parseRFC3339ToInterval(_ value: String) -> TimeInterval? {
         if let date = isoFractionalFormatter.date(from: value) {
             return max(0, date.timeIntervalSinceNow)
@@ -114,7 +130,11 @@ enum AnthropicAPI: APIContractGroup {
 // MARK: - Create Message Endpoint
 
 extension AnthropicAPI {
-    /// メッセージ作成エンドポイント（非ストリーミング）
+    /// Create-message endpoint, used for both single-shot replies and streams.
+    ///
+    /// It posts to `/v1/messages`, and the body decides which mode applies: setting `stream`
+    /// makes Anthropic answer with an event stream, which the caller reads through the
+    /// provider's event stream entry point instead of decoding ``AnthropicResponseBody``.
     struct CreateMessage: APIContract, APIInput {
         typealias Group = AnthropicAPI
         typealias Input = Self
@@ -123,9 +143,12 @@ extension AnthropicAPI {
         static let method: APIMethod = .post
         static let subPath: String = ""
 
-        /// ベータヘッダー値（複数可。カンマ結合で `anthropic-beta` に出す）
+        /// Opt-in beta feature names, joined with commas into the `anthropic-beta` header.
+        ///
+        /// Empty means the header is omitted entirely. Callers add values only when the request
+        /// actually needs them, such as the Files API for `file_id` references or the extended
+        /// cache TTL for one-hour prompt caching.
         let beta: [String]
-        /// リクエストボディ
         let request: AnthropicRequestBody
 
         init(beta: [String] = [], request: AnthropicRequestBody) {

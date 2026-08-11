@@ -1,17 +1,22 @@
 import Foundation
 import Testing
-import APIClient   // HTTPTransport(MockTransport/HTTPResponse) を再公開
+import APIClient   // re-exports HTTPTransport, MockTransport, and HTTPResponse
 import LLMClient
 import LLMTool
 import LLMCloudClient
 @testable import LLMCloudOpenAICompatible
 
-/// 回帰ゲート: OpenAI 互換系の URL 構築とトークンフィールド名を MockTransport で固定する。
+/// Regression gate on the request URL and the token-limit field name for OpenAI-compatible vendors.
 ///
-/// - URL: 完全 URL を endpoint に持つ契約(path 空)で末尾スラッシュを付与しないこと
-///   (Groq の `Unknown request URL` 障害の再発防止)。
-/// - トークンフィールド: プロバイダーごとに max_completion_tokens / max_tokens を出し分けること
-///   (Mistral の 422 障害の再発防止)。
+/// Both regressions were invisible in Swift and only showed up as a vendor error, so the outgoing
+/// request is captured with a mock transport and inspected byte by byte:
+/// - URL: a contract that carries a full URL in its endpoint and an empty path must not gain a
+///   trailing slash. Groq answers `Unknown request URL` when it does.
+/// - Token field: the parameter name is per vendor — `max_completion_tokens` for OpenAI, Groq, and
+///   xAI, `max_tokens` for Mistral, DeepSeek, and OpenRouter. Mistral answers 422 on the wrong one.
+///
+/// The suite also pins tool-schema serialization, because Groq rejects a tool whose JSON Schema
+/// keywords were snake_cased, or whose `required` arrives without a `properties` object.
 @Suite("OpenAICompatible URL & token field regression")
 struct OpenAICompatibleURLAndTokenFieldTests {
     private let completionJSON = Data(#"""
@@ -100,18 +105,19 @@ struct OpenAICompatibleURLAndTokenFieldTests {
             responseSchema: nil, reasoningEffort: nil, maxTokens: 256
         )
         let body = String(decoding: try #require(mock.recordedRequests.first?.body), as: UTF8.self)
-        // JSON Schema キーワードは仕様どおり camelCase でなければならない。
+        // JSON Schema keywords keep the camelCase the spec defines. The snake_case key strategy
+        // applied to the rest of the request body must not reach inside a tool's schema.
         #expect(body.contains("\"additionalProperties\""))
         #expect(!body.contains("\"additional_properties\""))
     }
 
     @Test("引数なしツール: required があれば properties も出す(Groq の properties 欠落拒否再発防止)")
     func emptyObjectSchemaKeepsProperties() throws {
-        // 引数なしツール相当: object + required(空)だが properties 無し。
+        // The shape a no-argument tool produces: an object with an empty required and no properties.
         let schema = JSONSchema(type: .object, required: [])
         let adapted = OpenAISchemaAdapter().adapt(schema)
-        // strict バリデータは required があるのに properties が無いと拒否するため、
-        // 空でも properties を必ず持たせる。
+        // A strict validator rejects a schema carrying required without properties, so the adapter
+        // has to emit properties even when there is nothing in it.
         #expect(adapted.properties != nil)
         #expect(adapted.additionalProperties == false)
     }
@@ -174,7 +180,10 @@ struct OpenAICompatibleURLAndTokenFieldTests {
     }
 }
 
-/// 引数なしツール（list_remote_agents 相当）。inputSchema は空オブジェクト。
+/// A tool taking no arguments, modelled on the real `list_remote_agents`.
+///
+/// Its `inputSchema` is an empty object, which is the case that used to serialize without a
+/// `properties` key and get rejected by Groq.
 private struct NoArgTool: Tool {
     var toolName: String { "list_remote_agents" }
     var toolDescription: String { "list remote agents" }

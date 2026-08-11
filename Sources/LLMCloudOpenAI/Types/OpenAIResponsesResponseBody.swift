@@ -1,13 +1,19 @@
 import Foundation
 import StructuredDataCore
 
-/// `/v1/responses` のレスポンスボディ。
+/// Response body of the Responses API.
+///
+/// The same shape arrives two ways: as the body of a non-streaming call, and embedded in the
+/// `response.completed` event of a stream. Where Chat Completions returns a list of choices, the
+/// Responses API returns `output`, an ordered array of typed items.
 package struct OpenAIResponsesResponseBody: Decodable {
+    /// Id of the response. It is what a stateful caller would send as `previous_response_id`;
+    /// this client never does, since it runs with `store` disabled.
     package let id: String?
     package let model: String?
     package let output: [OpenAIResponsesOutputItem]
     package let usage: OpenAIResponsesUsage?
-    /// `completed` / `in_progress` / `failed` 等
+    /// Lifecycle state: `completed`, `in_progress`, `failed`, and similar.
     package let status: String?
 
     enum CodingKeys: String, CodingKey {
@@ -21,12 +27,17 @@ package struct OpenAIResponsesResponseBody: Decodable {
 
 // MARK: - Output Item
 
-/// 出力アイテムの discriminated union。
+/// One entry of the output array, discriminated by its `type` field.
 ///
-/// 既知の `type` は次の通り:
-/// - `reasoning`: 内部推論ブロック（content / summary を持つ）。LLMResponse へは `.thinking` にマップ。
-/// - `function_call`: ツール呼び出し。
-/// - `message`: 通常のアシスタントメッセージ。content[].text を集約する。
+/// The types that are understood:
+///
+/// - `reasoning`: the model's internal reasoning, carried in `summary` and `content`. Reasoning
+///   models emit one of these even when both are empty.
+/// - `function_call`: a tool call, with the `call_id` that its result has to echo.
+/// - `message`: ordinary assistant output, whose text blocks are concatenated.
+///
+/// Anything else decodes as unknown rather than failing, so a new item type introduced by OpenAI
+/// does not break the whole response.
 package enum OpenAIResponsesOutputItem: Decodable {
     case reasoning(text: String?)
     case functionCall(id: String?, callId: String, name: String, arguments: String)
@@ -66,8 +77,8 @@ package enum OpenAIResponsesOutputItem: Decodable {
         switch ItemType(rawValue: type) {
         case .reasoning:
             let container = try decoder.container(keyedBy: ReasoningKeys.self)
-            // summary は配列 [{type:"summary_text", text:"..."}] になり得る。
-            // content も似た形だが、空配列もよくある。
+            // `summary` arrives as an array of [{type:"summary_text", text:"..."}].
+            // `content` has a similar shape, and both are often empty.
             var collected: [String] = []
             if let summary = try? container.decodeIfPresent([ReasoningTextBlock].self, forKey: .summary) {
                 collected.append(contentsOf: summary.compactMap(\.text))
@@ -83,7 +94,8 @@ package enum OpenAIResponsesOutputItem: Decodable {
             let id = try container.decodeIfPresent(String.self, forKey: .id)
             let callId = try container.decode(String.self, forKey: .callId)
             let name = try container.decode(String.self, forKey: .name)
-            // arguments は通常 JSON string。万一 object で返ってきたら再エンコードする。
+            // `arguments` is normally a JSON string. Should an object arrive instead,
+            // re-encode it so callers always see a string.
             let arguments: String
             if let asString = try? container.decode(String.self, forKey: .arguments) {
                 arguments = asString
@@ -120,6 +132,11 @@ package enum OpenAIResponsesOutputItem: Decodable {
 
 // MARK: - Usage
 
+/// Token counts OpenAI billed for a response.
+///
+/// Both detail blocks describe a subset of the count above them rather than an extra charge:
+/// cached tokens are part of `input_tokens`, and reasoning tokens are part of `output_tokens`.
+/// Adding them on top double-counts.
 package struct OpenAIResponsesUsage: Decodable {
     package let inputTokens: Int?
     package let outputTokens: Int?
@@ -127,7 +144,10 @@ package struct OpenAIResponsesUsage: Decodable {
     package let inputTokensDetails: InputTokensDetails?
     package let outputTokensDetails: OutputTokensDetails?
 
+    /// Breakdown of the input count.
     package struct InputTokensDetails: Decodable {
+        /// Prompt tokens served from OpenAI's automatic prompt cache, already counted in
+        /// `input_tokens`.
         package let cachedTokens: Int?
 
         enum CodingKeys: String, CodingKey {
@@ -135,7 +155,10 @@ package struct OpenAIResponsesUsage: Decodable {
         }
     }
 
+    /// Breakdown of the output count.
     package struct OutputTokensDetails: Decodable {
+        /// Tokens the model spent thinking, already counted in `output_tokens` and billed at the
+        /// output rate even though they never appear in the text.
         package let reasoningTokens: Int?
 
         enum CodingKeys: String, CodingKey {
@@ -154,7 +177,7 @@ package struct OpenAIResponsesUsage: Decodable {
 
 // MARK: - Generic JSON Value
 
-/// 任意の JSON 値。swift-structured-data の StructuredValue に統一。
+/// Arbitrary JSON value, aliased to the shared structured-data representation.
 package typealias OpenAIResponsesJSONValue = StructuredValue
 
 // MARK: - Error response

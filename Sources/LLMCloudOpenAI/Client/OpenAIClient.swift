@@ -16,27 +16,28 @@ extension GPTModel: OpenAICompatibleModelProtocol {
 
 // MARK: - OpenAIClient
 
-/// OpenAI GPT API クライアント。
+/// Client for the OpenAI API that produces type-safe structured output from GPT models.
 ///
-/// GPT モデルを使用して型安全な構造化出力を生成する。
-/// モデル選択は `GPTModel` 型に制約されており、
-/// 他のプロバイダーのモデルを誤って指定できない。
+/// The model parameter is constrained to `GPTModel`, so a model belonging to another provider
+/// cannot be passed by mistake. Calls go to Chat Completions by default; agent steps that combine
+/// a reasoning model with function tools, and every streaming call, are routed to the Responses
+/// API (`/v1/responses`) instead, because Chat Completions rejects that combination.
 ///
-/// ## 使用例
+/// ## Example
 ///
 /// ```swift
 /// let client = OpenAIClient(apiKey: "sk-...")
 ///
-/// @Structured("ユーザー情報")
+/// @Structured("User information")
 /// struct UserInfo {
-///     @StructuredField("ユーザー名")
+///     @StructuredField("User name")
 ///     var name: String
-///     @StructuredField("年齢", .minimum(0))
+///     @StructuredField("Age", .minimum(0))
 ///     var age: Int
 /// }
 ///
 /// let result: UserInfo = try await client.generate(
-///     input: "山田太郎さんは35歳です。",
+///     input: "Taro Yamada is 35 years old.",
 ///     model: .gpt4o
 /// )
 /// ```
@@ -45,50 +46,56 @@ public struct OpenAIClient: OpenAICompatibleClientProtocol {
 
     package let engine: OpenAICompatibleEngine
 
-    /// Responses API (`/v1/responses`) 専用エンジン。
-    /// reasoning モデル + function tools の組み合わせは Chat Completions では拒否されるため、
-    /// `executeAgentStep` 内で必要に応じてこちらに routing する。
+    /// Engine dedicated to the Responses API.
+    ///
+    /// Chat Completions rejects a reasoning model as soon as function tools are attached, so
+    /// `executeAgentStep` routes that combination here. Streaming always uses this engine.
     package let responsesEngine: OpenAIResponsesEngine
 
-    /// メディア系エンドポイント(`/v1/audio`, `/v1/images`, `/v1/videos`)用の APIClient。
+    /// API client for the audio, image, and video endpoints.
+    ///
+    /// Its base URL is the chat endpoint with the last two path components stripped, so it lands
+    /// on `/v1` and a custom `endpoint` keeps media calls on the same host. Unlike the two chat
+    /// engines it uses snake-case key conversion, because the media bodies declare no coding keys.
     package let mediaClient: APIClientImpl
 
-    /// API キー
     package var apiKey: String { engine.apiKey }
 
-    /// エンドポイント
     package var endpoint: URL { engine.endpoint }
 
-    /// URLSession
     package var session: URLSession { engine.session }
 
-    /// 組織 ID
+    /// Organization the requests are attributed to.
+    ///
+    /// When non-nil it is sent as the `OpenAI-Organization` header on every request made by the
+    /// chat engine, the Responses engine, and the media client.
     public let organization: String?
 
-    /// リトライ設定
     public var retryConfiguration: RetryConfiguration { engine.retryConfiguration }
 
-    /// リトライイベントハンドラー
     public var retryEventHandler: RetryEventHandler? { engine.retryEventHandler }
 
-    /// デフォルトエンドポイント
+    /// Chat Completions URL used when no custom endpoint is supplied.
     public static let defaultEndpoint = URL(string: "https://api.openai.com/v1/chat/completions")!
 
-    /// Responses API のデフォルトエンドポイント
+    /// Responses API URL used when no custom endpoint is supplied.
     public static let defaultResponsesEndpoint = URL(string: "https://api.openai.com/v1/responses")!
 
     // MARK: - Initializers
 
-    /// API キーを指定して初期化
+    /// Creates a client that authenticates with the given API key.
     ///
     /// - Parameters:
-    ///   - apiKey: OpenAI API キー
-    ///   - organization: 組織 ID（オプション）
-    ///   - endpoint: Chat Completions のカスタムエンドポイント（オプション）
-    ///   - responsesEndpoint: Responses API のカスタムエンドポイント（オプション）
-    ///   - session: カスタム URLSession（オプション）
-    ///   - retryConfiguration: リトライ設定（デフォルト: 有効）
-    ///   - retryEventHandler: リトライイベントハンドラー（オプション）
+    ///   - apiKey: OpenAI API key, sent as a bearer token on every request.
+    ///   - organization: Organization ID for the `OpenAI-Organization` header.
+    ///   - endpoint: Overrides the Chat Completions URL. The media base URL is derived from it,
+    ///     so pointing this at a proxy moves audio, image, and video calls there as well.
+    ///   - responsesEndpoint: Overrides the Responses API URL. It is independent of `endpoint`;
+    ///     a proxy that serves both has to be passed twice.
+    ///   - session: Session backing the default transport.
+    ///   - retryConfiguration: Retry policy shared by the chat and Responses engines. Media calls
+    ///     are not retried.
+    ///   - retryEventHandler: Called before each retry sleep with the attempt and the delay.
     public init(
         apiKey: String,
         organization: String? = nil,
@@ -144,7 +151,7 @@ public struct OpenAIClient: OpenAICompatibleClientProtocol {
             retryEventHandler: retryEventHandler
         )
 
-        // `/v1/chat/completions` → `/v1` をメディアの baseURL とする。
+        // Media calls hang off `/v1`, which is the chat endpoint minus `chat/completions`.
         self.mediaClient = APIClientImpl(
             baseURL: chatEndpoint.deletingLastPathComponentAsBase.deletingLastPathComponentAsBase,
             transport: transport,

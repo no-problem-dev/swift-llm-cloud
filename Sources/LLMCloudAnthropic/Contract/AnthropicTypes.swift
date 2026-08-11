@@ -7,7 +7,11 @@ import LLMTool
 
 // MARK: - Cache Control
 
-/// `cache_control` ブレークポイント。`{"type":"ephemeral"}` / ttl 指定時 `{"type":"ephemeral","ttl":"5m"|"1h"}`。
+/// A prompt cache breakpoint marking how far back the prompt should be reused.
+///
+/// Serialized as Anthropic's `cache_control` object: `{"type":"ephemeral"}`, or
+/// `{"type":"ephemeral","ttl":"5m"}` / `"1h"` when a TTL is set. Anthropic caches everything
+/// *before* the marked block, so where the breakpoint lands decides what gets cached.
 struct AnthropicCacheControl: Encodable, Sendable, Equatable {
     let type = "ephemeral"
     let ttl: String?
@@ -16,13 +20,15 @@ struct AnthropicCacheControl: Encodable, Sendable, Equatable {
         case type, ttl
     }
 
-    /// `PromptCachePolicy.explicitPrefix(ttl:)` の `Duration` を Anthropic の ttl 文字列に丸める。
-    /// `<= 5分` は `"5m"`、`> 5分` は `"1h"`。
+    /// Rounds a requested cache lifetime to one of the two TTLs Anthropic accepts.
+    ///
+    /// Anthropic offers only `"5m"` and `"1h"`, so anything up to five minutes becomes `"5m"`
+    /// and anything longer becomes `"1h"` — a 10-minute request is rounded up, not down.
     init(ttl: Duration) {
         self.ttl = ttl <= .seconds(300) ? "5m" : "1h"
     }
 
-    /// `"1h"` を使う場合のみ必要な beta ヘッダー値。
+    /// Beta feature name that must be sent before a one-hour TTL is accepted.
     static let extendedTTLBeta = "extended-cache-ttl-2025-04-11"
 
     var requiresExtendedTTLBeta: Bool { ttl == "1h" }
@@ -30,7 +36,10 @@ struct AnthropicCacheControl: Encodable, Sendable, Equatable {
 
 // MARK: - Request Types
 
-/// Anthropic API リクエストボディ
+/// Request body for the create-message endpoint.
+///
+/// `maxTokens` is non-optional because Anthropic requires `max_tokens` on every request; there
+/// is no server-side default to fall back on, so callers pick one before reaching this type.
 struct AnthropicRequestBody: Encodable, Sendable {
     let model: String
     let messages: [AnthropicMessage]
@@ -66,9 +75,10 @@ struct AnthropicRequestBody: Encodable, Sendable {
         self.stream = stream
         self.thinking = thinking
 
-        // キャッシュ意図を Anthropic のブレークポイント配置に lowering する。
-        // 階層は tools → system → messages。単一ブレークポイントはそこまでの全プレフィックスをキャッシュする:
-        // system があれば system 末尾に、無く tools があれば最後の tool に置く（対象不在なら no-op）。
+        // Lower the caching intent into a breakpoint placement. Anthropic orders the prompt as
+        // tools → system → messages, and one breakpoint caches the whole prefix up to it, so a
+        // single marker suffices: put it at the end of the system block, or on the last tool if
+        // there is no system block. With neither present the policy is a no-op.
         guard case .explicitPrefix(let ttl) = cachePolicy else {
             self.system = system
             self.systemCacheControl = nil
@@ -91,7 +101,10 @@ struct AnthropicRequestBody: Encodable, Sendable {
         }
     }
 
-    /// `cachePolicy` が explicitPrefix かつ 1h の場合に必要な beta 値（対象不在なら付与しない）。
+    /// Beta names this body needs, currently only the one-hour cache TTL opt-in.
+    ///
+    /// Non-empty only when a breakpoint was actually placed and rounded to `"1h"`; a policy that
+    /// found nothing to mark contributes nothing here.
     var cacheBetaValues: [String] {
         if systemCacheControl?.requiresExtendedTTLBeta == true {
             return [AnthropicCacheControl.extendedTTLBeta]
@@ -152,7 +165,8 @@ struct AnthropicThinkingConfig: Encodable, Sendable {
 struct AnthropicToolDef: Encodable, Sendable {
     let name: String
     let description: String
-    /// JSON Schema は `WireSchema` で埋め込み、キーワードの snake_case 化を防ぐ。
+    /// The schema is held as a wire-ready value so the body's snake_case key strategy cannot
+    /// rewrite JSON Schema keywords such as `additionalProperties` into `additional_properties`.
     let inputSchema: WireSchema
     let cacheControl: AnthropicCacheControl?
 
@@ -221,13 +235,21 @@ enum AnthropicToolChoiceValue: Encodable, Sendable {
 
 // MARK: - Message Types
 
-/// Anthropic メッセージ
+/// One turn of the conversation, always encoded with a block array rather than a bare string.
 struct AnthropicMessage: Encodable, Sendable {
     let role: String
     let content: [AnthropicMessageContent]
 }
 
-/// Anthropic メッセージコンテンツ
+/// A single content block inside a message.
+///
+/// Anthropic identifies a tool result by the `tool_use_id` of the call it answers and carries it
+/// as a content block, rather than as a dedicated message role the way OpenAI does. Replaying a
+/// `thinking` block requires the signature Anthropic issued with it, so the two travel together.
+///
+/// Tool arguments arrive here as raw JSON bytes and are re-parsed before encoding. Bytes that do
+/// not parse are sent as an empty object, which is how a tool call whose streamed arguments were
+/// cut short ends up replayed with no arguments at all.
 enum AnthropicMessageContent: Encodable, Sendable {
     case text(String)
     case toolUse(id: String, name: String, input: Data)
@@ -363,10 +385,15 @@ enum AnthropicMessageContent: Encodable, Sendable {
 
 // MARK: - Output Config
 
-/// Anthropic 出力フォーマット設定
+/// Asks Anthropic to constrain generation to a JSON Schema.
+///
+/// Sent as `output_config.format` with `type` set to `json_schema`. Anthropic then enforces the
+/// schema during decoding rather than merely being asked to follow it, so the reply parses
+/// without repair prompts.
 struct AnthropicOutputFormat: Encodable, Sendable {
     let type: String
-    /// JSON Schema は `WireSchema` で埋め込み、キーワードの snake_case 化を防ぐ。
+    /// The schema is held as a wire-ready value so the body's snake_case key strategy cannot
+    /// rewrite JSON Schema keywords such as `additionalProperties` into `additional_properties`.
     let schema: WireSchema
 
     init(type: String, schema: JSONSchema) {
@@ -375,14 +402,17 @@ struct AnthropicOutputFormat: Encodable, Sendable {
     }
 }
 
-/// Anthropic 出力設定
 struct AnthropicOutputConfig: Encodable, Sendable {
     let format: AnthropicOutputFormat?
 }
 
 // MARK: - Response Types
 
-/// Anthropic API レスポンスボディ
+/// Non-streaming reply from the create-message endpoint.
+///
+/// A single reply can mix block kinds — text, thinking, and one or more tool uses — so callers
+/// read `content` as a list rather than expecting one answer, and consult `stopReason` to see
+/// whether the turn ended because tools were requested or because `max_tokens` ran out.
 struct AnthropicResponseBody: Decodable, Sendable {
     let id: String
     let type: String
@@ -393,7 +423,12 @@ struct AnthropicResponseBody: Decodable, Sendable {
     let usage: AnthropicUsage
 }
 
-/// Anthropic コンテンツブロック
+/// One decoded block of a reply, flattened across every block kind Anthropic can return.
+///
+/// Which fields are populated depends on `type`: text blocks carry `text`, tool uses carry
+/// `id`, `name`, and an already-parsed `input` object, and thinking blocks carry the `signature`
+/// needed to replay them in a later turn. Thinking prose is read from `text` here, whereas the
+/// request side writes it under a `thinking` key.
 struct AnthropicContentBlock: Decodable, Sendable {
     let type: String
     let text: String?
@@ -417,7 +452,12 @@ struct AnthropicContentBlock: Decodable, Sendable {
     }
 }
 
-/// Anthropic 使用量
+/// Token counters exactly as Anthropic reports them, before normalization.
+///
+/// `inputTokens` here counts only the fresh part of the prompt: cache reads and cache writes are
+/// reported separately in `cacheReadInputTokens` and `cacheCreationInputTokens` and are *not*
+/// included in it. Anything comparing providers should go through ``AnthropicUsageNormalizer``
+/// rather than reading these fields directly.
 struct AnthropicUsage: Decodable, Sendable, AnthropicUsageRaw {
     let inputTokens: Int
     let outputTokens: Int
@@ -427,6 +467,6 @@ struct AnthropicUsage: Decodable, Sendable, AnthropicUsageRaw {
 
 // MARK: - JSON Helper Types
 
-/// JSON 値の汎用エンコード/デコード用。swift-structured-data の StructuredValue に統一。
+/// Generic JSON value used for arbitrary payloads such as tool arguments.
 typealias JSONValue = StructuredValue
 

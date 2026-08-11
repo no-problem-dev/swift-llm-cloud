@@ -3,7 +3,13 @@ import Testing
 import LLMCloudClient
 @testable import LLMCloudOpenAICompatible
 
-/// 共有 RateLimitHeaderExtraction(.openAICompatible) が既存抽出と一致することを検証する。
+/// Pins which headers are read off an OpenAI-compatible 429 and how their reset values are parsed.
+///
+/// Unlike Anthropic, these vendors report resets as Go-style duration strings such as `6m0s` and
+/// `500ms`, so suffix handling is where this regresses: `500ms` has to come back as 0.5 seconds,
+/// not 500. ``OpenAICompatibleRateLimitExtractor`` is a thin call into the shared
+/// `.openAICompatible` profile, so the parity check guards that wiring rather than two independent
+/// implementations.
 @Suite("OpenAI-compatible rate-limit extraction")
 struct OpenAIRateLimitTests {
     private func response(_ headers: [String: String]) -> HTTPURLResponse {

@@ -3,10 +3,12 @@ import Testing
 import LLMClient
 @testable import LLMCloudGemini
 
-/// MessageContent → ワイヤ JSON 変換のゴールデンテスト。
+/// Golden test pinning the exact JSON Gemini receives for each kind of message content.
 ///
-/// `JSONEncoder` のキー順を `.sortedKeys` で固定し、入力コンテンツに対する
-/// 生成 JSON を期待文字列と比較する characterization テスト（HTTP 不要）。
+/// Encoding uses `.sortedKeys` so key order is stable and the comparison can be a literal string.
+/// No HTTP is involved, so a diff here means the request shape itself changed: whether a payload
+/// is inlined as `inlineData` or referenced as `fileData`, how the MIME type is carried, and the
+/// role each part is attached to.
 @Suite("Gemini wire golden")
 struct GeminiWireGoldenTests {
     private func encode(_ contents: [GeminiContent]) throws -> String {

@@ -3,7 +3,7 @@ import LLMClient
 
 // MARK: - GeminiUsageMetadataRaw
 
-/// Gemini API の usageMetadata の必要フィールドを構造的に表すプロトコル。
+/// Structural view of the Gemini usage counters, so one normalizer serves several response types.
 package protocol GeminiUsageMetadataRaw {
     var promptTokenCount: Int? { get }
     var candidatesTokenCount: Int? { get }
@@ -13,11 +13,18 @@ package protocol GeminiUsageMetadataRaw {
 
 // MARK: - GeminiUsageNormalizer
 
-/// Gemini API の usageMetadata を `TokenUsage` のセマンティクス契約に変換する。
+/// Maps Gemini's usage counters onto the shared token-accounting contract.
 ///
-/// - `promptTokenCount` は cachedContentTokenCount を**含む**（公式仕様）。`inputTokens` にそのまま入れて OK。
-/// - `candidatesTokenCount` は **Gemini API では thoughtsTokenCount を含む**（Vertex AI では含まない、API のみ）。
-///   よって `outputTokens` にそのまま入れ、`reasoningTokens` に `thoughtsTokenCount` を入れる。
+/// Gemini's counters already nest, so the fields are copied across rather than added up:
+/// - `promptTokenCount` includes `cachedContentTokenCount`, so it becomes `inputTokens` as it
+///   stands and the cached figure is reported separately as a read, never subtracted.
+/// - `candidatesTokenCount` includes `thoughtsTokenCount` on the Gemini API, though not on Vertex
+///   AI, so it becomes `outputTokens` as it stands and thinking tokens are surfaced alongside it
+///   as `reasoningTokens`.
+///
+/// Any cache hit is reported at the short-lived tier, since explicit `cachedContents` is the only
+/// caching this client creates. Gemini reports no cache-write counter, so cache creation cost is
+/// invisible here.
 enum GeminiUsageNormalizer {
 
     static func normalize(
@@ -46,6 +53,6 @@ enum GeminiUsageNormalizer {
         )
     }
 
-    /// usageMetadata が無い場合（エラー応答等）の安全な fallback。
+    /// Stand-in for a response that carried no usage metadata, such as an error reply.
     public static var zero: TokenUsage { .zero }
 }

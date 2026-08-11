@@ -3,8 +3,10 @@ import LLMClient
 import LLMTool
 
 extension ToolSet {
-    /// OpenAI 互換のツール定義配列に変換。スキーマは JSONSchema のまま保持し、
-    /// 直列化は contract codec に委ねる（[String: Any] を介さない）。
+    /// Converts the tool set into wire definitions, reducing each schema to what strict mode allows.
+    ///
+    /// Schemas stay typed the whole way to the encoder instead of passing through an untyped
+    /// dictionary, so nothing is dropped or reordered on the way out.
     func toOpenAIToolDefs() -> [OpenAICompatibleToolDef] {
         toProviderFormat(adapter: OpenAISchemaAdapter()) { tool, adaptedSchema in
             OpenAICompatibleToolDef(name: tool.toolName, description: tool.toolDescription, parameters: adaptedSchema)

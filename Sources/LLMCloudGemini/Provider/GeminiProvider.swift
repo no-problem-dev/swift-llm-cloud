@@ -10,25 +10,26 @@ import FoundationNetworking
 
 // MARK: - GeminiProvider
 
-/// Google Gemini API プロバイダー（内部実装）
+/// Transport-level implementation of the Gemini generative language API.
 ///
-/// APIClient + APIContract を使用して Gemini API を呼び出す。
-/// このプロバイダーは `GeminiClient` 内部で使用される。
+/// Speaks the wire protocol through the shared contract layer and is used from inside
+/// ``GeminiClient``; retries, prompt caching, and tool calling are layered on above it. The
+/// generic `send` path here always sends the system instruction inline and declares no tools, so
+/// tool-calling and cached-prefix requests go through the client's own builders instead.
 internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
-    /// APIClient
     private let apiClient: APIClientImpl
 
-    /// デフォルトの最大トークン数
+    /// Output cap applied when the caller names none, since Gemini otherwise uses the model default.
     private static let defaultMaxTokens = 4096
 
     // MARK: - Initializers
 
-    /// API キーを指定して初期化
+    /// Creates a provider pointed at the Gemini models endpoint.
     ///
     /// - Parameters:
-    ///   - apiKey: Google AI API キー
-    ///   - baseURL: カスタムベース URL（オプション）
-    ///   - session: カスタム URLSession（オプション）
+    ///   - apiKey: Google AI API key, sent as the `x-goog-api-key` header.
+    ///   - baseURL: Overrides the default models base URL.
+    ///   - session: URLSession backing the default transport.
     init(
         apiKey: String,
         baseURL: String? = nil,
@@ -50,12 +51,18 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
         )
     }
 
-    /// ストリーミング生成の生 SSEEvent を流す。テキスト抽出は呼び出し側で行う。
+    /// Streams the raw SSE events of `streamGenerateContent`, leaving parsing to the caller.
+    ///
+    /// Each event's data is a whole response body rather than a delta, so text has to be
+    /// accumulated and usage counters overwritten rather than summed.
     func streamContentEvents(_ body: GeminiRequestBody, modelId: String) -> AsyncThrowingStream<SSEEvent, Error> {
         apiClient.executeEventStream(GeminiAPI.StreamGenerateContent(modelId: modelId, request: body))
     }
 
-    /// 構築済みボディを contract 経由で送信する。
+    /// Sends an already-built request body and returns the decoded body with its status and headers.
+    ///
+    /// Cache errors pass through untouched so the caller's recovery can act on them; other API
+    /// errors are mapped to the shared error type.
     func sendBody(_ body: GeminiRequestBody, modelId: String) async throws -> (GeminiResponseBody, Int, [String: String]) {
         let endpoint = GeminiAPI.GenerateContent(modelId: modelId, request: body)
         do {
@@ -66,7 +73,7 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
         } catch let error as RateLimitAwareError {
             throw error
         } catch let error as GeminiCachedContentError {
-            throw error // キャッシュ失効は呼び出し側の回復ロジックが扱う
+            throw error // Cache loss is handled by the caller's recovery path.
         } catch let error as APIError {
             throw mapAPIErrorToLLMError(error)
         } catch {
@@ -84,15 +91,12 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
     // MARK: - RetryableProviderProtocol
 
     func sendWithResponse(_ request: LLMRequest) async throws -> (LLMResponse, HTTPURLResponse) {
-        // モデルの検証
         guard case .gemini = request.model else {
             throw LLMError.modelNotSupported(model: request.model.id, provider: "Gemini")
         }
 
-        // リクエストボディを構築
         let body = try buildRequestBody(from: request)
 
-        // APIContract エンドポイント経由で実行
         let endpoint = GeminiAPI.GenerateContent(
             modelId: request.model.id,
             request: body
@@ -101,10 +105,9 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
         do {
             let apiResponse = try await apiClient.executeWithResponse(endpoint)
 
-            // LLMResponse に変換
             let llmResponse = try convertToLLMResponse(apiResponse.output, model: request.model.id)
 
-            // HTTPURLResponse を構成（RetryableProvider 互換）
+            // Rebuild an HTTPURLResponse so the retry layer can read the response headers.
             let httpResponse = HTTPURLResponse(
                 url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models")!,
                 statusCode: apiResponse.statusCode,
@@ -126,22 +129,23 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
 
     // MARK: - Request Building
 
-    /// リクエストボディを構築
+    /// Builds the request body for a generic request, with the prefix always sent inline.
+    ///
+    /// A response schema is adapted to Gemini's OpenAPI subset first, and the constraints that
+    /// subset cannot express are restated in the system instruction so the model still honours
+    /// them. This path declares no tools and never references a cache.
     private func buildRequestBody(from request: LLMRequest) throws -> GeminiRequestBody {
-        // コンテンツを構築
         var contents: [GeminiContent] = []
 
         for message in request.messages {
             contents.append(contentsOf: GeminiContentConverter.convert(message))
         }
 
-        // 生成設定
         var generationConfig = GeminiGenerationConfig(
             maxOutputTokens: request.maxTokens ?? Self.defaultMaxTokens,
             temperature: request.temperature
         )
 
-        // 構造化出力の設定と制約プロンプトの生成
         var constraintPrompt: SystemPrompt?
 
         if let schema = request.responseSchema {
@@ -154,7 +158,6 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
             constraintPrompt = adaptationResult.toConstraintSystemPrompt()
         }
 
-        // システムインストラクションを構築（制約プロンプトを統合）
         let effectiveSystemPrompt = composeSystemPrompt(
             base: request.systemPrompt,
             constraints: constraintPrompt
@@ -175,13 +178,17 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
         )
     }
 
-    /// システムプロンプトと制約プロンプトを統合
-
     // MARK: - Response Conversion
 
-    /// GeminiResponseBody を LLMResponse に変換
+    /// Converts a Gemini response body into the shared response shape.
+    ///
+    /// Only the first candidate is read. Text parts and function calls become content blocks in
+    /// the order Gemini sent them; because Gemini issues no tool-call ids, a fresh UUID stands in
+    /// for one here. Usage is normalized so cached and reasoning tokens are not double-counted.
+    ///
+    /// - Throws: `LLMError.contentBlocked` when the prompt was refused, and
+    ///   `LLMError.emptyResponse` when nothing usable came back.
     private func convertToLLMResponse(_ response: GeminiResponseBody, model: String) throws -> LLMResponse {
-        // 最初の候補を取得
         guard let candidate = response.candidates?.first else {
             if let promptFeedback = response.promptFeedback,
                let blockReason = promptFeedback.blockReason {
@@ -190,10 +197,8 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
             throw LLMError.emptyResponse
         }
 
-        // 停止理由をマッピング
         let stopReason = mapStopReason(candidate.finishReason)
 
-        // コンテンツブロックを構築
         var contentBlocks: [LLMResponse.ContentBlock] = []
 
         if let content = candidate.content {
@@ -216,7 +221,6 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
             throw LLMError.emptyResponse
         }
 
-        // 使用量を取得
         let usage: TokenUsage
         if let usageMetadata = response.usageMetadata {
             usage = GeminiUsageNormalizer.normalize(usageMetadata)
@@ -232,16 +236,7 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
         )
     }
 
-    /// 停止理由をマッピング
     private func mapStopReason(_ reason: String?) -> LLMResponse.StopReason? {
         GeminiFinishReason.stopReason(reason)
     }
-
-    // MARK: - Error Mapping
-
-    /// APIError を LLMError にマッピング
 }
-
-// MARK: - Static Token Provider
-
-/// 固定トークンを提供する AuthTokenProvider

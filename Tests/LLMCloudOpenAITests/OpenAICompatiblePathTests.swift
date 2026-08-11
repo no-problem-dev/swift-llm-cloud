@@ -1,10 +1,15 @@
 import Foundation
 import Testing
-import APIClient   // HTTPTransport(MockTransport/HTTPResponse) を再公開
+import APIClient   // re-exports HTTPTransport, MockTransport, and HTTPResponse
 import LLMClient
 @testable import LLMCloudOpenAICompatible
 
-/// 生 URLSession を撤廃し、全送信を api-client(contract)経由に統一したことを MockTransport で検証する。
+/// Covers the plain send path after every request moved onto the contract, off a raw URLSession.
+///
+/// A mock transport captures what actually goes out: Bearer authorization, and
+/// `max_completion_tokens` rather than the legacy `max_tokens`. It also checks that a 429 still
+/// arrives as a decoded error carrying the vendor's message, since going through the contract
+/// changes where the error body is parsed.
 @Suite("OpenAICompatible unified HTTP path")
 struct OpenAICompatiblePathTests {
     private let completionJSON = Data(#"""

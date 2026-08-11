@@ -3,10 +3,13 @@ import Testing
 import LLMClient
 @testable import LLMCloudAnthropic
 
-/// MessageContent → ワイヤ JSON 変換のゴールデンテスト。
+/// Golden test pinning the exact JSON Anthropic receives for content blocks and prompt caching.
 ///
-/// `JSONEncoder` のキー順を `.sortedKeys` で固定し、入力コンテンツに対する
-/// 生成 JSON を期待文字列と比較する characterization テスト（HTTP 不要）。
+/// Encoding uses `.sortedKeys` so key order is stable and the comparison can be a literal string.
+/// No HTTP is involved, so a diff here means the request shape itself changed: which `source` kind
+/// an image or document turns into, where the single `cache_control` marker lands — last system
+/// block, otherwise last tool — and which beta names a message shape pulls in, `files-api` for a
+/// `file_id` reference and `extended-cache-ttl` for the one-hour cache.
 @Suite("Anthropic wire golden")
 struct AnthropicWireGoldenTests {
     private func encode(_ content: AnthropicMessageContent) throws -> String {

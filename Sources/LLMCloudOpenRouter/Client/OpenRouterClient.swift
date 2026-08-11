@@ -8,14 +8,25 @@ import FoundationNetworking
 
 // MARK: - OpenRouterModel
 
-/// OpenRouter モデル（任意のモデルIDを文字列で指定）
+/// A model addressed by the provider-qualified ID string that OpenRouter routes on.
+///
+/// OpenRouter's catalogue spans many upstream providers and changes faster than a release of this
+/// package, so the model is carried as a free-form string rather than an enum. Curated,
+/// tool-call-capable choices are available as ``OpenRouterModel/Preset`` values.
 public struct OpenRouterModel: Sendable, Equatable, OpenAICompatibleModelProtocol {
-    /// モデルID文字列
+    /// Provider-qualified model ID, sent verbatim as the request's model field.
+    ///
+    /// The form is `vendor/model`, for example `anthropic/claude-sonnet-4.6`. This string decides
+    /// which upstream provider serves the request, and with it the price, the context window, and
+    /// the rate limits that apply.
     public let id: String
 
-    /// 初期化
+    /// Creates a model reference from an OpenRouter model ID.
     ///
-    /// - Parameter id: OpenRouter のモデル ID（例: "anthropic/claude-sonnet-4.6", "openai/gpt-5.5"）
+    /// The ID is neither validated nor normalized here. A misspelled or retired ID travels to the
+    /// API and comes back as a 404, surfaced as a model-not-found error rather than a local one.
+    ///
+    /// - Parameter id: OpenRouter model ID, such as `anthropic/claude-sonnet-4.6` or `openai/gpt-5.5`.
     public init(_ id: String) {
         self.id = id
     }
@@ -26,9 +37,15 @@ public struct OpenRouterModel: Sendable, Equatable, OpenAICompatibleModelProtoco
 // MARK: - Preset
 
 extension OpenRouterModel {
-    /// OpenRouter で検証済みのキュレーション済みモデルプリセット（2026年6月時点）。
+    /// Curated models verified on OpenRouter, as of June 2026.
     ///
-    /// ベンダー → 能力の順に列挙。各ケースはツールコール対応の代表的なモデルを指す。
+    /// Cases are grouped by upstream vendor, and every one of them supports tool calling, so any
+    /// preset can drive an agent loop. This is a hand-maintained shortlist, not the catalogue:
+    /// OpenRouter serves far more models, and anything absent here is still reachable by building
+    /// an ``OpenRouterModel`` from its ID.
+    ///
+    /// The raw values are the case names, so they are stable across model-ID churn and safe to
+    /// persist as a user's model preference.
     public enum Preset: String, CaseIterable, Identifiable, Codable, Sendable {
         // MARK: Anthropic
         case claudeOpus48 = "claudeOpus48"
@@ -121,6 +138,12 @@ extension OpenRouterModel {
             }
         }
 
+        /// Capability and price snapshot recorded for the preset when it was curated.
+        ///
+        /// These figures are literals maintained in this package, not fetched from OpenRouter, so
+        /// treat them as guidance for picking a model rather than as billing truth. Pricing and
+        /// limits belong to whichever upstream provider OpenRouter routes the request to, and the
+        /// per-million-token rates here are the list prices seen at curation time.
         public var profile: ModelProfile {
             switch self {
             case .claudeOpus48:
@@ -340,12 +363,25 @@ extension OpenRouterModel {
 
 // MARK: - OpenRouterClient
 
-/// OpenRouter API クライアント。
+/// Client for OpenRouter, one OpenAI-compatible API that proxies to many upstream providers.
 ///
-/// OpenRouter 経由で任意のモデルにアクセスするクライアント。
-/// 構造化出力、チャット、ツールコール、エージェント機能を提供する。
+/// Structured output, chat, tool calls, and agent steps all come from the shared
+/// `OpenAICompatibleEngine`; this type pins the OpenRouter endpoint, the optional attribution
+/// headers, and the request quirk. Any model is addressable by ID through ``OpenRouterModel``,
+/// with curated choices in ``OpenRouterModel/Preset``.
 ///
-/// ## 使用例
+/// The output cap is sent as `max_tokens`, which is OpenRouter's canonical field for it.
+///
+/// Because every request is routed onward, much of what looks like OpenRouter's behaviour is
+/// really the chosen model's: which usage fields come back (cached prompt tokens, reasoning
+/// tokens), what the rate limits are, and whether `x-ratelimit-*` headers appear at all follow
+/// from whichever upstream provider served the call. When those headers are absent, a retry has no
+/// server-supplied reset hint to honour and falls back to plain exponential backoff.
+///
+/// Requests are never streamed: `streamAgentStep` falls back to the shared non-streaming
+/// implementation and yields one completed event at the end rather than deltas.
+///
+/// ## Example
 ///
 /// ```swift
 /// let client = OpenRouterClient(
@@ -355,7 +391,7 @@ extension OpenRouterModel {
 /// )
 ///
 /// let result: UserInfo = try await client.generate(
-///     input: "山田太郎さんは35歳です。",
+///     input: "Taro Yamada is 35 years old.",
 ///     model: OpenRouterModel("anthropic/claude-sonnet-4.6")
 /// )
 /// ```
@@ -364,19 +400,35 @@ public struct OpenRouterClient: OpenAICompatibleClientProtocol {
 
     package let engine: OpenAICompatibleEngine
 
-    /// デフォルトエンドポイント
+    /// Full chat-completions URL used when the caller does not supply one.
+    ///
+    /// The API contract has an empty base path, so this URL is sent verbatim. A replacement must
+    /// be a complete completions URL rather than a host, and must not end in a slash — a trailing
+    /// slash is what made the sibling Groq endpoint answer `Unknown request URL`.
     public static let defaultEndpoint = URL(string: "https://openrouter.ai/api/v1/chat/completions")!
 
-    /// API キーを指定して初期化
+    /// Creates a client that authenticates with the given OpenRouter API key.
+    ///
+    /// The key is sent as an `Authorization: Bearer` header. The two attribution arguments become
+    /// headers only when non-nil: `appName` is sent as `X-Title` and `siteUrl` as `HTTP-Referer`,
+    /// which is how OpenRouter credits traffic to an app. Omitting them changes nothing about how
+    /// a request is served; it only leaves the call unattributed.
+    ///
+    /// Retries are on by default (up to five after the first failure): retryable failures such as
+    /// 429 and 5xx back off exponentially with jitter, and a `Retry-After` or `x-ratelimit-reset-*`
+    /// hint overrides the curve when the routed provider supplies one. Retries cover `generate` and
+    /// `executeAgentStep`; `chat` and `planToolCalls` are sent exactly once.
     ///
     /// - Parameters:
-    ///   - apiKey: OpenRouter API キー
-    ///   - appName: アプリ名（X-Title ヘッダー、オプション）
-    ///   - siteUrl: サイト URL（HTTP-Referer ヘッダー、オプション）
-    ///   - endpoint: カスタムエンドポイント（オプション）
-    ///   - session: カスタム URLSession（オプション）
-    ///   - retryConfiguration: リトライ設定
-    ///   - retryEventHandler: リトライイベントハンドラー
+    ///   - apiKey: OpenRouter API key.
+    ///   - appName: Application name, sent as the `X-Title` attribution header.
+    ///   - siteUrl: Site URL, sent as the `HTTP-Referer` attribution header.
+    ///   - endpoint: Replaces ``defaultEndpoint``; must be a complete chat-completions URL.
+    ///   - session: Session backing the HTTP transport.
+    ///   - retryConfiguration: Retry budget and backoff bounds. Pass `.disabled` to fail on the
+    ///     first error.
+    ///   - retryEventHandler: Called before each retry sleeps, with the attempt number, the error,
+    ///     and the delay that was chosen.
     public init(
         apiKey: String,
         appName: String? = nil,
@@ -400,7 +452,7 @@ public struct OpenRouterClient: OpenAICompatibleClientProtocol {
             providerName: "OpenRouter",
             session: session,
             customHeaders: customHeaders,
-            // OpenRouter は OpenAI 形式の max_tokens を正規パラメータとして扱う。
+            // OpenRouter's canonical field for the output cap is OpenAI's max_tokens.
             maxTokensParameter: .maxTokens,
             retryConfiguration: retryConfiguration,
             retryEventHandler: retryEventHandler

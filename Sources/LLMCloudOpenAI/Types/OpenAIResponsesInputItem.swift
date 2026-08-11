@@ -1,32 +1,37 @@
 import Foundation
 
-/// `/v1/responses` の `input` 配列要素。
+/// One element of the input array sent to the Responses API.
 ///
-/// Responses API では、Chat Completions の `messages` とは異なり、
-/// 「role 付きメッセージ」と「function_call / function_call_output 等の Item」を
-/// 同一配列内に混在させる。本 enum はその union を表現する。
+/// Where Chat Completions takes a list of messages, the Responses API takes a list of items in
+/// which role-bearing messages and standalone items such as function calls and their outputs sit
+/// side by side. This enum is that union.
 package enum OpenAIResponsesInputItem: Encodable, Sendable {
-    /// 通常のメッセージ（user / assistant / system / developer）
+    /// A message whose content is a single run of text.
     case message(role: String, content: String)
 
-    /// テキストとメディアが混ざるメッセージ。
+    /// A message whose content mixes text and media.
     ///
-    /// Responses API の `content` は文字列でも配列でも受ける。画像を含むときだけ
-    /// 配列にする（テキストだけのときは `.message` のまま文字列で送る — 素直で、
-    /// 既存の挙動が変わらない）。
+    /// The API accepts `content` as either a string or an array, and the array form is used only
+    /// when an image is present. Text-only messages stay strings, which keeps the wire shape
+    /// identical to what a client without image support would send.
     case multipartMessage(role: String, parts: [OpenAIResponsesContentPart])
 
-    /// アシスタントが過去に発行した function call
+    /// A function call the assistant made earlier in the conversation.
+    ///
     /// - Parameters:
-    ///   - callId: ツール実行結果と紐付けるための ID
-    ///   - name: ツール名
-    ///   - arguments: JSON 文字列形式の引数（Responses API は JSON string）
+    ///   - callId: Id that ties this call to its result. It has to be the id the model issued.
+    ///   - name: Tool name.
+    ///   - arguments: Arguments as a JSON string. The Responses API sends and expects a string
+    ///     here, not a nested object.
     case functionCall(callId: String, name: String, arguments: String)
 
-    /// ツール実行結果
+    /// The result of running a tool, handed back to the model.
+    ///
     /// - Parameters:
-    ///   - callId: `function_call.call_id` と一致させる
-    ///   - output: 結果文字列（ツールが JSON を返す場合も文字列でラップ）
+    ///   - callId: Must equal the `call_id` of the function call it answers, or OpenAI rejects
+    ///     the request.
+    ///   - output: Result as a string. A tool that produced JSON has it serialized into this
+    ///     string rather than nested as an object.
     case functionCallOutput(callId: String, output: String)
 
     package func encode(to encoder: Encoder) throws {
@@ -74,15 +79,16 @@ package enum OpenAIResponsesInputItem: Encodable, Sendable {
 
 // MARK: - Content Part
 
-/// `input` のメッセージが配列で content を持つときの 1 要素。
+/// One element of a message whose content is an array rather than a plain string.
 ///
-/// 画像は `image_url` に **data URI か HTTP(S) URL** を入れる。OpenAI Files API に
-/// 上げたものは `file_id` で参照する。
+/// Both image cases encode as `input_image` and differ only in how the image is located: by
+/// value in `image_url`, or by reference to a file already uploaded to OpenAI.
 package enum OpenAIResponsesContentPart: Encodable, Sendable {
     case inputText(String)
-    /// data URI（`data:image/png;base64,...`）か HTTP(S) URL
+    /// Image given by value: either a data URI such as `data:image/png;base64,…` or an HTTP URL
+    /// OpenAI can fetch.
     case inputImage(url: String)
-    /// OpenAI Files API のファイル ID
+    /// Image given by reference to an id returned by the OpenAI Files API.
     case inputImageFile(fileId: String)
 
     package func encode(to encoder: Encoder) throws {

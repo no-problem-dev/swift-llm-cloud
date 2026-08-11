@@ -4,13 +4,27 @@ import LLMTool
 import LLMAgentStep
 import Foundation
 
-/// エージェントステップ用に構築済みのリクエスト（ボディ + キャッシュ回復に使う安定プレフィックス）
+/// A built agent-step request, kept together with the prefix that produced it.
+///
+/// The prefix is retained because recovering from a lost cache means resolving it again, which
+/// cannot be done from the encoded body alone.
 struct GeminiAgentStepRequest: Sendable {
     let body: GeminiRequestBody
     let prefix: GeminiStablePrefix
 }
 
 extension GeminiClient: AgentCapableClient {
+    /// Runs one agent step and waits for the complete response.
+    ///
+    /// Retries follow the client's retry configuration, and a cache the server no longer has is
+    /// recovered inside each attempt by recreating it and sending once more. Tool calls come back
+    /// as content blocks whose ids are minted locally, since Gemini supplies none; a thinking
+    /// model's thought signature is carried inside that id so it can be echoed back next turn.
+    ///
+    /// Two parameters do not mean here what they mean on other providers: `thinkingMode` is
+    /// ignored outright, because Gemini's thinking budget is driven by `reasoningEffort` alone,
+    /// and `cachePolicy` selects whether the stable prefix is cached explicitly on the server
+    /// rather than describing a cache the provider manages for you.
     public func executeAgentStep(
         messages: [LLMMessage],
         model: GeminiModel,
@@ -51,7 +65,11 @@ extension GeminiClient: AgentCapableClient {
         return Self.agentResponseToLLM(response, model: model.id)
     }
 
-    /// エージェントステップのリクエストを構築する（非ストリーミング/ストリーミング共用）
+    /// Builds the request for an agent step, shared by the streaming and non-streaming paths.
+    ///
+    /// Resolving the cache policy can create a cache resource, which is why this is async even
+    /// though it sends no generation request itself. A thinking config is only attached for models
+    /// that accept one, because sending it to a model that does not is an API error.
     func makeAgentStepRequest(
         messages: [LLMMessage],
         model: GeminiModel,
@@ -108,23 +126,26 @@ extension GeminiClient: AgentCapableClient {
 
     private static let agentDefaultMaxTokens = 4096
 
-    /// `ReasoningEffort` を Gemini の `thinkingConfig` にマップする。
-    /// 3 系: thinkingLevel 文字列。2.5 系: thinkingBudget 整数。
+    /// Maps a reasoning effort onto the thinking control the model actually accepts.
     ///
-    /// `ReasoningEffort` は OpenAI の段（none / minimal / low / medium / high /
-    /// xhigh / max）だが、**Gemini が受け付ける thinkingLevel は
-    /// minimal / low / medium / high の 4 つだけ**（実 API で確認）。
-    /// 無い段は近いものへ寄せる。
+    /// Gemini 3 models take a `thinkingLevel` string, Gemini 2.5 models an integer
+    /// `thinkingBudget`, and a model that supports neither gets an empty config.
+    ///
+    /// The effort scale is OpenAI's (none, minimal, low, medium, high, xhigh, max) but Gemini
+    /// accepts only minimal, low, medium, and high, so the extremes are clamped: everything above
+    /// high becomes high, and nothing switches thinking off on a Gemini 3 model. On the budget
+    /// side, a model that cannot disable thinking gets the smallest non-zero budget instead of
+    /// zero, since zero would be rejected.
     private static func thinkingConfig(for effort: ReasoningEffort, model: GeminiModel) -> GeminiThinkingConfig {
         switch model.thinkingControlStyle {
         case .level:
             let level: String
             switch effort {
-            // none に当たる段は無い。minimal が最小
+            // There is no level below minimal, and not every model even accepts minimal.
             case .none, .minimal: level = model.supportsMinimalThinkingLevel ? "minimal" : "low"
             case .low: level = "low"
             case .medium: level = "medium"
-            // xhigh / max に当たる段は無い。high が上限
+            // Nothing above high exists, so xhigh and max land there too.
             case .high, .xhigh, .max: level = "high"
             }
             return GeminiThinkingConfig(thinkingLevel: level, thinkingBudget: nil)
@@ -142,6 +163,10 @@ extension GeminiClient: AgentCapableClient {
         }
     }
 
+    /// Expresses a tool choice in Gemini's function-calling modes.
+    ///
+    /// Gemini has no way to demand one specific tool, so a named choice becomes the `ANY` mode
+    /// narrowed to that single allowed function name.
     private static func agentToolConfig(for choice: ToolChoice) -> GeminiToolConfig {
         let config: GeminiFunctionCallingConfig
         switch choice {
@@ -157,6 +182,12 @@ extension GeminiClient: AgentCapableClient {
         return GeminiToolConfig(functionCallingConfig: config)
     }
 
+    /// Converts a Gemini response into the shared shape, keeping usage even when it is empty.
+    ///
+    /// A response with no candidate or no content yields an empty content list rather than an
+    /// error, so the caller still sees the token counts it was billed for. Each tool call gets a
+    /// locally minted id that carries the part's thought signature, which the converter reads back
+    /// when this turn is replayed to the model.
     private static func agentResponseToLLM(_ response: GeminiResponseBody, model: String) -> LLMResponse {
         let usage = response.usageMetadata.map { GeminiUsageNormalizer.normalize($0) } ?? .zero
 

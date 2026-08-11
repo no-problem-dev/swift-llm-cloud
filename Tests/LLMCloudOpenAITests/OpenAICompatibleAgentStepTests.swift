@@ -1,13 +1,17 @@
 import Foundation
 import Testing
-import APIClient   // HTTPTransport(MockTransport/HTTPResponse) を再公開
+import APIClient   // re-exports HTTPTransport, MockTransport, and HTTPResponse
 import LLMClient
 import LLMTool
 @testable import LLMCloudClient
 @testable import LLMCloudOpenAICompatible
 
-/// executeAgentStep を生 URLSession + AgentRetryHelper から contract + RetryRunner に
-/// 統一したことを MockTransport で検証する。
+/// Covers the agent step after it moved off a raw URLSession and its own retry helper.
+///
+/// Two things moved at once, so both are pinned through a mock transport: the request is built by
+/// the contract, carrying tools, `reasoning_effort`, and `max_completion_tokens`; and retries are
+/// driven by the shared runner, which retries a 5xx, reports each attempt as a retry event, and
+/// sends exactly one request when retrying is disabled.
 @Suite("OpenAICompatible agent-step unified path")
 struct OpenAICompatibleAgentStepTests {
     private let completionJSON = Data(#"""

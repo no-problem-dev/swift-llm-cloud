@@ -1,26 +1,31 @@
 import Foundation
 import LLMClient
 
-/// `/v1/responses` のリクエストボディ。
+/// Request body for the Responses API.
 ///
-/// Chat Completions の `OpenAICompatibleRequestBody` とは形が大きく違うため、
-/// LLMCloudOpenAI 内で独立して定義する。
+/// The shape differs enough from the Chat Completions body that it is defined separately rather
+/// than shared with the OpenAI-compatible types.
 package struct OpenAIResponsesRequestBody: Encodable, Sendable {
     package let model: String
-    /// システムプロンプト相当（Responses API では top-level）
+    /// System prompt. The Responses API takes it as a top-level field instead of as a message
+    /// with a system role.
     package let instructions: String?
     package let input: [OpenAIResponsesInputItem]
     package let tools: [OpenAIResponsesToolDef]?
     package let toolChoice: OpenAIResponsesToolChoice?
-    /// `{"effort": "low"}` 形式
+    /// Reasoning budget, encoded as `{"effort": "low"}`. Only reasoning models accept it.
     package let reasoning: OpenAIResponsesReasoningConfig?
-    /// 構造化出力（`{"format": {...}}`）
+    /// Structured output, encoded as `{"format": {...}}`. This replaces the Chat Completions
+    /// `response_format`.
     package let text: OpenAIResponsesTextConfig?
-    /// Chat Completions の `max_completion_tokens` 相当
+    /// Output budget, the counterpart of `max_completion_tokens`. On reasoning models it covers
+    /// reasoning tokens as well as visible output.
     package let maxOutputTokens: Int
-    /// stateless 運用: false 固定（previous_response_id を使わないため）
+    /// Whether OpenAI keeps a server-side copy of the response. It is always false here, since
+    /// this client never sends `previous_response_id` and replays the whole history each turn.
     package let store: Bool
-    /// SSE ストリーミング。false のときはキー自体を出力しない（非ストリーミングの wire 形を不変に保つ）。
+    /// Whether to stream the response as SSE. When false the key is omitted entirely, which keeps
+    /// the non-streaming request byte-identical to what it was before streaming existed.
     package let stream: Bool
 
     package init(
@@ -89,7 +94,10 @@ package struct OpenAIResponsesRequestBody: Encodable, Sendable {
 
 // MARK: - Reasoning
 
-/// `reasoning` パラメータの設定。
+/// Value of the `reasoning` parameter.
+///
+/// Sending an effort a model does not accept fails the whole request, so callers clamp it to a
+/// supported step before constructing this.
 package struct OpenAIResponsesReasoningConfig: Encodable, Sendable {
     package let effort: String
 
@@ -104,7 +112,10 @@ package struct OpenAIResponsesReasoningConfig: Encodable, Sendable {
 
 // MARK: - Tool Definition
 
-/// Responses API のツール定義（フラット形式: `{type, name, description, parameters, strict}`）。
+/// A function tool as the Responses API declares it.
+///
+/// The shape is flat — `{type, name, description, parameters, strict}` — where Chat Completions
+/// nests everything but `type` under a `function` key.
 package struct OpenAIResponsesToolDef: Encodable, Sendable {
     package let type: String
     package let name: String
@@ -164,7 +175,9 @@ package enum OpenAIResponsesToolChoice: Encodable, Sendable {
 
 // MARK: - Structured Output
 
-/// `text.format` の設定。Responses API では `response_format` が `text.format` に移行。
+/// Value of the `text` parameter, which carries the structured-output format.
+///
+/// The Responses API moved what Chat Completions called `response_format` to `text.format`.
 package struct OpenAIResponsesTextConfig: Encodable, Sendable {
     package let format: OpenAIResponsesFormat
 

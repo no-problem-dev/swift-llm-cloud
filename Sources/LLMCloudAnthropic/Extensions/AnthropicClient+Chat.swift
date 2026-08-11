@@ -4,6 +4,14 @@ import LLMChat
 import Foundation
 
 extension AnthropicClient: ChatCapableClient {
+    /// Continues a conversation and decodes the reply into a structured value.
+    ///
+    /// The schema is enforced by Anthropic through `output_config.format` and also restated in
+    /// prose in the system prompt. The first text block is decoded, skipping any thinking or
+    /// tool-use blocks ahead of it; a reply containing no text block at all fails with
+    /// `LLMError.emptyResponse`. This path sends no tools and, unlike the plain send path,
+    /// performs no retry. Reported usage is normalized, so cached prompt tokens are included in
+    /// the input count.
     public func chat<T: StructuredProtocol>(
         messages: [LLMMessage],
         model: ClaudeModel,
@@ -24,7 +32,7 @@ extension AnthropicClient: ChatCapableClient {
             outputConfig: AnthropicOutputConfig(format: outputFormat)
         )
 
-        // 構造化出力は GA（output_config.format）。Files API(file_id)を使う場合のみ beta を付与。
+        // Structured output needs no beta flag; only file_id references do.
         let (response, _, _) = try await baseProvider.sendBody(body, beta: AnthropicProvider.betaValues(for: messages))
 
         guard let rawText = response.content.first(where: { AnthropicBlockType(rawValue: $0.type) == .text })?.text else {
@@ -55,6 +63,10 @@ extension AnthropicClient: ChatCapableClient {
 
     private static let chatDefaultMaxTokens = 4096
 
+    /// Appends the schema's description to the caller's system prompt.
+    ///
+    /// The prefix it adds is written in Japanese, so it appears verbatim in the prompt sent to
+    /// Anthropic.
     private func buildChatSystemPrompt(base: String?, schema: JSONSchema) -> String {
         var parts: [String] = []
         if let base { parts.append(base) }

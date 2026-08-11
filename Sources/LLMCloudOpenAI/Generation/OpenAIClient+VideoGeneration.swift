@@ -3,7 +3,7 @@ import LLMClient
 // OpenAIClient+VideoGeneration.swift
 // swift-llm-structured-outputs
 //
-// OpenAI クライアントの動画生成機能拡張（Sora 2）
+// Video generation for the OpenAI client, on Sora 2.
 
 import Foundation
 #if canImport(FoundationNetworking)
@@ -15,12 +15,17 @@ import FoundationNetworking
 extension OpenAIClient: VideoGenerationCapable {
     public typealias VideoModel = OpenAIVideoModel
 
-    /// 動画生成ジョブを開始
+    /// Starts a video generation job.
     ///
-    /// Sora 2 API を使用して動画生成を開始する。
-    /// 動画生成は非同期で処理されるため、ジョブ ID を返す。
+    /// Sora renders asynchronously, so this returns as soon as the job is queued. Poll the job
+    /// with ``checkVideoStatus(_:)`` until it completes, then fetch the frames with
+    /// ``getGeneratedVideo(_:)``.
     ///
-    /// ## 使用例
+    /// Duration, aspect ratio, and resolution are validated against the model before the request
+    /// goes out, and the accepted aspect ratio and resolution are then encoded as the pixel size
+    /// Sora expects. Sora renders 16:9 and 9:16 only, so any other aspect ratio is rejected here.
+    ///
+    /// ## Example
     /// ```swift
     /// let client = OpenAIClient(apiKey: "sk-...")
     /// let job = try await client.startVideoGeneration(
@@ -35,9 +40,8 @@ extension OpenAIClient: VideoGenerationCapable {
         aspectRatio: VideoAspectRatio?,
         resolution: VideoResolution?
     ) async throws -> VideoGenerationJob {
-        // プロンプトテキストを取得
         let prompt = input.prompt.render()
-        // バリデーション
+        // Validate locally so an impossible request never reaches the API.
         let actualDuration = duration ?? 4
         if !model.supportedDurations.contains(actualDuration) {
             throw VideoGenerationError.durationExceedsLimit(
@@ -65,7 +69,6 @@ extension OpenAIClient: VideoGenerationCapable {
             OpenAIMediaAPI.CreateVideo(request: body)
         ).output
 
-        // 設定を作成
         let configuration = VideoGenerationConfiguration(
             duration: actualDuration,
             resolution: actualResolution,
@@ -83,7 +86,13 @@ extension OpenAIClient: VideoGenerationCapable {
         )
     }
 
-    /// 動画生成ジョブのステータスを確認
+    /// Polls a job and returns it with the state the server reports.
+    ///
+    /// Sora reports progress as a percentage, which is rescaled to a fraction here. A status this
+    /// client does not recognize is treated as still processing rather than as a failure, so an
+    /// unfamiliar state does not end the poll early. Once the job completes the returned job
+    /// carries the download URL, which always points at api.openai.com even when the client was
+    /// built against a custom endpoint.
     public func checkVideoStatus(_ job: VideoGenerationJob) async throws -> VideoGenerationJob {
         let statusResponse = try await mediaClient.executeWithResponse(
             OpenAIMediaAPI.GetVideoStatus(videoId: job.id)
@@ -94,7 +103,6 @@ extension OpenAIClient: VideoGenerationCapable {
         var errorMessage: String?
 
         if status == .completed {
-            // 動画ダウンロード URL を取得
             videoURL = videoDownloadEndpoint(videoId: job.id)
         } else if status == .failed {
             errorMessage = statusResponse.error?.message ?? "Video generation failed"
@@ -108,7 +116,14 @@ extension OpenAIClient: VideoGenerationCapable {
         )
     }
 
-    /// 生成された動画を取得
+    /// Downloads the rendered video.
+    ///
+    /// The job has to already be complete; this does not poll. The status is read from the job
+    /// passed in, so a job that has not been refreshed since it was created is refused even if
+    /// the server has finished rendering.
+    ///
+    /// - Throws: `VideoGenerationError.jobNotCompleted(status:)` when the job is in any other
+    ///   state.
     public func getGeneratedVideo(_ job: VideoGenerationJob) async throws -> GeneratedVideo {
         guard job.status == .completed else {
             throw VideoGenerationError.jobNotCompleted(status: job.status)
@@ -136,9 +151,10 @@ extension OpenAIClient: VideoGenerationCapable {
     }
 
     private func soraSize(for aspectRatio: VideoAspectRatio, resolution: VideoResolution) -> String {
-        // Sora 2 のサポートサイズ:
+        // Sizes Sora 2 accepts:
         // sora-2: 720x1280, 1280x720
         // sora-2-pro: 720x1280, 1280x720, 1024x1792, 1792x1024
+        // The 1080p tier maps to the two larger pro sizes, which only sora-2-pro renders.
         switch aspectRatio {
         case .landscape16x9:
             switch resolution {
@@ -159,7 +175,8 @@ extension OpenAIClient: VideoGenerationCapable {
                 return "720x1280"
             }
         default:
-            // Sora は 16:9 と 9:16 のみサポート
+            // Unreachable while Sora offers 16:9 and 9:16 only: the caller has already
+            // rejected every other ratio.
             return "1280x720"
         }
     }

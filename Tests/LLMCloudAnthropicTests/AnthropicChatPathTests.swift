@@ -49,7 +49,8 @@ struct AnthropicChatPathTests {
         let req = try #require(mock.recordedRequests.first)
         #expect(req.headers["x-api-key"] == "k")
         #expect(req.headers["anthropic-version"] == "2023-06-01")
-        // 構造化出力は GA。beta ヘッダーは送らない。
+        // Anthropic structured output is generally available, so no anthropic-beta header is sent.
+        // Sending a stale beta name is an error response, not a silently ignored header.
         #expect(req.headers["anthropic-beta"] == nil)
         let sent = String(decoding: try #require(req.body), as: UTF8.self)
         #expect(sent.contains("output_config"))

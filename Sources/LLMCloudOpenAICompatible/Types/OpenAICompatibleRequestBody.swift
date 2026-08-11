@@ -2,18 +2,29 @@ import Foundation
 import LLMClient
 import LLMCloudClient
 
-/// OpenAI 互換 API リクエストボディ
+/// Chat completion request body, encoded by hand so the token cap can be renamed per vendor.
+///
+/// Synthesized encoding cannot give one property two different wire names, and that is exactly what
+/// the token cap needs: `max_completion_tokens` for OpenAI, Groq, and xAI, `max_tokens` for
+/// Mistral, DeepSeek, and OpenRouter. Optional fields are left out of the payload entirely when
+/// nil rather than encoded as null, so no vendor sees a knob the caller did not set.
 package struct OpenAICompatibleRequestBody: Encodable, Sendable {
     package let model: String
     package let messages: [OpenAICompatibleMessage]
+
+    /// Cap on generated tokens, written under whichever name the parameter below selects.
     package let maxTokens: Int
-    /// 最大トークン数を送るフィールド名（プロバイダーごとに max_completion_tokens / max_tokens）。
+
+    /// Which of the two field names the cap is written under.
     package let maxTokensParameter: OpenAICompatibleMaxTokensParameter
+
     package let temperature: Double?
     package let responseFormat: OpenAICompatibleResponseFormat?
     package let tools: [OpenAICompatibleToolDef]?
     package let toolChoice: OpenAICompatibleToolChoice?
-    /// OpenAI GPT-5 系の `reasoning_effort`。nil の場合は API デフォルト。
+
+    /// Value for the GPT-5 style reasoning effort knob, omitted when nil so the model's own default
+    /// applies.
     package let reasoningEffort: String?
 
     package init(
@@ -48,7 +59,7 @@ package struct OpenAICompatibleRequestBody: Encodable, Sendable {
         case reasoningEffort = "reasoning_effort"
     }
 
-    /// 最大トークン数フィールドを実行時に決まる名前で出力するための動的キー。
+    /// Coding key built at runtime, so the token cap can be written under a name chosen per vendor.
     private struct DynamicCodingKey: CodingKey {
         let stringValue: String
         init(_ stringValue: String) { self.stringValue = stringValue }
@@ -61,7 +72,7 @@ package struct OpenAICompatibleRequestBody: Encodable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(model, forKey: .model)
         try container.encode(messages, forKey: .messages)
-        // 最大トークン数はプロバイダー指定のフィールド名で出力する。
+        // The cap goes out under the field name this vendor accepts.
         var dynamic = encoder.container(keyedBy: DynamicCodingKey.self)
         try dynamic.encode(maxTokens, forKey: DynamicCodingKey(maxTokensParameter.rawValue))
         if let temperature = temperature {
@@ -82,7 +93,10 @@ package struct OpenAICompatibleRequestBody: Encodable, Sendable {
     }
 }
 
-/// OpenAI 互換レスポンスフォーマット設定
+/// The structured-output setting sent with a request.
+///
+/// This client only ever sets it to `json_schema`; the wrapper alongside carries the schema itself
+/// and the strict flag.
 package struct OpenAICompatibleResponseFormat: Encodable, Sendable {
     package let type: String
     package let jsonSchema: OpenAICompatibleJSONSchemaWrapper
@@ -98,7 +112,11 @@ package struct OpenAICompatibleResponseFormat: Encodable, Sendable {
     }
 }
 
-/// JSON Schema ラッパー（schema は `WireSchema` でキーワードを verbatim 出力）
+/// Named schema plus the strict flag, as structured outputs expect them.
+///
+/// The schema is held as a `WireSchema` so its keywords are emitted verbatim. Request bodies are
+/// encoded with a snake_case key strategy, which would otherwise rewrite schema keywords such as
+/// `additionalProperties` into names no vendor recognizes.
 package struct OpenAICompatibleJSONSchemaWrapper: Encodable, Sendable {
     package let name: String
     package let strict: Bool

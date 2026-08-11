@@ -8,22 +8,24 @@ import LLMAgentStep
 // MARK: - OpenAIClient + AgentCapableClient routing
 
 extension OpenAIClient {
-    /// エージェントステップを実行する。
+    /// Runs one agent step, choosing the endpoint that will accept the request.
     ///
-    /// **reasoning モデル(GPT-5 系)に function tools を渡すときは `/v1/responses`**。
-    /// Chat Completions に送ると拒否される:
+    /// A reasoning model given function tools has to go to `/v1/responses`. Chat Completions
+    /// refuses that combination outright:
     ///
     /// > Function tools with reasoning_effort are not supported for gpt-5.6-luna
     /// > in /v1/chat/completions. To use function tools, use /v1/responses
     ///
-    /// **`reasoning_effort` を送っていなくても拒否される。** これらのモデルは
-    /// 既定で reasoning するため、指定の有無は関係ない。以前は
-    /// 「effort が指定されているとき」だけ振り分けており、指定なしの呼び出し
-    /// (A2UI の副エージェントなど)が Chat Completions に落ちて失敗していた。
+    /// The refusal does not depend on `reasoning_effort` being sent. These models reason by
+    /// default, so a call that passes no effort at all is rejected just the same. Routing is
+    /// therefore decided by the model, never by the presence of an effort:
     ///
-    /// なので振り分けは**モデルで決める**:
-    /// - reasoning モデル + tools あり → `/v1/responses`（OpenAIResponsesEngine）
-    /// - それ以外 → Chat Completions（OpenAICompatibleEngine 経由のデフォルト実装）
+    /// - Reasoning model with at least one tool: the Responses API.
+    /// - Everything else: Chat Completions, through the shared OpenAI-compatible implementation.
+    ///
+    /// The requested effort is first clamped to a step the model accepts, since sending an
+    /// unsupported one fails the whole request. `thinkingMode` is ignored: OpenAI has no
+    /// extended-thinking switch and controls thinking through the effort instead.
     public func executeAgentStep(
         messages: [LLMMessage],
         model: GPTModel,
@@ -36,16 +38,15 @@ extension OpenAIClient {
         maxTokens: Int?,
         cachePolicy: PromptCachePolicy
     ) async throws -> LLMResponse {
-        _ = thinkingMode // OpenAI 系は Extended Thinking ではなく reasoning_effort で思考量を制御する
+        _ = thinkingMode // OpenAI has no extended-thinking switch; reasoning_effort sets the budget.
 
-        // モデルが受け付ける段に寄せる（API 拒否回避）。対応する段はモデルの
-        // 世代ごとに違う — GPT-5.6 は max まで、o-series は low/medium/high だけ、
-        // minimal は 5.1 以降で none に置き換わった
+        // Move the effort to a step this model accepts, so the API does not reject the call.
+        // The available steps differ by generation — GPT-5.6 goes up to max, the o-series has
+        // only low/medium/high, and minimal was replaced by none from 5.1 onwards.
         let effectiveEffort = reasoningEffort.flatMap(model.clamped)
 
-        // **effort の有無ではなくモデルで決める。** reasoning モデルは既定で
-        // 思考するので、effort を送っていなくても Chat Completions は
-        // function tools を拒否する
+        // Decided by the model, not by whether an effort was passed: reasoning models think by
+        // default, so Chat Completions rejects function tools even with no effort in the body.
         if model.supportsReasoningEffort, !tools.isEmpty {
             return try await responsesEngine.executeAgentStep(
                 messages: messages,
@@ -71,12 +72,12 @@ extension OpenAIClient {
         )
     }
 
-    /// エージェントステップをストリーミング実行する。
+    /// Runs one agent step and yields events as the response streams in.
     ///
-    /// ストリーミングは常に `/v1/responses` 経由（`OpenAIResponsesEngine`）。
-    /// `executeAgentStep` の reasoning_effort 依存の経路分岐をストリーミングに
-    /// 持ち込まない — 「特定の設定のときだけストリーミングされない」という
-    /// 分かりにくい条件を作らないため。thinking の有無ともストリーミング可否は独立。
+    /// Streaming always goes to the Responses API, whatever the model and whether or not tools
+    /// are attached. The model-dependent routing of the non-streaming path is deliberately not
+    /// repeated here, so there is no configuration in which a caller silently stops receiving
+    /// deltas. Whether the model reasons has no bearing on it either.
     public func streamAgentStep(
         messages: [LLMMessage],
         model: GPTModel,
@@ -90,7 +91,7 @@ extension OpenAIClient {
         cachePolicy: PromptCachePolicy
     ) -> AsyncThrowingStream<StreamingAgentEvent, Error> {
         _ = thinkingMode
-        _ = cachePolicy // OpenAI のプロンプトキャッシュは自動（明示パラメータなし）
+        _ = cachePolicy // OpenAI caches prompts automatically; there is no parameter to set.
 
         let effectiveEffort = reasoningEffort.flatMap(model.clamped)
 

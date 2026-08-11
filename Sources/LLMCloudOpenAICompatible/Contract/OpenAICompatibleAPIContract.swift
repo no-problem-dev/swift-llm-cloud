@@ -8,11 +8,12 @@ import FoundationNetworking
 
 // MARK: - OpenAI Compatible API Group
 
-/// OpenAI 互換 API のグループ定義
+/// Contract group for vendors exposing an OpenAI-shaped chat-completions endpoint.
 ///
-/// - Auth: `Authorization: Bearer` ヘッダー
-/// - basePath は空文字列（エンドポイント URL に完全パスを含む）
-/// - Custom Error Decoding: LLMError + RateLimitAwareError
+/// The base path is deliberately empty: every vendor is configured with its complete endpoint URL,
+/// path included, so nothing is appended to it. Auth is `Authorization: Bearer`. Error decoding is
+/// overridden here rather than left to the generic client, so that a 429 or a 5xx reaches the retry
+/// layer with the vendor's rate-limit headers still attached.
 enum OpenAICompatibleAPI: APIContractGroup {
     static let basePath: String = ""
     static let auth: AuthScheme = .bearer
@@ -21,10 +22,14 @@ enum OpenAICompatibleAPI: APIContractGroup {
 
     // MARK: - Custom Error Decoding
 
-    /// OpenAI 互換のエラーデコード
+    /// Turns a failed response into a typed error, keeping rate-limit state attached to it.
     ///
-    /// ステータスコードに基づいて LLMError を生成し、
-    /// レート制限ヘッダーから RateLimitInfo を抽出して RateLimitAwareError を構成する。
+    /// The status code alone decides the case, so a body that fails to parse never blocks the
+    /// mapping. 401 becomes `LLMError.unauthorized`; 400 and 404 become `invalidRequest` and
+    /// `modelNotFound`, quoting the vendor's own `error.message` when it is there. 429 and 5xx
+    /// become `RateLimitAwareError` carrying the parsed headers, which is what lets the retry layer
+    /// wait for the reported reset instead of guessing. Every other status becomes a generic server
+    /// error, and the vendor's message is dropped with it.
     static func decodeError(
         statusCode: Int,
         data: Data,
@@ -59,6 +64,12 @@ enum OpenAICompatibleAPI: APIContractGroup {
 
     // MARK: - Rate Limit Extraction
 
+    /// Reads rate-limit state out of the response headers of a failed request.
+    ///
+    /// Each name is tried as written and then lowercased, because vendors disagree on header case.
+    /// `Retry-After` is read as a number of seconds only — the HTTP-date form of that header is
+    /// treated as absent. Reset values carry a unit suffix (`ms`, `s`, `m`, `h`), and a bare number
+    /// is taken as seconds.
     private static func extractRateLimitInfo(from headers: [String: String]) -> RateLimitInfo {
         func header(_ name: String) -> String? {
             headers[name] ?? headers[name.lowercased()]
@@ -107,7 +118,7 @@ enum OpenAICompatibleAPI: APIContractGroup {
 // MARK: - Create Chat Completion Endpoint
 
 extension OpenAICompatibleAPI {
-    /// チャット補完エンドポイント（非ストリーミング）
+    /// The chat-completions call, non-streaming: one request, one complete response body.
     struct CreateChatCompletion: APIContract, APIInput {
         typealias Group = OpenAICompatibleAPI
         typealias Input = Self
@@ -116,9 +127,7 @@ extension OpenAICompatibleAPI {
         static let method: APIMethod = .post
         static let subPath: String = ""
 
-        /// プロバイダー固有のカスタムヘッダー
         let customHeaders: [String: String]
-        /// リクエストボディ
         let request: OpenAICompatibleRequestBody
 
         var pathParameters: [String: String] { [:] }

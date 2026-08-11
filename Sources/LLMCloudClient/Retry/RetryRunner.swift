@@ -1,16 +1,38 @@
 import LLMClient
 import Foundation
 
-/// ドメイン認識リトライの単一実装。
+/// The single retry loop every provider in this package funnels through.
 ///
-/// `operation` を `RetryPolicy` に従って再試行する。失敗は `LLMError` または
-/// （レート制限情報を伴う）`RateLimitAwareError` として送出される前提で、後者からは
-/// 抽出済みの `RateLimitInfo` を遅延計算に利用し、各リトライで `RetryEvent` を発火する。
+/// It understands two failure shapes and nothing else: `LLMError`, and ``RateLimitAwareError``,
+/// which is what a provider's API contract raises when the failing response carried rate-limit
+/// headers. Because the contract has already parsed those headers into a ``RateLimitInfo``, the
+/// loop never needs the raw HTTP response — which is why the same implementation serves plain
+/// sends and agent turns alike. Streaming does not go through it: a stream that has already
+/// delivered tokens cannot be restarted transparently.
 ///
-/// 契約経由(api-client)の送信は `decodeError` がリッチなエラーとレート制限情報を
-/// `RateLimitAwareError` に載せて送出するため、ここでは生 HTTP レスポンスから
-/// ヘッダーを再抽出する必要がない。
+/// Any error that is neither of those two shapes escapes the loop uncaught and is never
+/// retried, whatever a policy would have said about it.
 public enum RetryRunner {
+    /// Runs an operation, retrying it while the policy allows.
+    ///
+    /// Makes at most `policy.maxRetries + 1` attempts. After each failure the error is unwrapped
+    /// to its `LLMError` form and offered to the policy; when the policy declines, or the budget
+    /// is spent, that error is thrown. Otherwise a ``RetryEvent`` is emitted and the task sleeps
+    /// for the wait the policy computed.
+    ///
+    /// Rate-limit values are sticky: the most recent ``RateLimitInfo`` seen is remembered and
+    /// handed to the policy on later attempts too, so a wait a provider asked for on a 429 still
+    /// shapes the backoff after a subsequent failure that carried no headers of its own.
+    ///
+    /// - Parameters:
+    ///   - policy: Decides retryability and waits.
+    ///   - eventHandler: Called once per retry, before the wait.
+    ///   - operation: The work to attempt. It is re-run from scratch each time, so it must be
+    ///     safe to repeat — which for a chat completion means the provider is billed for every
+    ///     attempt, not only the one that succeeds.
+    /// - Throws: The last `LLMError` when retries run out, `CancellationError` if the task is
+    ///   cancelled during a wait, or anything the operation threw that is neither an `LLMError`
+    ///   nor a ``RateLimitAwareError``.
     public static func run<R>(
         policy: any RetryPolicy,
         eventHandler: RetryEventHandler?,
