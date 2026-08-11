@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Adopts swift-api-client 5.0.0, swift-llm-client 5.0.0 and swift-http-transport 2.1.0. A 403 maps
+  to `LLMError.unauthorized` alongside 401 — that case's own doc already covers both ("missing,
+  wrong, or not allowed to reach this model"), neither is retryable, and both are fixed by changing
+  the credential or the plan.
+- The `APIError.invalidResponse` arm of the error mapping is gone. It was dead: upstream never
+  constructed the case, so the condition always arrived as `TransportError.invalidResponse` inside
+  `.networkError`, and the branch's `"Invalid URL or response"` message described something it
+  never handled.
+
+
+### Changed
+
+- Raised the swift-api-client pin to 5.0.0 and the swift-http-transport pin to 2.0.0. 4.0.0 of
+  api-client cannot resolve alongside http-transport 2.x — its own pin bump did not land until
+  5.0.0 — and 5.0.0 is also the release that boxes the injected transport in
+  `AnyStreamingTransport`, which is what keeps `APIClientImpl`'s existential transport working
+  now that `RetryingTransport` is generic. Nothing this package names changes.
+- `mapAPIErrorToLLMError` takes `APIError`'s new shape. `.forbidden` joins `.unauthorized` on
+  `LLMError.unauthorized`, which already means "the API key is missing, wrong, **or not allowed
+  to reach this model**" and is what every provider contract here already returns for both 401
+  and 403; neither is retryable and both are fixed by changing the credential or the plan
+  behind it. `.conflictingAuthHeader` becomes `invalidRequest`, since the request is refused
+  before it is sent.
+- The `invalidResponse` arm is gone with the case. It was never reachable: `APIError` never
+  constructed it, and the condition has always arrived as `TransportError.invalidResponse`
+  inside `.networkError`, which is where it still arrives.
+
 ## [5.0.0] - 2026-08-11
 
 ### Fixed

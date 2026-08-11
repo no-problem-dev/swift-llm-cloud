@@ -48,12 +48,24 @@ package extension URL {
 /// `httpError` that reaches here keeps its status code, so `LLMError.isRetryable` can still
 /// tell a 5xx worth retrying from a 4xx that will fail again. A 429 normally arrives as a
 /// ``RateLimitAwareError`` from the contract instead and never passes through here.
+///
+/// A 401 and a 403 both land on `LLMError.unauthorized`. That case already means "the API key
+/// is missing, wrong, or not allowed to reach this model", which is both halves of the
+/// distinction `APIError` draws, and the remedy at this layer is the same either way: the
+/// credential or the plan behind it has to change, and resending is pointless. Every provider
+/// contract in this package already collapses the two the same way in its own `decodeError`.
+///
+/// `TransportError.invalidResponse` arrives inside ``APIError/networkError(_:)`` and is
+/// reported as a network failure, which is where it has always arrived from — `APIError` had a
+/// separate `invalidResponse` case that was never constructed.
 package func mapAPIErrorToLLMError(_ error: APIError) -> LLMError {
     switch error {
-    case .unauthorized: return .unauthorized
+    case .unauthorized, .forbidden: return .unauthorized
     case .networkError(let underlying): return .networkError(underlying)
     case .decodingError(let underlying): return .decodingFailed(underlying)
-    case .invalidURL, .invalidResponse: return .invalidRequest("Invalid URL or response")
+    case .invalidURL: return .invalidRequest("Invalid URL")
+    case .conflictingAuthHeader(let name):
+        return .invalidRequest("Header \(name) collides with the credential the contract resolved")
     case .httpError(let statusCode, _): return .serverError(statusCode, "HTTP error")
     }
 }
