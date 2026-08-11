@@ -9,6 +9,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing.
 
+## [4.4.0] - 2026-08-06
+
+### Fixed
+- **A reasoning model with tools always goes to `/v1/responses`.** OpenAI rejects function
+  tools on `/v1/chat/completions` for these models whether or not `reasoning_effort` is
+  sent — they reason by default, so passing the parameter is beside the point. The routing
+  tested `effectiveEffort != nil`, which dropped any call that passed no effort (a
+  sub-agent with `reasoningEffort: nil`, say) onto Chat Completions, where it failed every
+  time. The route is now decided by the model.
+
+## [4.3.0] - 2026-08-06
+
+### Added
+- **Image input through the Responses API.** OpenAI threw `LLMError.mediaNotSupported`, so no
+  OpenAI model could be used on a path that attaches images at all. The content of
+  `OpenAIResponsesInputItem.message(role:content:)` was a `String`, with structurally nowhere
+  to put an image, while the API accepts an array (`input_text` / `input_image`). Added
+  `multipartMessage(role:parts:)`, which sends an array **only when an image is present** and
+  otherwise keeps sending a plain string, leaving existing behaviour untouched. Base64 goes as
+  a data URI, a URL goes as-is, and something from the Files API is referenced by file_id.
+  Text and images stay in one message, since splitting them loses which utterance the image
+  belonged to. Audio, video and documents are still rejected — there is nothing to map them to.
+
+### Changed
+- Reasoning effort is matched to the model.
+
+## [4.2.1] - 2026-07-30
+
+### Changed
+- Raised the swift-api-client floor to 3.0.2, to pick up the SSEParser CRLF fix.
+
+## [4.2.0] - 2026-07-30
+
+### Added
+- **`streamAgentStep` for the OpenAI Responses API.** `stream` added to
+  `OpenAIResponsesRequestBody` (the key is omitted when false, so the non-streaming wire shape
+  is unchanged). `OpenAIResponsesStreamEvent` branches on the `type` in the data JSON rather
+  than the `event:` line, and interprets only `output_text.delta`,
+  `reasoning_*_text.delta`, `completed`, `failed`, `incomplete` and `error`, ignoring the rest
+  and `[DONE]`. Deltas are for display; the ground truth is the complete `Response` on
+  `response.completed`, run through the existing converter. `OpenAIClient.streamAgentStep`
+  always takes the `/v1/responses` route, and the streaming path does not retry, so deltas
+  cannot be duplicated.
+
+## [4.1.0] - 2026-07-30
+
+### Added
+- **`streamAgentStep` for Gemini**, so the agent path streams. `GeminiStreamAccumulator`
+  aggregates chunk by chunk (text deltas yielded as they arrive, a functionCall complete in
+  one chunk, usage taken as the cumulative value overwriting the previous, terminated at EOF).
+  It streams whether or not thinking is on — that is controlled separately by
+  `thinkingConfig`. A cache expiry recovers by recreating and retrying once, but only before
+  any delta has been sent. Request construction is extracted into `makeAgentStepRequest` and
+  shared with the non-streaming path.
+
+## [4.0.1] - 2026-07-30
+
+### Changed
+- Widened the compatible range for swift-structured-data to include 2.x (`1.3.0..<3.0.0`).
+
 ## [4.0.0] - 2026-07-19
 
 ### ⚠️ Breaking Changes
@@ -75,5 +135,11 @@ down with golden tests.
 - **LLMCloudGemini** - Google Gemini provider
 - **LLMCloud** - umbrella module (re-exports every provider)
 
-[Unreleased]: https://github.com/no-problem-dev/swift-llm-cloud/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/no-problem-dev/swift-llm-cloud/compare/4.4.0...HEAD
+[4.4.0]: https://github.com/no-problem-dev/swift-llm-cloud/compare/4.3.0...4.4.0
+[4.3.0]: https://github.com/no-problem-dev/swift-llm-cloud/compare/4.2.1...4.3.0
+[4.2.1]: https://github.com/no-problem-dev/swift-llm-cloud/compare/4.2.0...4.2.1
+[4.2.0]: https://github.com/no-problem-dev/swift-llm-cloud/compare/4.1.0...4.2.0
+[4.1.0]: https://github.com/no-problem-dev/swift-llm-cloud/compare/4.0.1...4.1.0
+[4.0.1]: https://github.com/no-problem-dev/swift-llm-cloud/compare/4.0.0...4.0.1
 [1.0.0]: https://github.com/no-problem-dev/swift-llm-cloud/releases/tag/v1.0.0
