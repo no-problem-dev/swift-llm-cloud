@@ -1,77 +1,79 @@
-# 変更履歴
+# Changelog
 
-このプロジェクトの全ての重要な変更はこのファイルに記録されます。
+All notable changes to this project are recorded in this file.
 
-フォーマットは [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づいており、
-このプロジェクトは [セマンティックバージョニング](https://semver.org/lang/ja/spec/v2.0.0.html) に準拠しています。
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [未リリース]
+## [Unreleased]
 
-なし
+Nothing.
 
 ## [4.0.0] - 2026-07-19
 
-### ⚠️ 破壊的変更
+### ⚠️ Breaking Changes
 
-- swift-api-client の依存を `from: "3.0.0"` に更新（ファミリーの api-client 世代統一）。
-  api-client 3.0.0 の `AuthTokenProvider` 要件改名に伴い、内部の
-  `StaticTokenProvider.getToken()` を `fetchToken()` に改名した。
-  `package` アクセスレベルのため公開 API の変更は無いが、依存の major が上がるため
-  消費者の解決グラフに影響する。
+- Updated the swift-api-client dependency to `from: "3.0.0"` (unifying the api-client
+  generation across the family). Following the rename of the `AuthTokenProvider`
+  requirement in api-client 3.0.0, the internal
+  `StaticTokenProvider.getToken()` was renamed to `fetchToken()`.
+  It is at `package` access level so there is no public API change, but the dependency's
+  major goes up, which affects consumers' resolution graph.
 
 ## [3.32.0] - 2026-06-14
 
-コンテキストウィンドウ内訳のための Anthropic `count_tokens` アダプタを追加。
-swift-llm-client 3.8.0（`TokenCounting` port）に追従。
+Adds the Anthropic `count_tokens` adapter for the context window breakdown.
+Follows swift-llm-client 3.8.0 (the `TokenCounting` port).
 
-### 追加
-- **`AnthropicAPI.CountTokens` エンドポイント**（`/v1/messages/count_tokens`）と
-  `AnthropicCountTokensBody`/`Response`。ボディは model/system/messages/tools のみで
-  `max_tokens`/`stream` を持たない count_tokens 専用 envelope。
-- **`AnthropicProvider.countTokens(...)`**: send パスと**同一の変換器**
-  （`AnthropicMessageConverter` / `ToolSet.toAnthropicToolDefs()`）を再利用し、
-  「数える内容 = 送る内容」を保証。
-- **`AnthropicClient.tokenCounter`**: `TokenCounting` port の Anthropic 実装を公開。
+### Added
+- **`AnthropicAPI.CountTokens` endpoint** (`/v1/messages/count_tokens`) and
+  `AnthropicCountTokensBody`/`Response`. The body carries only model/system/messages/tools —
+  a count_tokens-specific envelope with no `max_tokens`/`stream`.
+- **`AnthropicProvider.countTokens(...)`**: reuses **the same converters** as the send path
+  (`AnthropicMessageConverter` / `ToolSet.toAnthropicToolDefs()`), guaranteeing
+  "what is counted = what is sent".
+- **`AnthropicClient.tokenCounter`**: exposes the Anthropic implementation of the `TokenCounting` port.
 
-### 変更
-- `swift-llm-client` 依存を `3.8.0` 以上へ。
+### Changed
+- Raised the `swift-llm-client` dependency to `3.8.0` or later.
 
 ## [3.31.0] - 2026-06-14
 
-swift-llm-client 3.7.0（マルチモーダル基盤再設計）への追従と、Anthropic アダプタの
-正当化。silent fallback を全面撲滅し、変換ロジックをゴールデンテストで固定した。
+Follows swift-llm-client 3.7.0 (the multimodal groundwork redesign) and puts the Anthropic
+adapter right. Silent fallbacks are wiped out entirely and the conversion logic is pinned
+down with golden tests.
 
-### 追加
-- **ドキュメント(PDF)入力対応**: `MessageContent.document` を全プロバイダで変換。
-  Anthropic は document block（base64/url/file_id/plain-text source、title/context/citations）、
-  Gemini は inlineData/fileData、OpenAI は非対応のため明示的に throw。
-- **Anthropic Files API**: image/document の `fileReference` を `source.type=file`（file_id）で送出。
-  file_id 使用時に `anthropic-beta: files-api-2025-04-14` を自動付与。
-- **Anthropic プロンプトキャッシュ lowering**: `PromptCachePolicy.explicitPrefix` を
-  `cache_control` ブレークポイント（system 末尾 or 最後の tool）へ変換。ttl 5m/1h、
-  1h 時は `extended-cache-ttl-2025-04-11` beta を付与。
-- 3 プロバイダの変換ゴールデンテスト（決定論的 JSON 比較）。
+### Added
+- **Document (PDF) input support**: `MessageContent.document` is converted for every provider.
+  Anthropic uses a document block (base64/url/file_id/plain-text source, title/context/citations),
+  Gemini uses inlineData/fileData, and OpenAI throws explicitly because it is unsupported.
+- **Anthropic Files API**: sends the image/document `fileReference` as `source.type=file` (file_id).
+  Automatically adds `anthropic-beta: files-api-2025-04-14` when a file_id is used.
+- **Anthropic prompt cache lowering**: converts `PromptCachePolicy.explicitPrefix` into a
+  `cache_control` breakpoint (end of system, or the last tool). ttl 5m/1h;
+  for 1h it adds the `extended-cache-ttl-2025-04-11` beta.
+- Conversion golden tests for the three providers (deterministic JSON comparison).
 
-### 修正（破壊的挙動修正）
-- **Anthropic image `fileReference` の silent データ破損を解消**: 空 base64（`data:""`）送出を廃止し
-  正しい file source へ。
-- **silent skip / silent drop の全廃**: OpenAI Responses のメディア黙殺、OpenAICompatible の
-  非対応 audio（URL/未対応フォーマット）の暗黙ドロップを `LLMError.mediaNotSupported` の throw に。
+### Fixed (breaking behavior fixes)
+- **Resolved the silent data corruption of the Anthropic image `fileReference`**: it no longer sends
+  empty base64 (`data:""`) and uses the correct file source instead.
+- **Abolished every silent skip / silent drop**: OpenAI Responses silently ignoring media, and
+  OpenAICompatible silently dropping unsupported audio (URL / unsupported format), now throw `LLMError.mediaNotSupported`.
 
-### 内部
-- `MediaSource.fold` による変換ディスパッチの DRY 化（DTO 形状は各プロバイダ固有のまま）。
-- `OpenAICompatible` から OpenAI 専用 `ImageContent.detail` 参照を削除。
-- 依存を swift-llm-client 3.7.0 へ更新。
+### Internal
+- DRY-ed up the conversion dispatch with `MediaSource.fold` (the DTO shapes stay provider-specific).
+- Removed the OpenAI-only `ImageContent.detail` reference from `OpenAICompatible`.
+- Updated the dependency to swift-llm-client 3.7.0.
 
 ## [1.0.0] - 2026-02-23
 
-### 追加
-- 初回リリース
-- **LLMCloudClient** - クラウドプロバイダー共通インフラストラクチャ
-- **LLMCloudAnthropic** - Anthropic Claude プロバイダー
-- **LLMCloudOpenAI** - OpenAI GPT プロバイダー
-- **LLMCloudGemini** - Google Gemini プロバイダー
-- **LLMCloud** - アンブレラモジュール（全プロバイダー再エクスポート）
+### Added
+- Initial release
+- **LLMCloudClient** - shared infrastructure for cloud providers
+- **LLMCloudAnthropic** - Anthropic Claude provider
+- **LLMCloudOpenAI** - OpenAI GPT provider
+- **LLMCloudGemini** - Google Gemini provider
+- **LLMCloud** - umbrella module (re-exports every provider)
 
-[未リリース]: https://github.com/no-problem-dev/swift-llm-cloud/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/no-problem-dev/swift-llm-cloud/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/no-problem-dev/swift-llm-cloud/releases/tag/v1.0.0
