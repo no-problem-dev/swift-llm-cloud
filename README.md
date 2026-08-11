@@ -14,7 +14,7 @@ One Swift interface for Anthropic Claude, OpenAI GPT, Google Gemini, and five mo
 - **Typed model selection** — a Claude model will not compile against an OpenAI client
 - **Structured output** — annotate a type with `@Structured` and get it back decoded; the JSON Schema is generated and adapted to each provider's accepted subset
 - **Tool calling** — supported on every provider, with the per-vendor id and argument-encoding differences absorbed
-- **Token-by-token streaming** — on Anthropic, OpenAI, and Gemini, which implement it natively; the other five return a completed response
+- **Token-by-token streaming** — on all eight, over each vendor's own streaming endpoint
 - **Retry that reads the response** — a server-supplied rate-limit wait beats computed backoff
 
 ## Quick Start

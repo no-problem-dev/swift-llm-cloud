@@ -378,8 +378,9 @@ extension OpenRouterModel {
 /// from whichever upstream provider served the call. When those headers are absent, a retry has no
 /// server-supplied reset hint to honour and falls back to plain exponential backoff.
 ///
-/// Requests are never streamed: `streamAgentStep` falls back to the shared non-streaming
-/// implementation and yields one completed event at the end rather than deltas.
+/// `streamAgentStep` streams for real: the request goes out with `stream: true` and the SSE
+/// deltas are forwarded as they arrive. Chat Completions never sends the finished message, so the
+/// trailing completed event is reassembled from those deltas rather than received.
 ///
 /// ## Example
 ///

@@ -142,5 +142,40 @@ extension OpenAICompatibleClientProtocol {
             maxTokens: maxTokens
         )
     }
+
+    /// Runs one agent turn against the vendor, yielding text as it is generated.
+    ///
+    /// This overrides the protocol's default, which would run the whole call to completion and hand
+    /// the caller a single `.completed` event — a stream in type only. Every vendor on this wire
+    /// format documents `stream: true` on the chat-completions endpoint, so there is a real stream
+    /// to consume and the engine consumes it.
+    ///
+    /// The same two arguments stop here as on the buffered path: the thinking mode, which this wire
+    /// format has no counterpart for, and the cache policy, since there are no prompt-cache controls
+    /// to apply it to.
+    public func streamAgentStep(
+        messages: [LLMMessage],
+        model: Model,
+        systemPrompt: SystemPrompt?,
+        tools: ToolSet,
+        toolChoice: ToolChoice?,
+        responseSchema: JSONSchema?,
+        thinkingMode: ThinkingMode,
+        reasoningEffort: ReasoningEffort?,
+        maxTokens: Int?,
+        cachePolicy: PromptCachePolicy
+    ) -> AsyncThrowingStream<StreamingAgentEvent, Error> {
+        _ = thinkingMode // No thinking mode on this wire format; reasoning effort is the knob here.
+        return engine.streamAgentStep(
+            messages: messages,
+            modelId: model.id,
+            systemPrompt: systemPrompt,
+            tools: tools,
+            toolChoice: toolChoice,
+            responseSchema: responseSchema,
+            reasoningEffort: reasoningEffort,
+            maxTokens: maxTokens
+        )
+    }
 }
 

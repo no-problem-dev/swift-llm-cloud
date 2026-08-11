@@ -24,10 +24,10 @@ extension DeepSeekModel: OpenAICompatibleModelProtocol {
 /// The output cap must be sent as `max_tokens` — DeepSeek does not accept OpenAI's
 /// `max_completion_tokens` — and the completions path carries no `/v1` segment.
 ///
-/// Requests are never streamed. Tool calling and JSON-schema structured output work through the
-/// standard OpenAI-compatible fields, but `streamAgentStep` falls back to the shared
-/// non-streaming implementation: it yields a single completed event at the end instead of text or
-/// thinking deltas.
+/// Tool calling and JSON-schema structured output work through the standard OpenAI-compatible
+/// fields, and `streamAgentStep` streams for real: the request goes out with `stream: true` and the
+/// SSE deltas are forwarded as they arrive. Reasoning models emit their thinking under
+/// `reasoning_content`, which surfaces as thinking deltas separate from the answer text.
 ///
 /// Token accounting follows OpenAI's shape, so the reported input count already includes cache
 /// hits, and cache-read tokens are only broken out when the response carries

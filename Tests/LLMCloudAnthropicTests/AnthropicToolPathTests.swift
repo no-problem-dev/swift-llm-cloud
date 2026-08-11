@@ -31,6 +31,91 @@ struct AnthropicToolPathTests {
         return ToolSet(tools: [lookup])
     }
 
+    // MARK: - ToolChoice の全ケースがワイヤに出る
+    //
+    // 以前 .disabled は init で .none に写されたあと encode で .auto に畳まれ、
+    // {"type":"auto"} として送られていた。tools も付いたままなので、
+    // 「ツールを封じたつもりの最終ターン」でモデルが平然とツールを呼べてしまう。
+
+    /// 送られたリクエストボディの tool_choice を素の JSON として取り出す。
+    private func sentToolChoice(_ mock: MockTransport) throws -> [String: String] {
+        let body = try #require(mock.recordedRequests.first?.body)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        return try #require(json["tool_choice"] as? [String: String])
+    }
+
+    private func sentHasTools(_ mock: MockTransport) throws -> Bool {
+        let body = try #require(mock.recordedRequests.first?.body)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        return (json["tools"] as? [Any])?.isEmpty == false
+    }
+
+    @Test("ToolChoice.disabled は tool_choice を none で送る")
+    func disabledSendsNone() async throws {
+        let mock = MockTransport { _ in
+            HTTPResponse(status: 200, headers: ["Content-Type": "application/json"], body: toolUseJSON)
+        }
+        _ = try await client(mock).planToolCalls(
+            messages: [LLMMessage(role: .user, content: "hi")],
+            model: .sonnet, tools: toolSet, toolChoice: .disabled,
+            systemPrompt: nil, temperature: nil, maxTokens: 200, cachePolicy: .implicit)
+
+        #expect(try sentToolChoice(mock) == ["type": "none"])
+        // 定義そのものは残す。封じるのと引っ込めるのは別で、引っ込めるとキャッシュ前置が壊れる。
+        #expect(try sentHasTools(mock))
+    }
+
+    @Test("ToolChoice.auto は tool_choice を auto で送る")
+    func autoSendsAuto() async throws {
+        let mock = MockTransport { _ in
+            HTTPResponse(status: 200, headers: ["Content-Type": "application/json"], body: toolUseJSON)
+        }
+        _ = try await client(mock).planToolCalls(
+            messages: [LLMMessage(role: .user, content: "hi")],
+            model: .sonnet, tools: toolSet, toolChoice: .auto,
+            systemPrompt: nil, temperature: nil, maxTokens: 200, cachePolicy: .implicit)
+
+        #expect(try sentToolChoice(mock) == ["type": "auto"])
+    }
+
+    @Test("ToolChoice.required は any、.tool(name) は tool+name")
+    func requiredAndNamedToolSerialize() async throws {
+        let makeMock = {
+            MockTransport { _ in
+                HTTPResponse(status: 200, headers: ["Content-Type": "application/json"], body: self.toolUseJSON)
+            }
+        }
+
+        let requiredMock = makeMock()
+        _ = try await client(requiredMock).planToolCalls(
+            messages: [LLMMessage(role: .user, content: "hi")],
+            model: .sonnet, tools: toolSet, toolChoice: .required,
+            systemPrompt: nil, temperature: nil, maxTokens: 200, cachePolicy: .implicit)
+        #expect(try sentToolChoice(requiredMock) == ["type": "any"])
+
+        let namedMock = makeMock()
+        _ = try await client(namedMock).planToolCalls(
+            messages: [LLMMessage(role: .user, content: "hi")],
+            model: .sonnet, tools: toolSet, toolChoice: .tool("lookup"),
+            systemPrompt: nil, temperature: nil, maxTokens: 200, cachePolicy: .implicit)
+        #expect(try sentToolChoice(namedMock) == ["type": "tool", "name": "lookup"])
+    }
+
+    @Test("エージェントステップでも .disabled は none で送る")
+    func agentStepHonoursDisabled() async throws {
+        let mock = MockTransport { _ in
+            HTTPResponse(status: 200, headers: ["Content-Type": "application/json"], body: toolUseJSON)
+        }
+        _ = try await client(mock).executeAgentStep(
+            messages: [LLMMessage(role: .user, content: "hi")],
+            model: .sonnet, systemPrompt: nil, tools: toolSet, toolChoice: .disabled,
+            responseSchema: nil, thinkingMode: .disabled, reasoningEffort: nil,
+            maxTokens: 200, cachePolicy: .implicit)
+
+        #expect(try sentToolChoice(mock) == ["type": "none"])
+        #expect(try sentHasTools(mock))
+    }
+
     @Test("tool_use ブロックを ToolCall にパースし、tools/tool_choice を直列化")
     func parsesToolCallAndSerializes() async throws {
         let mock = MockTransport { _ in

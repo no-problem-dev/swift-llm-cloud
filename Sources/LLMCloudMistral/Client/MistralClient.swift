@@ -28,8 +28,9 @@ extension MistralModel: OpenAICompatibleModelProtocol {
 /// The output cap must be sent as `max_tokens`: Mistral rejects OpenAI's `max_completion_tokens`
 /// with `422 Extra inputs are not permitted`, and a regression test pins the spelling.
 ///
-/// Requests are never streamed: `streamAgentStep` falls back to the shared non-streaming
-/// implementation and yields one completed event at the end rather than deltas.
+/// `streamAgentStep` streams for real: the request goes out with `stream: true` and the SSE
+/// deltas are forwarded as they arrive. Chat Completions never sends the finished message, so the
+/// trailing completed event is reassembled from those deltas rather than received.
 ///
 /// ## Example
 ///

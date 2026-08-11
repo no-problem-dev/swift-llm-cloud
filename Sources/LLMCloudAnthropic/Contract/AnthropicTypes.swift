@@ -196,23 +196,28 @@ struct AnthropicToolDef: Encodable, Sendable {
     }
 }
 
+/// Anthropic's `tool_choice`, in the four shapes the Messages API accepts.
+///
+/// The case is deliberately spelled `disabled` rather than `none`: this type is almost always held
+/// as an `AnthropicToolChoiceValue?`, and a case named `none` shadows `Optional.none` at every use
+/// site, so `?? .auto` and `== .none` stop meaning what they read as.
 enum AnthropicToolChoiceValue: Encodable, Sendable {
     case auto
     case any
-    case none
+    case disabled
     case tool(String)
 
     init(_ choice: ToolChoice) {
         switch choice {
         case .auto: self = .auto
-        case .disabled: self = .none
+        case .disabled: self = .disabled
         case .required: self = .any
         case .tool(let name): self = .tool(name)
         }
     }
 
     private enum Kind: String, Encodable {
-        case auto, any, tool
+        case auto, any, tool, none
     }
 
     private struct Choice: Encodable {
@@ -223,10 +228,15 @@ enum AnthropicToolChoiceValue: Encodable, Sendable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {
-        case .auto, .none:
+        case .auto:
             try container.encode(Choice(type: .auto))
         case .any:
             try container.encode(Choice(type: .any))
+        case .disabled:
+            // `{"type":"none"}` is what stops Claude calling a tool. The tools array still goes out
+            // so the cached prefix survives the turn — suppressing the call is not the same as
+            // withdrawing the definitions.
+            try container.encode(Choice(type: .none))
         case .tool(let name):
             try container.encode(Choice(type: .tool, name: name))
         }

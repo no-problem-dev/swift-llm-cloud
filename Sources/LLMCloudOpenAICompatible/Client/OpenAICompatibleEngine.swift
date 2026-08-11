@@ -243,6 +243,115 @@ package struct OpenAICompatibleEngine: Sendable {
         reasoningEffort: ReasoningEffort?,
         maxTokens: Int?
     ) async throws -> LLMResponse {
+        let body = try makeAgentStepBody(
+            messages: messages,
+            modelId: modelId,
+            systemPrompt: systemPrompt,
+            tools: tools,
+            toolChoice: toolChoice,
+            responseSchema: responseSchema,
+            reasoningEffort: reasoningEffort,
+            maxTokens: maxTokens,
+            stream: nil
+        )
+
+        // Retries come from RetryRunner, the same domain-aware policy RetryableProvider applies,
+        // rather than from a helper specific to the agent path.
+        let output = try await RetryRunner.run(
+            policy: retryConfiguration.policy,
+            eventHandler: retryEventHandler
+        ) {
+            try await baseProvider.sendBody(body).0
+        }
+        return OpenAICompatibleResponseConverter.toLLMResponse(output)
+    }
+
+    /// Runs one agent turn and yields events as the answer streams in.
+    ///
+    /// The request is the one ``executeAgentStep(messages:modelId:systemPrompt:tools:toolChoice:responseSchema:reasoningEffort:maxTokens:)``
+    /// builds, plus `stream: true`. Text deltas are yielded as they arrive and reasoning deltas
+    /// alongside them, and a single `.completed` carrying the whole response is yielded once the
+    /// vendor closes the stream.
+    ///
+    /// That last response is *assembled*, not received. Chat Completions never sends the finished
+    /// message — unlike the Responses API, which ends with a frame containing the complete object —
+    /// so ``OpenAICompatibleStreamAccumulator`` stitches the text, the tool-call fragments, the
+    /// usage, and the finish reason back together. A stream that ends early therefore yields the
+    /// partial answer rather than nothing.
+    ///
+    /// This path is never retried. Replaying a stream that broke midway would repeat the deltas the
+    /// caller already consumed, so a mid-stream failure is surfaced to the caller instead.
+    package func streamAgentStep(
+        messages: [LLMMessage],
+        modelId: String,
+        systemPrompt: SystemPrompt?,
+        tools: ToolSet,
+        toolChoice: ToolChoice?,
+        responseSchema: JSONSchema?,
+        reasoningEffort: ReasoningEffort?,
+        maxTokens: Int?
+    ) -> AsyncThrowingStream<StreamingAgentEvent, Error> {
+        makeCancellableStream { continuation in
+            Task {
+                do {
+                    let body = try makeAgentStepBody(
+                        messages: messages,
+                        modelId: modelId,
+                        systemPrompt: systemPrompt,
+                        tools: tools,
+                        toolChoice: toolChoice,
+                        responseSchema: responseSchema,
+                        reasoningEffort: reasoningEffort,
+                        maxTokens: maxTokens,
+                        stream: true
+                    )
+
+                    var accumulator = OpenAICompatibleStreamAccumulator()
+                    let decoder = JSONDecoder()
+                    decoder.keyDecodingStrategy = .convertFromSnakeCase
+
+                    for try await sse in baseProvider.streamChatCompletionEvents(body) {
+                        let payload = sse.data
+                        // `[DONE]` is the terminator every one of these vendors sends, and blank
+                        // frames turn up as keepalives. Neither is a chunk.
+                        if payload.isEmpty || payload == "[DONE]" { continue }
+
+                        let chunk = try decoder.decode(
+                            OpenAICompatibleStreamChunk.self,
+                            from: Data(payload.utf8)
+                        )
+                        for delta in accumulator.consume(chunk) {
+                            continuation.yield(.delta(delta))
+                        }
+                    }
+
+                    continuation.yield(.completed(accumulator.makeResponse(fallbackModel: modelId)))
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    // MARK: - Private Helpers
+
+    /// Builds the agent-step body shared by the streaming and non-streaming paths.
+    ///
+    /// Keeping both on one builder is what makes the streamed request identical to the buffered one
+    /// apart from the `stream` flag: the same tool handling, the same strict response format, and
+    /// the same rule that temperature is never sent on this path.
+    private func makeAgentStepBody(
+        messages: [LLMMessage],
+        modelId: String,
+        systemPrompt: SystemPrompt?,
+        tools: ToolSet,
+        toolChoice: ToolChoice?,
+        responseSchema: JSONSchema?,
+        reasoningEffort: ReasoningEffort?,
+        maxTokens: Int?,
+        stream: Bool?
+    ) throws -> OpenAICompatibleRequestBody {
         var openAIMessages: [OpenAICompatibleMessage] = []
 
         if let prompt = systemPrompt {
@@ -273,7 +382,7 @@ package struct OpenAICompatibleEngine: Sendable {
             )
         }
 
-        let body = OpenAICompatibleRequestBody(
+        return OpenAICompatibleRequestBody(
             model: modelId,
             messages: openAIMessages,
             maxCompletionTokens: maxTokens ?? Self.defaultMaxTokens,
@@ -282,21 +391,10 @@ package struct OpenAICompatibleEngine: Sendable {
             responseFormat: responseFormat,
             tools: openAITools,
             toolChoice: openAIToolChoice,
-            reasoningEffort: reasoningEffort?.rawValue
+            reasoningEffort: reasoningEffort?.rawValue,
+            stream: stream
         )
-
-        // Retries come from RetryRunner, the same domain-aware policy RetryableProvider applies,
-        // rather than from a helper specific to the agent path.
-        let output = try await RetryRunner.run(
-            policy: retryConfiguration.policy,
-            eventHandler: retryEventHandler
-        ) {
-            try await baseProvider.sendBody(body).0
-        }
-        return OpenAICompatibleResponseConverter.toLLMResponse(output)
     }
-
-    // MARK: - Private Helpers
 
     /// Appends the schema description to the caller's prompt, restating in prose what the strict
     /// schema already encodes.

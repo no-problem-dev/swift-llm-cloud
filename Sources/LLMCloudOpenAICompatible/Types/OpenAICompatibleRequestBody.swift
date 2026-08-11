@@ -27,6 +27,18 @@ package struct OpenAICompatibleRequestBody: Encodable, Sendable {
     /// applies.
     package let reasoningEffort: String?
 
+    /// Whether the vendor should answer with an SSE stream, omitted when nil.
+    ///
+    /// Only ever set to `true`, by the streaming agent step. The non-streaming paths leave it out
+    /// rather than sending `false`, which keeps their request bodies byte-identical to what they
+    /// were before streaming existed.
+    ///
+    /// `stream_options` is deliberately not sent alongside it. Mistral's API defines no such
+    /// parameter at all, OpenRouter documents `include_usage` as having no effect, and the
+    /// remaining vendors report usage on the stream without being asked — so the flag would buy
+    /// nothing and risks a rejected request on the one vendor that has never heard of it.
+    package let stream: Bool?
+
     package init(
         model: String,
         messages: [OpenAICompatibleMessage],
@@ -36,7 +48,8 @@ package struct OpenAICompatibleRequestBody: Encodable, Sendable {
         responseFormat: OpenAICompatibleResponseFormat?,
         tools: [OpenAICompatibleToolDef]?,
         toolChoice: OpenAICompatibleToolChoice?,
-        reasoningEffort: String? = nil
+        reasoningEffort: String? = nil,
+        stream: Bool? = nil
     ) {
         self.model = model
         self.messages = messages
@@ -47,6 +60,7 @@ package struct OpenAICompatibleRequestBody: Encodable, Sendable {
         self.tools = tools
         self.toolChoice = toolChoice
         self.reasoningEffort = reasoningEffort
+        self.stream = stream
     }
 
     enum CodingKeys: String, CodingKey {
@@ -57,6 +71,7 @@ package struct OpenAICompatibleRequestBody: Encodable, Sendable {
         case tools
         case toolChoice = "tool_choice"
         case reasoningEffort = "reasoning_effort"
+        case stream
     }
 
     /// Coding key built at runtime, so the token cap can be written under a name chosen per vendor.
@@ -89,6 +104,9 @@ package struct OpenAICompatibleRequestBody: Encodable, Sendable {
         }
         if let reasoningEffort = reasoningEffort {
             try container.encode(reasoningEffort, forKey: .reasoningEffort)
+        }
+        if let stream = stream {
+            try container.encode(stream, forKey: .stream)
         }
     }
 }

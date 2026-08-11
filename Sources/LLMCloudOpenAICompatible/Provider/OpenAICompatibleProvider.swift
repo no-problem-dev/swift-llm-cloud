@@ -13,7 +13,7 @@ import FoundationNetworking
 /// injected rather than subclassed — the full endpoint URL, any extra headers, and whether the
 /// token cap goes out as `max_completion_tokens` or `max_tokens`. Every call goes through
 /// `APIClientImpl` and the `CreateChatCompletion` contract, so error decoding and rate-limit
-/// header handling are identical for all of them. This path is non-streaming only.
+/// header handling are identical for all of them — streamed and non-streamed alike.
 package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol {
     private let apiClient: APIClientImpl
 
@@ -132,6 +132,26 @@ package struct OpenAICompatibleProvider: LLMProvider, RetryableProviderProtocol 
         } catch {
             throw LLMError.networkError(error)
         }
+    }
+
+    /// Opens a streamed chat completion and yields the vendor's SSE frames.
+    ///
+    /// The body must already carry `stream: true`; nothing is added here. Frames arrive exactly as
+    /// the vendor sent them, including the `data: [DONE]` terminator, which the caller skips —
+    /// unlike the typed `execute` path, this one does no filtering. OpenRouter's `:` keepalive
+    /// comments never reach here at all: the SSE parser drops comment lines per the spec.
+    ///
+    /// Errors are shaped exactly as on the non-streaming path, so a 429 still arrives as a
+    /// `RateLimitAwareError` carrying the vendor's headers. Nothing is retried, though: replaying a
+    /// stream that broke midway would repeat deltas the caller has already consumed.
+    ///
+    /// - Parameter body: Request body with `stream` set.
+    /// - Returns: The vendor's SSE frames, in order.
+    package func streamChatCompletionEvents(
+        _ body: OpenAICompatibleRequestBody
+    ) -> AsyncThrowingStream<SSEEvent, Error> {
+        let contract = OpenAICompatibleAPI.CreateChatCompletion(customHeaders: customHeaders, request: body)
+        return apiClient.executeEventStream(contract)
     }
 
     // MARK: - Request Building

@@ -30,8 +30,9 @@ extension GrokModel: OpenAICompatibleModelProtocol {
 /// The output cap goes out as `max_completion_tokens`, the shared engine's default spelling, which
 /// is what the Grok 4 reasoning models require.
 ///
-/// Requests are never streamed: `streamAgentStep` falls back to the shared non-streaming
-/// implementation and yields one completed event at the end rather than deltas.
+/// `streamAgentStep` streams for real: the request goes out with `stream: true` and the SSE
+/// deltas are forwarded as they arrive. Chat Completions never sends the finished message, so the
+/// trailing completed event is reassembled from those deltas rather than received.
 ///
 /// ## Example
 ///
