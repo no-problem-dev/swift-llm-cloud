@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `GeminiClient.logs` and `OpenAIClient.logs` expose what the HTTP layer reports for their calls,
+  including the raw SSE chunks of a stream. The events a caller receives are already parsed and
+  accumulated, which loses the bytes inside a `data:` line and where one chunk ended — the only
+  evidence for whether a model wrote a trailing newline itself or a chunk boundary merely looks
+  like one. For OpenAI this is the Responses engine's feed, since every streaming call is routed
+  there. Reading it is opt-in; nothing buffers until you iterate.
+
+### Fixed
+
+- `scripts/compute-next-version.sh` counted a defaulted parameter as a removal. Ported from
+  swift-http-transport 2.2.1, with its regression test.
+
 ## [6.0.0] - 2026-08-11
 
 ### Changed

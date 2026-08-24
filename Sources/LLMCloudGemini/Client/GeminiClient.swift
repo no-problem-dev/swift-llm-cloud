@@ -66,6 +66,15 @@ public struct GeminiClient: StructuredLLMClient {
     ///
     /// Serves Imagen `:predict` and Gemini image `:generateContent`, and authenticates with the
     /// `x-goog-api-key` header like the text endpoints do.
+    /// What the HTTP layer reports for this client's calls, raw SSE chunks included.
+    ///
+    /// A stream is otherwise unobservable from here: the events reaching the caller are already
+    /// parsed and accumulated, so the bytes inside a `data:` line — and where one chunk ended —
+    /// are gone. That is the only evidence for whether a model wrote a trailing newline itself
+    /// or a chunk boundary merely looks like one. Reading this is opt-in; nothing buffers until
+    /// you iterate, and dropping the iteration stops the reporting.
+    public var logs: TelemetryStream<HTTPLog> { baseProvider.logs }
+
     package let mediaClient: APIClientImpl
 
     /// Transport for Veo video generation, rooted one path component above the models base URL.

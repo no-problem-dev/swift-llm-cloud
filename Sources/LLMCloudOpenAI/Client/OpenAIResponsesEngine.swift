@@ -35,6 +35,9 @@ package struct OpenAIResponsesEngine: Sendable {
     /// has to stay off — enabling it would mangle keys such as `max_output_tokens` and `call_id`.
     private let apiClient: APIClientImpl
 
+    /// What the underlying API client reports, including the raw SSE chunks of a stream.
+    var logs: TelemetryStream<HTTPLog> { apiClient.logs }
+
     /// Responses API URL used when no custom endpoint is supplied.
     package static let defaultEndpoint = URL(string: "https://api.openai.com/v1/responses")!
 

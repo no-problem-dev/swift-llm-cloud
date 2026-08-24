@@ -58,6 +58,14 @@ public struct OpenAIClient: OpenAICompatibleClientProtocol {
     /// Its base URL is the chat endpoint with the last two path components stripped, so it lands
     /// on `/v1` and a custom `endpoint` keeps media calls on the same host. Unlike the two chat
     /// engines it uses snake-case key conversion, because the media bodies declare no coding keys.
+    /// What the HTTP layer reports for this client's streaming calls, raw SSE chunks included.
+    ///
+    /// Every streaming call is routed to the Responses engine, so this is that engine's feed.
+    /// The events reaching the caller are already parsed and accumulated, which loses the bytes
+    /// inside a `data:` line and where one chunk ended — the only evidence for whether a model
+    /// wrote a trailing newline itself. Reading this is opt-in.
+    public var logs: TelemetryStream<HTTPLog> { responsesEngine.logs }
+
     package let mediaClient: APIClientImpl
 
     package var apiKey: String { engine.apiKey }

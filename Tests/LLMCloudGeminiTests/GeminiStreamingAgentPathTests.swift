@@ -43,6 +43,34 @@ struct GeminiStreamingAgentPathTests {
         )
     }
 
+    @Test("生の SSE チャンクが logs から読める(モデルが送った改行を確かめる唯一の手がかり)")
+    func rawFramesAreObservable() async throws {
+        // 末尾に改行を 2 つ持たせる。これがモデルの出力なのか SSE の枠なのかを
+        // 区別できることが要点で、パース後のイベントからは分からない。
+        let sse = Data(#"""
+        data: {"candidates":[{"content":{"role":"model","parts":[{"text":"できました。\n\n"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":4,"totalTokenCount":9}}
+
+        """#.utf8)
+        let mock = MockTransport(streamChunks: [sse])
+        let subject = client(mock)
+
+        let collected = Task {
+            var chunks: [Data] = []
+            for await log in subject.logs {
+                if case .sseFrame(_, let chunk) = log { chunks.append(chunk) }
+            }
+            return chunks
+        }
+
+        _ = try await collect(streamAgentStep(subject))
+        collected.cancel()
+
+        let frames = await collected.value
+        let joined = frames.map { String(decoding: $0, as: UTF8.self) }.joined()
+        #expect(!frames.isEmpty)
+        #expect(joined.contains(#"できました。\n\n"#))
+    }
+
     @Test("テキストデルタを到着順に配信し、EOF で完全レスポンスを 1 回だけ構築")
     func streamsTextDeltasAndCompletesOnEOF() async throws {
         let sse = Data(#"""

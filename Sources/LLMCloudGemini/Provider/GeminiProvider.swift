@@ -52,6 +52,9 @@ internal struct GeminiProvider: LLMProvider, RetryableProviderProtocol {
         )
     }
 
+    /// What the underlying API client reports, including the raw SSE chunks of a stream.
+    var logs: TelemetryStream<HTTPLog> { apiClient.logs }
+
     /// Streams the raw SSE events of `streamGenerateContent`, leaving parsing to the caller.
     ///
     /// Each event's data is a whole response body rather than a delta, so text has to be
