@@ -58,6 +58,25 @@ package extension URL {
 /// `TransportError.invalidResponse` arrives inside ``APIError/networkError(_:)`` and is
 /// reported as a network failure, which is where it has always arrived from — `APIError` had a
 /// separate `invalidResponse` case that was never constructed.
+///
+/// The switch lists every case instead of falling back to `default`, for the same reason
+/// `LLMError.isRetryable` does: a case added to `APIError` upstream breaks the build here and
+/// makes someone choose the `LLMError` it becomes, rather than inheriting whatever a fallback
+/// happens to return. No fallback would be right anyway — `unknown(_:)` drops what the new case
+/// carries, and every other case claims something specific about the failure that the retry
+/// policy then acts on. `@unknown default` is not the middle ground it looks like: it downgrades
+/// the compile error to a warning, and a warning does not fail `swift test`, so the wrong mapping
+/// ships.
+///
+/// The one case known to be coming is api-client 6.0.0's
+/// `emptyResponseBody(statusCode:outputType:)`, thrown when a response carried no bytes and the
+/// contract's `Output` had no value for that. Map it to `LLMError.emptyResponse` — "the provider
+/// answered with no content at all" is exactly what happened, and it is already classified
+/// terminal by `isRetryable`. Not `serverError`, whose status would then have to be a 200 in the
+/// case where a 200 arrives empty; not `decodingFailed`, which is the misdescription api-client
+/// deliberately avoided when it gave the condition its own case. `Package.swift` pins api-client
+/// at `from: "5.0.0"`, so nothing resolves 6.0.0 until someone raises that line, and raising it
+/// is the edit that adds this case.
 package func mapAPIErrorToLLMError(_ error: APIError) -> LLMError {
     switch error {
     case .unauthorized, .forbidden: return .unauthorized

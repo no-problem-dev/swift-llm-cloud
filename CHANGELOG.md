@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `mapAPIErrorToLLMError` now says why it has no `default:`, and what the next `APIError` case maps
+  to. swift-api-client 6.0.0 adds `emptyResponseBody(statusCode:outputType:)`, which this switch
+  does not handle, so raising the pin breaks the build — confirmed rather than assumed: compiled
+  the same switch against the 6.0.0 source and got `error: switch must be exhaustive`. **No
+  `default:` was added.** The build break is the mechanism, the one `LLMError.isRetryable` already
+  documents for its own switch, and no fallback would be right: `unknown(_:)` drops whatever the
+  new case carries, and every other case claims something specific that the retry policy then acts
+  on. `@unknown default` was measured too — it downgrades the error to a warning, and a warning
+  does not fail `swift test`, so the wrong mapping would ship in silence. The pin is
+  `from: "5.0.0"`, so nothing resolves 6.0.0 until someone raises that line; the one-line addition
+  belongs in that same edit, and it is `case .emptyResponseBody: return .emptyResponse`.
+
 ## [6.1.0] - 2026-08-24
 
 ### Added
