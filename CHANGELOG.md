@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.1.0] - 2026-09-08
+
 ### Changed
 
 - `mapAPIErrorToLLMError` now says why it has no `default:`, and what the next `APIError` case maps
