@@ -54,8 +54,8 @@ let b: Product = try await gemini.generate(input: prompt, model: .flash25)
 
 ## Documentation
 
-- [API reference](https://no-problem-dev.github.io/swift-llm-cloud/documentation/llmcloud/) — every public symbol, per module
-- [Module architecture](https://no-problem-dev.github.io/swift-llm-cloud/documentation/llmcloud/modulearchitecture) — how the package is split and which module to import
+- [API reference](Sources/LLMCloud/Documentation.docc) — every public symbol, per module
+- [Module architecture](Sources/LLMCloud/Documentation.docc/ModuleArchitecture.md) — how the package is split and which module to import
 
 ## Installation
 
