@@ -54,8 +54,8 @@ let b: Product = try await gemini.generate(input: prompt, model: .flash25)
 
 ## ドキュメント
 
-- [API リファレンス](https://no-problem-dev.github.io/swift-llm-cloud/documentation/llmcloud/) — モジュールごとの全パブリックシンボル
-- [モジュール構成](https://no-problem-dev.github.io/swift-llm-cloud/documentation/llmcloud/modulearchitecture) — パッケージの分割方針と、どれを import すべきか
+- [API リファレンス](Sources/LLMCloud/Documentation.docc) — モジュールごとの全パブリックシンボル
+- [モジュール構成](Sources/LLMCloud/Documentation.docc/ModuleArchitecture.md) — パッケージの分割方針と、どれを import すべきか
 
 ## インストール
 
